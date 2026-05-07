@@ -40,6 +40,8 @@ def _run_migrations():
         ("delivery_notes",    "remarks",                      "TEXT DEFAULT ''"),
         ("delivery_notes",    "letterhead",                   "INTEGER DEFAULT 1"),
         ("delivery_note_items", "remarks",                    "TEXT DEFAULT ''"),
+        ("companies",           "dn_prefix",                  "TEXT DEFAULT 'DN-'"),
+        ("companies",           "dn_current_number",          "INTEGER DEFAULT 0"),
     ]
     with engine.connect() as conn:
         for table, column, col_def in migrations:

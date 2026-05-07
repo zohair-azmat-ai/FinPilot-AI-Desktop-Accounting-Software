@@ -14,6 +14,8 @@ class CompanyBase(BaseModel):
     logo_path: Optional[str] = ""
     invoice_prefix: Optional[str] = ""
     invoice_current_number: Optional[int] = 0
+    dn_prefix: Optional[str] = "DN-"
+    dn_current_number: Optional[int] = 0
 
 class CompanyCreate(CompanyBase):
     pass

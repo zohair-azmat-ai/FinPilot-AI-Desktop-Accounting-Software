@@ -11,6 +11,7 @@ export default function CompanyPage() {
     name: "", trn: "", address: "", phone: "", email: "",
     letterhead_mode: true, vat_rate: 5.0,
     invoice_prefix: "", invoice_current_number: 0,
+    dn_prefix: "DN-", dn_current_number: 0,
   });
   const [saving, setSaving] = useState(false);
   const [stampUploading, setStampUploading] = useState(false);
@@ -179,6 +180,63 @@ export default function CompanyPage() {
           <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
             <Save size={15} />
             {saving ? "Saving..." : "Save Invoice Series"}
+          </button>
+        </div>
+
+        {/* Delivery Note Series */}
+        <div className="card space-y-4 mt-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-brand-indigo/10 flex items-center justify-center text-brand-indigo">
+              <Hash size={20} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-text-primary">Delivery Note Series</h3>
+              <p className="text-xs text-text-secondary">Controls how delivery note numbers are generated</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Delivery Note Prefix</label>
+              <input
+                className="input"
+                value={form.dn_prefix}
+                onChange={(e) => setForm({ ...form, dn_prefix: e.target.value })}
+                placeholder='e.g. DN- (default)'
+              />
+            </div>
+            <div>
+              <label className="label">Current / Starting DN No.</label>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                step="1"
+                value={form.dn_current_number || ""}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  setForm({ ...form, dn_current_number: isNaN(v) || v < 1 ? 0 : v });
+                }}
+                placeholder="e.g. 9948"
+              />
+            </div>
+          </div>
+          {form.dn_current_number > 0 ? (
+            <div className="rounded-lg bg-brand-indigo/5 border border-brand-indigo/20 px-4 py-3">
+              <p className="text-xs text-text-muted">Next delivery note will be:</p>
+              <p className="text-lg font-bold text-brand-indigo mt-0.5">
+                {form.dn_prefix || "DN-"}{String(form.dn_current_number).padStart(4, "0")}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 px-4 py-3">
+              <p className="text-xs text-amber-400">
+                Enter a starting number (e.g. 9948) to enable DN series. Until set, the system auto-increments from the last DN.
+              </p>
+            </div>
+          )}
+          <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
+            <Save size={15} />
+            {saving ? "Saving..." : "Save DN Series"}
           </button>
         </div>
 

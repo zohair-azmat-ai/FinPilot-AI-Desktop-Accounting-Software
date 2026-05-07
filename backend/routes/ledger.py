@@ -85,7 +85,7 @@ def get_statement(
     if dt_from:
         for e in all_entries:
             if e.date < dt_from:
-                opening_balance += e.debit - e.credit
+                opening_balance = round(opening_balance + e.debit - e.credit, 2)
 
     filtered = [e for e in all_entries if
                 (dt_from is None or e.date >= dt_from) and

@@ -11,14 +11,29 @@ router = APIRouter(prefix="/api/delivery-notes", tags=["delivery-notes"])
 
 
 def _next_dn_number(db: Session) -> str:
+    company = db.query(models.Company).first()
+    if company and (company.dn_current_number or 0) > 0:
+        prefix = company.dn_prefix or "DN-"
+        return f"{prefix}{company.dn_current_number:04d}"
+    # Fallback: derive from last DN number in table
     last = db.query(models.DeliveryNote).order_by(models.DeliveryNote.id.desc()).first()
     if not last:
-        return "DN-0001"
+        prefix = (company.dn_prefix if company else None) or "DN-"
+        return f"{prefix}0001"
     try:
         num = int(last.dn_number.split("-")[-1]) + 1
     except Exception:
         num = 1
-    return f"DN-{num:04d}"
+    prefix = (company.dn_prefix if company else None) or "DN-"
+    return f"{prefix}{num:04d}"
+
+
+def _increment_dn_counter(db: Session) -> None:
+    company = db.query(models.Company).first()
+    if company and (company.dn_current_number or 0) > 0:
+        company.dn_current_number += 1
+        db.add(company)
+        db.commit()
 
 
 @router.get("/", response_model=List[schemas.DeliveryNoteOut])
@@ -63,6 +78,7 @@ def create_delivery_note(payload: schemas.DeliveryNoteCreate, db: Session = Depe
 
     db.commit()
     db.refresh(dn)
+    _increment_dn_counter(db)
     return dn
 
 
