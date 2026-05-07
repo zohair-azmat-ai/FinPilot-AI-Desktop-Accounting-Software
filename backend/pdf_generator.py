@@ -1482,12 +1482,11 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
 
     items_data = dn_data.get("items", [])
     _actual_n  = len(items_data)
-    _OVERHEAD_DN = 100 * mm
-    _ROW_H_DN    = 9  * mm
-    _usable_h    = page_h - top_margin - 4 * mm
-    _max_rows    = max(0, int((_usable_h - _OVERHEAD_DN) / _ROW_H_DN))
-    _filler_n    = min(15, max(0, _max_rows - _actual_n))
-    MIN_ROWS     = _actual_n + _filler_n
+    _ROW_H_DN    = 8  * mm
+    _usable_h    = page_h - top_margin - 55 * mm   # reserve space for sig block + footer
+    _max_rows    = max(0, int(_usable_h / _ROW_H_DN))
+    _target      = min(10, _max_rows)               # aim for 10 rows total (compact pad style)
+    MIN_ROWS     = max(_actual_n, _target)
 
     dn_col_w = [14 * mm, 90 * mm, 20 * mm, 56 * mm]
 
@@ -1514,7 +1513,7 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     dn_table = Table(
         table_data,
         colWidths=dn_col_w,
-        rowHeights=[9 * mm] + [_ROW_H_DN] * MIN_ROWS
+        rowHeights=[8 * mm] + [_ROW_H_DN] * MIN_ROWS
     )
     dn_table.setStyle(TableStyle([
         ("BACKGROUND",     (0, 0), (-1, 0),  PRIMARY),
@@ -1525,8 +1524,8 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [LIGHT_GRAY, WHITE]),
         ("GRID",           (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
         ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",     (0, 1), (-1, -1), 8),
-        ("BOTTOMPADDING",  (0, 1), (-1, -1), 8),
+        ("TOPPADDING",     (0, 1), (-1, -1), 5),
+        ("BOTTOMPADDING",  (0, 1), (-1, -1), 5),
         ("LEFTPADDING",    (0, 0), (-1, -1), 4),
         ("RIGHTPADDING",   (0, 0), (-1, -1), 4),
         ("LEFTPADDING",    (1, 1), (1, -1),  6),
@@ -1535,28 +1534,29 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     story.append(dn_table)
     story.append(Spacer(1, 6 * mm))
 
-    stamp_path = _get_stamp_path()
+    use_stamp  = dn_data.get("show_stamp", False)
+    stamp_path = _get_stamp_path() if use_stamp else ""
     recv_cell  = [
-        Spacer(1, 12 * mm),
+        Spacer(1, 10 * mm),
         Paragraph("________________________", sig_s),
         Spacer(1, 2 * mm),
         Paragraph("Receiver's Signature", sig_b),
     ]
     auth_cell = []
-    if stamp_path:
+    if use_stamp and stamp_path:
         try:
             auth_cell.append(Image(stamp_path, width=22 * mm, height=22 * mm))
         except Exception:
             auth_cell.append(Spacer(1, 22 * mm))
     else:
-        auth_cell.append(Spacer(1, 22 * mm))
+        auth_cell.append(Spacer(1, 10 * mm))
     auth_cell += [
         Paragraph("________________________", sig_s),
         Spacer(1, 2 * mm),
         Paragraph("Authorized Signature", sig_b),
     ]
 
-    sig_t = Table([[recv_cell, auth_cell]], colWidths=[90 * mm, 90 * mm], rowHeights=[32 * mm])
+    sig_t = Table([[recv_cell, auth_cell]], colWidths=[90 * mm, 90 * mm], rowHeights=[28 * mm])
     sig_t.setStyle(TableStyle([
         ("BOX",          (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
         ("INNERGRID",    (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),

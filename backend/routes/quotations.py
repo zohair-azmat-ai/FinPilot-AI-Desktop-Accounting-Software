@@ -11,14 +11,28 @@ router = APIRouter(prefix="/api/quotations", tags=["quotations"])
 
 
 def _next_quotation_number(db: Session) -> str:
+    company = db.query(models.Company).first()
+    if company and (company.quotation_current_number or 0) > 0:
+        prefix = company.quotation_prefix or "QUO-"
+        return f"{prefix}{company.quotation_current_number:04d}"
     last = db.query(models.Quotation).order_by(models.Quotation.id.desc()).first()
     if not last:
-        return "QUO-0001"
+        prefix = (company.quotation_prefix if company else None) or "QUO-"
+        return f"{prefix}0001"
     try:
         num = int(last.quotation_number.split("-")[-1]) + 1
     except Exception:
         num = 1
-    return f"QUO-{num:04d}"
+    prefix = (company.quotation_prefix if company else None) or "QUO-"
+    return f"{prefix}{num:04d}"
+
+
+def _increment_quotation_counter(db: Session) -> None:
+    company = db.query(models.Company).first()
+    if company and (company.quotation_current_number or 0) > 0:
+        company.quotation_current_number += 1
+        db.add(company)
+        db.commit()
 
 
 def _calculate_items(items_data, vat_rate=5.0):
@@ -90,6 +104,7 @@ def create_quotation(data: schemas.QuotationCreate, db: Session = Depends(get_db
 
     db.commit()
     db.refresh(quotation)
+    _increment_quotation_counter(db)
     return quotation
 
 

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
 import { getCustomers, getStatement, downloadStatementPDF } from "@/lib/api";
 import { FileBarChart, FileDown } from "lucide-react";
+import toast from "react-hot-toast";
 
 interface Customer { id: number; name: string; }
 interface StatementEntry {
@@ -31,17 +32,18 @@ function StatementsContent() {
     if (!selectedId) return;
     setLoading(true);
     const p: Record<string, string> = {};
-    if (dateFrom) p.date_from = new Date(dateFrom).toISOString();
-    if (dateTo) p.date_to = new Date(dateTo).toISOString();
+    if (dateFrom) p.date_from = dateFrom + "T00:00:00";
+    if (dateTo) p.date_to = dateTo + "T23:59:59";
     getStatement(parseInt(selectedId), p)
       .then((r) => setStmt(r.data))
+      .catch(() => toast.error("Failed to load statement. Please try again."))
       .finally(() => setLoading(false));
   };
 
   const handleDownload = () => {
     const p: Record<string, string> = {};
-    if (dateFrom) p.date_from = new Date(dateFrom).toISOString();
-    if (dateTo) p.date_to = new Date(dateTo).toISOString();
+    if (dateFrom) p.date_from = dateFrom + "T00:00:00";
+    if (dateTo) p.date_to = dateTo + "T23:59:59";
     window.open(downloadStatementPDF(parseInt(selectedId), p), "_blank");
   };
 

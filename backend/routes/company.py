@@ -9,7 +9,30 @@ router = APIRouter(prefix="/api/company", tags=["company"])
 _USER_STAMP_DIR = os.path.join(os.path.expanduser("~"), "FinPilot", "assets")
 
 
-@router.get("/", response_model=schemas.Company)
+def _company_dict(company) -> dict:
+    """Return company as a plain dict — bypasses Pydantic response_model filtering."""
+    return {
+        "id": company.id,
+        "name": company.name or "",
+        "trn": company.trn or "",
+        "address": company.address or "",
+        "phone": company.phone or "",
+        "email": company.email or "",
+        "letterhead_mode": bool(company.letterhead_mode) if company.letterhead_mode is not None else True,
+        "vat_rate": company.vat_rate if company.vat_rate is not None else 5.0,
+        "logo_path": company.logo_path or "",
+        "invoice_prefix": company.invoice_prefix or "",
+        "invoice_current_number": company.invoice_current_number or 0,
+        "dn_prefix": company.dn_prefix or "DN-",
+        "dn_current_number": company.dn_current_number or 0,
+        "show_dn_stamp": bool(company.show_dn_stamp) if company.show_dn_stamp is not None else False,
+        "quotation_prefix": company.quotation_prefix or "QUO-",
+        "quotation_current_number": company.quotation_current_number or 0,
+        "created_at": company.created_at.isoformat() if company.created_at else None,
+    }
+
+
+@router.get("/")
 def get_company(db: Session = Depends(get_db)):
     company = db.query(models.Company).first()
     if not company:
@@ -17,10 +40,10 @@ def get_company(db: Session = Depends(get_db)):
         db.add(company)
         db.commit()
         db.refresh(company)
-    return company
+    return _company_dict(company)
 
 
-@router.post("/", response_model=schemas.Company)
+@router.post("/")
 def save_company(data: schemas.CompanyCreate, db: Session = Depends(get_db)):
     company = db.query(models.Company).first()
     if company:
@@ -31,7 +54,7 @@ def save_company(data: schemas.CompanyCreate, db: Session = Depends(get_db)):
         db.add(company)
     db.commit()
     db.refresh(company)
-    return company
+    return _company_dict(company)
 
 
 @router.post("/stamp")

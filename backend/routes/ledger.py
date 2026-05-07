@@ -7,6 +7,13 @@ from database import get_db
 import models, schemas
 from pdf_generator import generate_statement_pdf
 
+
+def _parse_dt(s: str) -> datetime:
+    """Parse ISO string as naive datetime (strips Z/timezone so it compares with DB datetimes)."""
+    dt = datetime.fromisoformat(s)
+    return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
+
+
 router = APIRouter(prefix="/api/ledger", tags=["ledger"])
 
 
@@ -28,8 +35,8 @@ def get_customer_ledger(
         .all()
     )
 
-    dt_from = datetime.fromisoformat(date_from) if date_from else None
-    dt_to   = datetime.fromisoformat(date_to)   if date_to   else None
+    dt_from = _parse_dt(date_from) if date_from else None
+    dt_to   = _parse_dt(date_to)   if date_to   else None
 
     # Running balance starts from customer opening balance + any entries before date_from
     running = customer.opening_balance or 0.0

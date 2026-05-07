@@ -132,12 +132,14 @@ def download_delivery_note_pdf(dn_id: int, db: Session = Depends(get_db)):
 
     company = db.query(models.Company).first()
     comp_dict = {}
+    show_stamp = False
     if company:
         comp_dict = {
             "name": company.name, "trn": company.trn,
             "address": company.address, "phone": company.phone,
             "email": company.email,
         }
+        show_stamp = bool(company.show_dn_stamp)
 
     dn_data = {
         "dn_number": dn.dn_number,
@@ -150,6 +152,7 @@ def download_delivery_note_pdf(dn_id: int, db: Session = Depends(get_db)):
         } if dn.customer_id else {},
         "remarks": dn.remarks or "",
         "letterhead": dn.letterhead,
+        "show_stamp": show_stamp,
         "items": [
             {"sno": i + 1, "description": it.description, "quantity": it.quantity, "remarks": it.remarks or ""}
             for i, it in enumerate(dn.items)

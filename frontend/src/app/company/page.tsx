@@ -12,6 +12,8 @@ export default function CompanyPage() {
     letterhead_mode: true, vat_rate: 5.0,
     invoice_prefix: "", invoice_current_number: 0,
     dn_prefix: "DN-", dn_current_number: 0,
+    show_dn_stamp: false,
+    quotation_prefix: "QUO-", quotation_current_number: 0,
   });
   const [saving, setSaving] = useState(false);
   const [stampUploading, setStampUploading] = useState(false);
@@ -183,6 +185,63 @@ export default function CompanyPage() {
           </button>
         </div>
 
+        {/* Quotation Series */}
+        <div className="card space-y-4 mt-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-brand-indigo/10 flex items-center justify-center text-brand-indigo">
+              <Hash size={20} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-text-primary">Quotation Series</h3>
+              <p className="text-xs text-text-secondary">Controls how quotation numbers are generated</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Quotation Prefix</label>
+              <input
+                className="input"
+                value={form.quotation_prefix}
+                onChange={(e) => setForm({ ...form, quotation_prefix: e.target.value })}
+                placeholder='e.g. QUO- (default)'
+              />
+            </div>
+            <div>
+              <label className="label">Current / Starting Quotation No.</label>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                step="1"
+                value={form.quotation_current_number || ""}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  setForm({ ...form, quotation_current_number: isNaN(v) || v < 1 ? 0 : v });
+                }}
+                placeholder="e.g. 500"
+              />
+            </div>
+          </div>
+          {form.quotation_current_number > 0 ? (
+            <div className="rounded-lg bg-brand-indigo/5 border border-brand-indigo/20 px-4 py-3">
+              <p className="text-xs text-text-muted">Next quotation will be:</p>
+              <p className="text-lg font-bold text-brand-indigo mt-0.5">
+                {form.quotation_prefix || "QUO-"}{String(form.quotation_current_number).padStart(4, "0")}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 px-4 py-3">
+              <p className="text-xs text-amber-400">
+                Enter a starting number (e.g. 500) to enable quotation series. Until set, the system auto-increments from the last quotation.
+              </p>
+            </div>
+          )}
+          <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
+            <Save size={15} />
+            {saving ? "Saving..." : "Save Quotation Series"}
+          </button>
+        </div>
+
         {/* Delivery Note Series */}
         <div className="card space-y-4 mt-5">
           <div className="flex items-center gap-3 mb-2">
@@ -234,6 +293,18 @@ export default function CompanyPage() {
               </p>
             </div>
           )}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-bg-secondary border border-bg-border">
+            <div>
+              <p className="text-sm font-medium text-text-primary">Show Stamp on Delivery Notes</p>
+              <p className="text-xs text-text-muted">Print company stamp on DN PDFs</p>
+            </div>
+            <button
+              onClick={() => setForm({ ...form, show_dn_stamp: !form.show_dn_stamp })}
+              className={`relative w-12 h-6 rounded-full transition-colors ${form.show_dn_stamp ? "bg-brand-indigo" : "bg-bg-border"}`}
+            >
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${form.show_dn_stamp ? "translate-x-6" : "translate-x-0.5"}`} />
+            </button>
+          </div>
           <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
             <Save size={15} />
             {saving ? "Saving..." : "Save DN Series"}

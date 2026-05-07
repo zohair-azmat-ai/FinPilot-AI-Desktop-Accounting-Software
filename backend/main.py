@@ -42,6 +42,9 @@ def _run_migrations():
         ("delivery_note_items", "remarks",                    "TEXT DEFAULT ''"),
         ("companies",           "dn_prefix",                  "TEXT DEFAULT 'DN-'"),
         ("companies",           "dn_current_number",          "INTEGER DEFAULT 0"),
+        ("companies",           "show_dn_stamp",              "INTEGER DEFAULT 0"),
+        ("companies",           "quotation_prefix",           "TEXT DEFAULT 'QUO-'"),
+        ("companies",           "quotation_current_number",   "INTEGER DEFAULT 0"),
     ]
     with engine.connect() as conn:
         for table, column, col_def in migrations:
@@ -52,6 +55,24 @@ def _run_migrations():
                 conn.commit()
             except Exception:
                 pass  # column already exists — safe to ignore
+
+        # Backfill defaults for company fields that SQLite may leave NULL on existing rows
+        _sa = __import__("sqlalchemy")
+        _backfills = [
+            ("UPDATE companies SET quotation_prefix = 'QUO-' WHERE quotation_prefix IS NULL OR quotation_prefix = ''"),
+            ("UPDATE companies SET quotation_current_number = 0 WHERE quotation_current_number IS NULL"),
+            ("UPDATE companies SET show_dn_stamp = 0 WHERE show_dn_stamp IS NULL"),
+            ("UPDATE companies SET dn_prefix = 'DN-' WHERE dn_prefix IS NULL OR dn_prefix = ''"),
+            ("UPDATE companies SET dn_current_number = 0 WHERE dn_current_number IS NULL"),
+            ("UPDATE companies SET invoice_prefix = '' WHERE invoice_prefix IS NULL"),
+            ("UPDATE companies SET invoice_current_number = 0 WHERE invoice_current_number IS NULL"),
+        ]
+        for sql in _backfills:
+            try:
+                conn.execute(_sa.text(sql))
+                conn.commit()
+            except Exception:
+                pass
 
 _run_migrations()
 
