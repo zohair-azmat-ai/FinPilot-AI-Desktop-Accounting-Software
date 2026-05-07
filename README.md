@@ -6,7 +6,7 @@
 
 # FinPilot AI — Desktop Accounting Software
 
-### Professional offline-first accounting, invoicing, quotation, receipt voucher, expense, and reporting system for UAE workshop operations.
+### FinPilot AI is a modern offline-first desktop accounting and invoicing platform built for UAE workshops, trading companies, and SMEs.
 
 ---
 
@@ -26,17 +26,31 @@
 
 ---
 
-## Project Overview
+## 🚀 Project Overview
 
-**FinPilot AI** is a complete, offline-first desktop accounting solution built for UAE small and medium businesses — specifically for workshops, trading companies, and service operations.
+**FinPilot AI** is a full-featured, offline-first desktop accounting platform engineered for the real operational needs of UAE workshops, trading firms, and small-to-medium enterprises. It delivers enterprise-grade accounting capabilities — invoicing, quotations, payments, expense tracking, bank management, and compliance reporting — packaged as a fast, portable desktop application with zero cloud dependency.
 
-It replaces expensive cloud SaaS subscriptions with a fast, locally-installed desktop application that runs entirely on your machine. No monthly fees. No internet required. No data leaves your system.
+Built on **Tauri + Next.js + FastAPI + SQLite**, FinPilot AI generates professional-grade PDF documents — tax invoices, UAE-style quotations, receipt vouchers, and account statements — complete with company letterhead, digital stamp, and full UAE VAT 5% compliance baked in.
 
-Built on a modern stack — **Tauri + Next.js + FastAPI + SQLite** — it generates professional-grade PDFs (invoices, quotations, receipt vouchers, account statements) with company letterhead, stamp, and full UAE VAT 5% compliance.
+**Core principles:**
+
+- **Offline-first architecture** — all data stays on your machine, always
+- **No monthly cloud subscription** — install once, run forever
+- **UAE VAT 5% compliance** — FTA-aligned invoicing and reporting
+- **Professional PDF output** — letterhead, company stamp, amount-in-words
+- **AI-assisted workflow** — natural language commands, no API key required
+- **Desktop-native performance** — fast startup, no browser required
+- **Secure local database** — SQLite, encrypted at rest on device
 
 ---
 
-## Architecture
+## 🏗️ Architecture
+
+The system follows a clean three-tier architecture: the **Tauri desktop shell** hosts a **Next.js frontend** (compiled to static HTML/CSS/JS) that communicates with a **FastAPI backend** (bundled as a portable `.exe` via PyInstaller). The backend persists all data in a **local SQLite database** and drives the **ReportLab PDF engine** on demand.
+
+```
+Frontend (Next.js) → REST API (FastAPI) → SQLite → PDF Engine → Reports & Documents
+```
 
 ```mermaid
 flowchart TB
@@ -79,60 +93,116 @@ flowchart TB
 
 ---
 
-## Key Features
+## ✨ Key Features
 
-| Module | Capabilities |
+| Module | Description |
 |--------|-------------|
-| **🧾 Tax Invoices** | Auto-numbered, VAT 5% per line, 8-column table, letterhead, stamp, bank details, amount-in-words |
-| **📋 Quotations** | UAE workshop style, mandatory stamp, convert → invoice, valid-until, dynamic filler rows |
-| **💳 Payments** | Receipt vouchers, advance payments, partial allocations, amount-in-words |
-| **📜 Cheques** | Inward/outward register, status tracking (pending → cleared → bounced) |
-| **🏦 Bank Accounts** | Multi-account management, transaction ledger, bank statement PDF |
-| **☕ Daily Expenses** | 8 categories: tea, petrol, parking, labour lunch, courier, supplies, tools, other |
-| **💸 General Expenses** | Supplier-linked, bank-linked, full CRUD, date-range reporting |
-| **👥 Customers** | Full CRM, TRN, opening balance, ATTN, auto-ledger |
-| **🚚 Suppliers** | Supplier management with expense linkage |
-| **📦 Items / Services** | Price catalog, VAT toggle, unit types (Nos, Kg, m², Service…) |
-| **📖 Ledger** | Auto-generated debit/credit with running balance |
-| **📊 Reports** | Sales, Outstanding AR, VAT (UAE FTA), Customer Balance |
-| **🤖 AI Commands** | Natural language → accounting actions (no API key needed) |
+| **🧾 Tax Invoices** | Auto-numbered UAE tax invoices with VAT 5% per line item, 8-column itemized table, bank details footer, amount-in-words, company letterhead, and optional digital stamp. |
+| **📋 Quotations** | Professional UAE workshop-style quotation engine with dynamic filler rows, mandatory company stamp, Authorized Signature area, amount-in-words row, and one-click conversion to invoice. |
+| **💳 Payments & Receipts** | Full payment recording against invoices with partial allocation support, advance receipt mode, receipt voucher PDF, and cheque handling. |
+| **📜 Cheque Register** | Inward and outward cheque tracking with status lifecycle management: Pending → Cleared → Bounced. |
+| **🏦 Bank Management** | Multi-account bank ledger with per-account transaction history, running balance, and downloadable bank statement PDF. |
+| **☕ Daily Expenses** | Petty cash tracker with 8 predefined categories — Tea/Coffee, Petrol, Parking, Labour Lunch, Courier, Supplies, Tools, and Other — with date-range filtering. |
+| **💸 General Expenses** | Supplier-linked and bank-linked expense management with full CRUD, category breakdown, and date-range reporting. |
+| **👥 Customer CRM** | Complete customer management with TRN, opening balance, contact details, and auto-generated accounts receivable ledger. |
+| **🚚 Supplier Management** | Supplier directory linked to expense and purchase workflows. |
+| **📦 Items & Services** | Reusable price catalog with VAT toggle per item and unit type support (Nos, Kg, m², Service, etc.). |
+| **📖 Ledger** | Auto-generated debit/credit ledger with running balance per customer, driven by all invoices and payments. |
+| **📊 Reports** | Sales report, Outstanding AR, UAE FTA-aligned VAT summary, and Customer Balance report — all with date-range filters. |
+| **🤖 AI Commands** | Natural language accounting commands processed entirely offline — no API key, no internet connection required. |
 
 ---
 
-## PDF Engine
+## 📊 Accounting Modules
 
-All PDFs generated locally via [ReportLab](https://www.reportlab.com/) and saved to `%USERPROFILE%\FinPilot\exports\`.
+FinPilot AI covers the complete accounts-receivable cycle:
+
+```
+Customer Created → Quotation Issued → Invoice Raised → Payment Received → Ledger Updated → Statement Generated
+```
+
+**Supported workflows:**
+
+- Issue a UAE-style quotation and convert it to a tax invoice in one click
+- Record full or partial payments against any open invoice
+- Track advance payments and allocate them against future invoices
+- Manage inward and outward cheques with clearance status tracking
+- Record daily petty cash alongside supplier-linked general expenses
+- Reconcile bank accounts with a full transaction statement
+- Generate VAT-ready reports for FTA submissions
+
+---
+
+## 🧾 PDF Engine
+
+All documents are generated locally using [ReportLab](https://www.reportlab.com/) and saved to `%USERPROFILE%\FinPilot\exports\`. No external service or internet connection is required.
 
 ### Tax Invoice
-- Auto-numbered (INV-0001, INV-0002…)
-- 8-column items table with VAT per line
-- Bank details footer with IBAN
-- Amount in words (e.g. *One Thousand Fifty Only*)
-- Digital letterhead drawn on canvas
-- Company stamp (optional)
+A fully compliant UAE tax invoice with auto-sequential numbering (INV-0001, INV-0002…), an 8-column line-item table showing quantity, unit price, amount, tax rate, tax amount, and line total, plus a bank details block with IBAN and SWIFT. Amount in words is auto-generated (e.g. *One Thousand Fifty Only*). Supports digital letterhead rendered on canvas and an optional company stamp.
 
-### Quotation (UAE Workshop Style)
-- Bordered customer details + quotation info boxes
-- Items table with dynamic filler rows (fills page professionally)
-- Amount in words row: `TOTAL :-   ONE THOUSAND FIFTY ONLY   *****`
-- Mandatory company stamp + Authorized Signature
-- Soft T&C: Delivery as agreed / Prices valid for limited period / Material once approved cannot be returned
-- Single-page guarantee
+### Quotation — UAE Workshop Style
+A bordered, professionally laid-out quotation with separate Customer Details and Quotation Details boxes, a dynamic items table that expands with filler rows to fill the page, a full-width Amount in Words row (`TOTAL :-   ONE THOUSAND FIFTY ONLY   *****`), mandatory company stamp, and Authorized Signature. Includes soft professional terms and conditions. Guaranteed single-page output.
 
 ### Receipt Voucher
-- Standard and Advance modes
-- Payment allocation breakdown
-- Company stamp, signature area
+Supports both standard and advance receipt modes. Includes a payment allocation breakdown table, amount-in-words block, company stamp, and dual signature areas.
 
 ### Account Statement
-- Date-range filtered, running balance
-- Opening and closing balance
+Date-range filtered customer statement showing all debit and credit transactions, running balance column, and clearly displayed opening and closing balances.
+
+### Bank Statement
+Per-account transaction history exported as a clean PDF with balance summary.
 
 ---
 
-## Screenshots
+## 🤖 AI Features
 
-> Add screenshots to [`docs/screenshots/`](docs/screenshots/) and they will appear here.
+FinPilot AI includes a built-in natural language command processor that lets users perform common accounting actions by typing plain-English instructions — no API key, no cloud service, no internet required.
+
+The AI parser runs entirely locally as a rule-based NLP engine. It interprets intent from user input and maps it to backend accounting operations in real time.
+
+**Example commands:**
+
+```
+"Create invoice for Gulf Extrusion 1000 AED"
+"Add payment 500 AED to invoice INV-0001"
+"Show ledger for Ahmed LLC"
+"Make statement for May"
+"Show VAT report"
+"Backup database"
+```
+
+**Current capabilities:**
+- Invoice creation from natural language
+- Payment recording against existing invoices
+- Ledger and statement lookups by customer name
+- Report generation (Sales, VAT, Outstanding)
+- Database backup trigger
+
+**Roadmap:**
+- Conversational multi-step workflow (e.g. create → approve → send)
+- Expense categorization suggestions via ML
+- Scheduled auto-reports
+- Integration with Claude API for advanced reasoning (optional, opt-in)
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Desktop Shell** | Tauri v1 (Rust) | Native OS window, WebView2 renderer, app bundling |
+| **Frontend** | Next.js 14 + Tailwind CSS | Dark-theme React UI, App Router, Axios API client |
+| **Backend** | FastAPI + Uvicorn (Python) | REST API layer, business logic, PDF generation |
+| **Database** | SQLite + SQLAlchemy ORM | Local offline data persistence with relational integrity |
+| **PDF Engine** | ReportLab | Programmatic PDF generation for all document types |
+| **AI Parser** | Custom NLP rule engine | Offline natural language → accounting action mapping |
+| **Packaging** | PyInstaller + Tauri bundler | Portable `.exe` backend + Tauri desktop installer |
+
+---
+
+## 📷 Screenshots
+
+> Place app screenshots in [`docs/screenshots/`](docs/screenshots/) and they will render here automatically.
 
 | Dashboard | Invoice |
 |-----------|---------|
@@ -144,105 +214,95 @@ All PDFs generated locally via [ReportLab](https://www.reportlab.com/) and saved
 
 ---
 
-## Tech Stack
-
-| Layer | Technology | Role |
-|-------|-----------|------|
-| **Desktop Shell** | Tauri v1 (Rust) | Native window, WebView2, bundling |
-| **Frontend** | Next.js 14 + Tailwind CSS | Dark-theme UI, routing, API calls |
-| **Backend** | FastAPI + Uvicorn (Python) | REST API, business logic, PDF generation |
-| **Database** | SQLite + SQLAlchemy ORM | Local offline data persistence |
-| **PDF Engine** | ReportLab | Invoice, quotation, voucher, statement PDFs |
-| **AI Parser** | Custom NLP rule engine | Natural language → accounting actions |
-| **Packaging** | PyInstaller + Tauri | Bundle into portable desktop `.exe` |
-
----
-
-## Project Structure
+## 📂 Project Structure
 
 ```
 FinPilot AI/
 ├── backend/                     # FastAPI Python backend
-│   ├── main.py                  # App entry + database migrations
-│   ├── database.py              # SQLite connection (SQLAlchemy)
-│   ├── models.py                # ORM models (all tables)
+│   ├── main.py                  # Application entry point + auto-migrations
+│   ├── database.py              # SQLAlchemy engine and session factory
+│   ├── models.py                # ORM models for all database tables
 │   ├── schemas.py               # Pydantic request/response schemas
-│   ├── pdf_generator.py         # ReportLab PDF engine (all document types)
-│   ├── ai_parser.py             # NLP command parser
-│   ├── routes/                  # API route handlers
-│   │   ├── invoices.py          # Invoice CRUD + PDF
-│   │   ├── quotations.py        # Quotation CRUD + convert + PDF
-│   │   ├── payments.py          # Payment recording + receipt voucher
-│   │   ├── expenses.py          # General + daily expenses
-│   │   ├── bank_accounts.py     # Bank account management
-│   │   ├── bank_transactions.py # Transaction ledger + statement
-│   │   ├── cheques.py           # Cheque register
+│   ├── pdf_generator.py         # ReportLab engine — all document types
+│   ├── ai_parser.py             # Offline NLP command parser
+│   ├── routes/
+│   │   ├── invoices.py          # Invoice CRUD + PDF generation
+│   │   ├── quotations.py        # Quotation CRUD + convert to invoice + PDF
+│   │   ├── payments.py          # Payment recording + receipt voucher PDF
+│   │   ├── expenses.py          # General and daily expense management
+│   │   ├── bank_accounts.py     # Bank account CRUD and summary
+│   │   ├── bank_transactions.py # Transaction ledger + statement PDF
+│   │   ├── cheques.py           # Cheque inward/outward register
 │   │   ├── customers.py         # Customer CRM
-│   │   ├── suppliers.py         # Supplier management
-│   │   ├── ledger.py            # Ledger + account statements
-│   │   ├── reports.py           # Sales / VAT / outstanding reports
-│   │   └── ai_command.py        # AI command processing
+│   │   ├── suppliers.py         # Supplier directory
+│   │   ├── ledger.py            # Customer ledger + account statements
+│   │   ├── reports.py           # Sales, VAT, outstanding, balance reports
+│   │   └── ai_command.py        # AI command routing
 │   └── requirements.txt
 │
 ├── frontend/                    # Next.js 14 + Tailwind CSS
 │   └── src/
-│       ├── app/                 # App Router pages
-│       │   ├── page.tsx         # Dashboard
-│       │   ├── invoices/        # Invoice list + new invoice
+│       ├── app/                 # Next.js App Router pages
+│       │   ├── page.tsx         # Main dashboard with KPI cards
+│       │   ├── invoices/        # Invoice list and creation
 │       │   ├── quotations/      # Quotation builder
 │       │   ├── payments/        # Payment recording
-│       │   ├── expenses/daily/  # Daily expense tracker
+│       │   ├── expenses/daily/  # Daily petty cash tracker
 │       │   ├── bank/            # Bank accounts, transactions, cheques
-│       │   ├── ledger/          # Customer ledger
-│       │   ├── reports/         # Reports dashboard
+│       │   ├── ledger/          # Customer ledger view
+│       │   ├── reports/         # Reports and analytics
 │       │   └── ai/              # AI command interface
 │       ├── components/
-│       │   ├── Sidebar.tsx      # Navigation sidebar
-│       │   └── Header.tsx       # Page header
-│       └── lib/api.ts           # Axios API client
+│       │   ├── Sidebar.tsx      # Application navigation
+│       │   └── Header.tsx       # Page header component
+│       └── lib/api.ts           # Centralised Axios API client
 │
 ├── desktop/                     # Tauri desktop wrapper
 │   └── src-tauri/
-│       ├── src/main.rs          # Tauri entry point
-│       ├── Cargo.toml           # Rust dependencies
-│       └── tauri.conf.json      # Window + bundle config
+│       ├── src/main.rs          # Tauri application entry point
+│       ├── Cargo.toml           # Rust dependency manifest
+│       └── tauri.conf.json      # Window configuration and bundle settings
 │
 ├── docs/
-│   ├── assets/                  # Logo and branding files
-│   └── screenshots/             # App screenshots
+│   ├── assets/                  # Logo and branding assets
+│   └── screenshots/             # Application screenshots
 │
 ├── setup.bat                    # First-time dependency installer
-├── start.bat                    # Launch backend + frontend
+├── start.bat                    # Launch backend and frontend together
 └── README.md
 ```
 
 ---
 
-## Installation
+## ⚡ Installation
 
 ### Prerequisites
 
-| Tool | Version |
-|------|---------|
+| Tool | Minimum Version |
+|------|----------------|
 | Python | 3.10+ |
 | Node.js | 18+ |
 
-### Quick Start (Windows)
+### Quick Start — Windows
 
 ```bat
 git clone https://github.com/zohair-azmat-ai/FinPilot-AI-Desktop-Accounting-Software.git
 cd FinPilot-AI-Desktop-Accounting-Software
+
+REM Install all dependencies (first time only)
 setup.bat
+
+REM Launch the application
 start.bat
 ```
 
-App opens at **http://localhost:3000**
+The application opens at **http://localhost:3000** and the FastAPI backend starts automatically on port 8001.
 
 ---
 
-## Development Setup
+## 🔧 Development Setup
 
-### Backend
+### Backend — FastAPI
 
 ```bash
 cd backend
@@ -250,9 +310,9 @@ pip install -r requirements.txt
 uvicorn main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
-Swagger docs: http://127.0.0.1:8001/docs
+Interactive API docs available at: http://127.0.0.1:8001/docs
 
-### Frontend
+### Frontend — Next.js
 
 ```bash
 cd frontend
@@ -260,83 +320,64 @@ npm install
 npm run dev
 ```
 
-UI: http://localhost:3000
+Development UI at: http://localhost:3000
+
+### Environment Configuration
+
+Override the default API URL by creating `frontend/.env.local`:
+
+```env
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8001
+```
 
 ---
 
-## Build Desktop App
+## 🖥️ Build Desktop App
 
-### 1. Bundle Backend
+### Step 1 — Bundle the Backend
 
 ```bash
 cd backend
 pyinstaller backend.spec --noconfirm
-# Output → backend/dist/backend/backend.exe
+# Output: backend/dist/backend/backend.exe
 ```
 
-### 2. Export Frontend
+### Step 2 — Export the Frontend
 
 ```bash
 cd frontend
 npm run build
-# Output → frontend/out/
+# Output: frontend/out/ (static HTML/CSS/JS)
 ```
 
-### 3. Package with Tauri
+### Step 3 — Package with Tauri
 
 ```bash
-# Requires Rust: https://rustup.rs
+# Prerequisite: install Rust from https://rustup.rs
 cd src-tauri
 cargo tauri build
-# Output → src-tauri/target/release/bundle/
+# Output: src-tauri/target/release/bundle/
 ```
+
+The final output is a self-contained Windows installer (`.msi` or `.exe`) that bundles the backend, frontend, and Tauri shell into a single distributable package.
 
 ---
 
-## AI Command Examples
+## 🗺️ Roadmap
 
-Natural language commands processed locally — no API key, no internet:
-
-```
-"Create invoice for Gulf Extrusion 1000 AED"
-"Add payment 500 AED to invoice INV-0001"
-"Show ledger for Ahmed LLC"
-"Make statement for May"
-"Show VAT report"
-"Backup database"
-```
-
----
-
-## Data Storage
-
-Everything stored locally on the machine:
-
-```
-%USERPROFILE%\FinPilot\
-  ├── finpilot.db          # SQLite database
-  ├── assets\
-  │   ├── letterhead.jpg   # Company letterhead
-  │   └── stamp.png        # Company stamp
-  ├── exports\             # Generated PDFs
-  └── backups\             # Database backups
-```
+- [ ] Multi-company support with separate databases
+- [ ] Direct PDF email delivery from within the app
+- [ ] Purchase order and goods receipt module
+- [ ] Inventory and stock management
+- [ ] WhatsApp PDF sharing integration
+- [ ] Arabic language UI support
+- [ ] Mobile companion app (read-only dashboard)
+- [ ] Optional Claude API integration for advanced AI reasoning
+- [ ] Auto-scheduled report delivery
 
 ---
 
-## Roadmap
-
-- [ ] Multi-company support
-- [ ] Email PDF directly from app
-- [ ] Purchase order module
-- [ ] Inventory management
-- [ ] WhatsApp PDF sharing
-- [ ] Arabic language support
-- [ ] Mobile companion (view-only)
-
----
-
-## Author
+## 👨‍💻 Author
 
 <div align="center">
 
@@ -344,13 +385,13 @@ Everything stored locally on the machine:
 
 [![GitHub](https://img.shields.io/badge/GitHub-zohair--azmat--ai-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/zohair-azmat-ai)
 
-*Built for UAE workshop owners who need professional accounting without enterprise pricing.*
+*Built with precision for real UAE workshop operations.*
 
 </div>
 
 ---
 
-## License
+## 📜 License
 
 <div align="center">
 
