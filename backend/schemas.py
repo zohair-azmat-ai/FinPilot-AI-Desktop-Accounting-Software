@@ -346,6 +346,46 @@ class ChequeOut(BaseModel):
         from_attributes = True
 
 
+class DeliveryNoteItemCreate(BaseModel):
+    description: str
+    quantity: float = 1.0
+    remarks: Optional[str] = ""
+
+class DeliveryNoteItemOut(DeliveryNoteItemCreate):
+    id: int
+    class Config:
+        from_attributes = True
+
+class DeliveryNoteCreate(BaseModel):
+    customer_id: Optional[int] = None
+    date: Optional[datetime] = None
+    remarks: Optional[str] = ""
+    letterhead: Optional[bool] = True
+    items: List[DeliveryNoteItemCreate]
+
+class DeliveryNoteUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    date: Optional[datetime] = None
+    remarks: Optional[str] = ""
+    letterhead: Optional[bool] = True
+    status: Optional[str] = "draft"
+    items: Optional[List[DeliveryNoteItemCreate]] = None
+
+class DeliveryNoteOut(BaseModel):
+    id: int
+    dn_number: str
+    customer_id: Optional[int] = None
+    customer: Optional[Customer] = None
+    date: datetime
+    remarks: str
+    status: str
+    letterhead: bool
+    items: List[DeliveryNoteItemOut]
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+
 class ExpenseCreate(BaseModel):
     date: Optional[datetime] = None
     category: str

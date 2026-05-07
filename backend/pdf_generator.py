@@ -1378,3 +1378,199 @@ def generate_bank_statement_pdf(stmt: dict, company: dict) -> str:
 
     doc.build(story)
     return filepath
+
+
+# ── Delivery Note (UAE Workshop Style) ────────────────────────────────────────
+def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
+    filename = f"DeliveryNote_{dn_data['dn_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
+    filepath = os.path.join(EXPORT_DIR, filename)
+
+    use_lh    = dn_data.get("letterhead", True) and os.path.exists(LETTERHEAD_PATH)
+    page_w, page_h = A4
+
+    LH_MAX_H  = 70 * mm
+    LH_MIN_H  = 62 * mm
+    raw_lh_h  = _lh_page_height() if use_lh else 0.0
+    lh_draw_h = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
+    top_margin = (lh_draw_h + 6 * mm) if lh_draw_h else 63 * mm
+
+    def _draw_lh_dn(canv, _doc):
+        if not lh_draw_h:
+            return
+        canv.saveState()
+        canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
+                       width=page_w, height=lh_draw_h,
+                       preserveAspectRatio=False, mask='auto')
+        canv.setStrokeColor(colors.HexColor("#D0D7DE"))
+        canv.setLineWidth(0.4)
+        canv.line(0, page_h - lh_draw_h - 0.5 * mm, page_w, page_h - lh_draw_h - 0.5 * mm)
+        canv.restoreState()
+
+    doc = SimpleDocTemplate(
+        filepath, pagesize=A4,
+        leftMargin=15 * mm, rightMargin=15 * mm,
+        topMargin=top_margin, bottomMargin=4 * mm,
+    )
+
+    title_s = ParagraphStyle("dn_title", fontName="Helvetica-Bold", fontSize=15,
+                              textColor=PRIMARY, alignment=TA_CENTER)
+    sub_s   = ParagraphStyle("dn_sub",   fontName="Helvetica",      fontSize=8,
+                              textColor=MED_GRAY, alignment=TA_CENTER)
+    lbl_s   = ParagraphStyle("dn_lbl",   fontName="Helvetica-Bold", fontSize=8, textColor=DARK)
+    val_s   = ParagraphStyle("dn_val",   fontName="Helvetica",      fontSize=9, textColor=DARK)
+    val_r   = ParagraphStyle("dn_val_r", fontName="Helvetica",      fontSize=9, textColor=DARK, alignment=TA_RIGHT)
+    hdr_s   = ParagraphStyle("dn_hdr",   fontName="Helvetica-Bold", fontSize=8, textColor=WHITE, alignment=TA_CENTER)
+    row_c   = ParagraphStyle("dn_rc",    fontName="Helvetica",      fontSize=8, textColor=DARK, alignment=TA_CENTER)
+    row_l   = ParagraphStyle("dn_rl",    fontName="Helvetica",      fontSize=8, textColor=DARK)
+    sig_s   = ParagraphStyle("dn_sig",   fontName="Helvetica",      fontSize=8, textColor=MED_GRAY, alignment=TA_CENTER)
+    sig_b   = ParagraphStyle("dn_sigb",  fontName="Helvetica-Bold", fontSize=8, textColor=DARK, alignment=TA_CENTER)
+    foot_s  = ParagraphStyle("dn_foot",  fontName="Helvetica",      fontSize=7, textColor=MED_GRAY, alignment=TA_CENTER)
+
+    story = []
+
+    if not lh_draw_h:
+        comp_s = ParagraphStyle("dn_comp", fontName="Helvetica-Bold", fontSize=14, textColor=PRIMARY, alignment=TA_CENTER)
+        story.append(Paragraph(company.get("name", "Company Name"), comp_s))
+        story.append(Spacer(1, 1 * mm))
+        addr_s = ParagraphStyle("dn_addr", fontName="Helvetica", fontSize=8, textColor=MED_GRAY, alignment=TA_CENTER)
+        if company.get("address"):
+            story.append(Paragraph(company["address"].replace("\n", "  |  "), addr_s))
+        if company.get("phone") or company.get("email"):
+            story.append(Paragraph(
+                f"Tel: {company.get('phone', '')}   Email: {company.get('email', '')}", addr_s))
+        story.append(Spacer(1, 3 * mm))
+        story.append(HRFlowable(width="100%", thickness=0.8, color=PRIMARY))
+        story.append(Spacer(1, 2 * mm))
+
+    story.append(Spacer(1, 1 * mm))
+    story.append(Paragraph("DELIVERY NOTE", title_s))
+    story.append(Paragraph("&#x625;&#x634;&#x639;&#x627;&#x631; &#x62A;&#x633;&#x644;&#x64A;&#x645;", sub_s))
+    story.append(Spacer(1, 5 * mm))
+
+    customer  = dn_data.get("customer") or {}
+    dn_number = dn_data.get("dn_number", "")
+    dn_date   = dn_data.get("date", datetime.now().strftime("%d %b %Y"))
+    remarks   = dn_data.get("remarks", "")
+
+    left_cell = [Paragraph("<b>To:</b>", lbl_s), Paragraph(f"<b>{_xe(customer.get('name', '—'))}</b>", val_s)]
+    if customer.get("address"):
+        left_cell.append(Paragraph(_xe(customer["address"].replace("\n", "<br/>")), val_s))
+    if customer.get("phone"):
+        left_cell.append(Paragraph(f"Tel: {_xe(customer['phone'])}", val_s))
+    if customer.get("trn"):
+        left_cell.append(Paragraph(f"TRN: {_xe(customer['trn'])}", val_s))
+
+    right_cell = [
+        Paragraph(f"<b>DN No:</b>   {_xe(dn_number)}", val_r),
+        Paragraph(f"<b>Date:</b>    {_xe(str(dn_date))}", val_r),
+    ]
+    if remarks:
+        right_cell.append(Spacer(1, 3))
+        right_cell.append(Paragraph(f"<b>Remarks:</b> {_xe(remarks)}", val_r))
+
+    info_t = Table([[left_cell, right_cell]], colWidths=[100 * mm, 80 * mm])
+    info_t.setStyle(TableStyle([
+        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+        ("BOX",          (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ("TOPPADDING",   (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+        ("LEFTPADDING",  (0, 0), (0, 0),   8),
+        ("RIGHTPADDING", (1, 0), (1, 0),   8),
+    ]))
+    story.append(info_t)
+    story.append(Spacer(1, 5 * mm))
+
+    items_data = dn_data.get("items", [])
+    _actual_n  = len(items_data)
+    _OVERHEAD_DN = 100 * mm
+    _ROW_H_DN    = 9  * mm
+    _usable_h    = page_h - top_margin - 4 * mm
+    _max_rows    = max(0, int((_usable_h - _OVERHEAD_DN) / _ROW_H_DN))
+    _filler_n    = min(15, max(0, _max_rows - _actual_n))
+    MIN_ROWS     = _actual_n + _filler_n
+
+    dn_col_w = [14 * mm, 90 * mm, 20 * mm, 56 * mm]
+
+    table_data = [[
+        Paragraph("S.NO",        hdr_s),
+        Paragraph("DESCRIPTION", hdr_s),
+        Paragraph("QTY",         hdr_s),
+        Paragraph("REMARKS",     hdr_s),
+    ]]
+
+    for row_idx in range(MIN_ROWS):
+        if row_idx < _actual_n:
+            it = items_data[row_idx]
+            table_data.append([
+                Paragraph(str(it.get("sno", row_idx + 1)), row_c),
+                Paragraph(_xe(str(it.get("description", ""))), row_l),
+                Paragraph(str(it.get("quantity", "")), row_c),
+                Paragraph(_xe(str(it.get("remarks", ""))), row_l),
+            ])
+        else:
+            table_data.append([Paragraph("", row_c), Paragraph("", row_l),
+                                Paragraph("", row_c), Paragraph("", row_l)])
+
+    dn_table = Table(
+        table_data,
+        colWidths=dn_col_w,
+        rowHeights=[9 * mm] + [_ROW_H_DN] * MIN_ROWS
+    )
+    dn_table.setStyle(TableStyle([
+        ("BACKGROUND",     (0, 0), (-1, 0),  PRIMARY),
+        ("FONTSIZE",       (0, 0), (-1, -1), 8),
+        ("ALIGN",          (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN",          (1, 1), (1, -1),  "LEFT"),
+        ("ALIGN",          (3, 1), (3, -1),  "LEFT"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [LIGHT_GRAY, WHITE]),
+        ("GRID",           (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",     (0, 1), (-1, -1), 8),
+        ("BOTTOMPADDING",  (0, 1), (-1, -1), 8),
+        ("LEFTPADDING",    (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING",   (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",    (1, 1), (1, -1),  6),
+        ("LEFTPADDING",    (3, 1), (3, -1),  6),
+    ]))
+    story.append(dn_table)
+    story.append(Spacer(1, 6 * mm))
+
+    stamp_path = _get_stamp_path()
+    recv_cell  = [
+        Spacer(1, 12 * mm),
+        Paragraph("________________________", sig_s),
+        Spacer(1, 2 * mm),
+        Paragraph("Receiver's Signature", sig_b),
+    ]
+    auth_cell = []
+    if stamp_path:
+        try:
+            auth_cell.append(Image(stamp_path, width=22 * mm, height=22 * mm))
+        except Exception:
+            auth_cell.append(Spacer(1, 22 * mm))
+    else:
+        auth_cell.append(Spacer(1, 22 * mm))
+    auth_cell += [
+        Paragraph("________________________", sig_s),
+        Spacer(1, 2 * mm),
+        Paragraph("Authorized Signature", sig_b),
+    ]
+
+    sig_t = Table([[recv_cell, auth_cell]], colWidths=[90 * mm, 90 * mm], rowHeights=[32 * mm])
+    sig_t.setStyle(TableStyle([
+        ("BOX",          (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ("INNERGRID",    (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ("VALIGN",       (0, 0), (-1, -1), "BOTTOM"),
+        ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
+        ("TOPPADDING",   (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+    ]))
+    story.append(sig_t)
+
+    story.append(Spacer(1, 4 * mm))
+    story.append(HRFlowable(width="100%", thickness=0.4, color=MED_GRAY))
+    story.append(Spacer(1, 2 * mm))
+    story.append(Paragraph("This is a computer generated delivery note.", foot_s))
+
+    doc.build(story, onFirstPage=_draw_lh_dn, onLaterPages=lambda c, d: None)
+    return filepath

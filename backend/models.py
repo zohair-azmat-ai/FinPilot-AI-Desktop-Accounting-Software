@@ -270,6 +270,32 @@ class Cheque(Base):
     bank_account = relationship("BankAccount", back_populates="cheques")
 
 
+class DeliveryNote(Base):
+    __tablename__ = "delivery_notes"
+    id = Column(Integer, primary_key=True, index=True)
+    dn_number = Column(String, unique=True, nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    date = Column(DateTime, default=datetime.utcnow)
+    remarks = Column(Text, default="")
+    status = Column(String, default="draft")  # draft, delivered
+    letterhead = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    customer = relationship("Customer")
+    items = relationship("DeliveryNoteItem", back_populates="delivery_note", cascade="all, delete-orphan")
+
+
+class DeliveryNoteItem(Base):
+    __tablename__ = "delivery_note_items"
+    id = Column(Integer, primary_key=True, index=True)
+    dn_id = Column(Integer, ForeignKey("delivery_notes.id"))
+    description = Column(String, nullable=False)
+    quantity = Column(Float, default=1.0)
+    remarks = Column(String, default="")
+
+    delivery_note = relationship("DeliveryNote", back_populates="items")
+
+
 class Expense(Base):
     __tablename__ = "expenses"
     id = Column(Integer, primary_key=True, index=True)

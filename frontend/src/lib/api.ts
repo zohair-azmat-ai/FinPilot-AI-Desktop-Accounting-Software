@@ -110,6 +110,14 @@ export const updateChequeStatus = (id: number, status: string) =>
 export const deleteCheque = (id: number) => api.delete(`/api/cheques/${id}`);
 export const getChequeStats = () => api.get("/api/cheques/summary/stats");
 
+// Delivery Notes
+export const getDeliveryNotes = (params?: Record<string, unknown>) => api.get("/api/delivery-notes/", { params });
+export const getDeliveryNote = (id: number) => api.get(`/api/delivery-notes/${id}`);
+export const createDeliveryNote = (data: unknown) => api.post("/api/delivery-notes/", data);
+export const updateDeliveryNote = (id: number, data: unknown) => api.put(`/api/delivery-notes/${id}`, data);
+export const deleteDeliveryNote = (id: number) => api.delete(`/api/delivery-notes/${id}`);
+export const downloadDeliveryNotePDF = (id: number) => `${API_URL}/api/delivery-notes/${id}/pdf`;
+
 // Expenses
 export const getExpenses = (params?: Record<string, unknown>) => api.get("/api/expenses/", { params });
 export const getExpenseSummary = (params?: Record<string, unknown>) =>

@@ -6,7 +6,7 @@ from datetime import datetime
 
 from database import engine, DB_PATH
 import models
-from routes import company, customers, suppliers, items, quotations, invoices, payments, ledger, reports, ai_command, bank_accounts, bank_transactions, cheques, expenses
+from routes import company, customers, suppliers, items, quotations, invoices, payments, ledger, reports, ai_command, bank_accounts, bank_transactions, cheques, expenses, delivery_notes
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -36,6 +36,10 @@ def _run_migrations():
         ("quotations",        "include_stamp",                "INTEGER DEFAULT 0"),
         ("quotations",        "letterhead",                   "INTEGER DEFAULT 1"),
         ("expenses",          "expense_type",                 "TEXT DEFAULT 'general'"),
+        ("delivery_notes",    "status",                       "TEXT DEFAULT 'draft'"),
+        ("delivery_notes",    "remarks",                      "TEXT DEFAULT ''"),
+        ("delivery_notes",    "letterhead",                   "INTEGER DEFAULT 1"),
+        ("delivery_note_items", "remarks",                    "TEXT DEFAULT ''"),
     ]
     with engine.connect() as conn:
         for table, column, col_def in migrations:
@@ -73,6 +77,7 @@ app.include_router(bank_accounts.router)
 app.include_router(bank_transactions.router)
 app.include_router(cheques.router)
 app.include_router(expenses.router)
+app.include_router(delivery_notes.router)
 
 
 @app.get("/")

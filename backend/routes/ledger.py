@@ -10,7 +10,7 @@ from pdf_generator import generate_statement_pdf
 router = APIRouter(prefix="/api/ledger", tags=["ledger"])
 
 
-@router.get("/customer/{customer_id}", response_model=List[schemas.LedgerEntryOut])
+@router.get("/customer/{customer_id}")
 def get_customer_ledger(
     customer_id: int,
     date_from: Optional[str] = None,
@@ -21,14 +21,43 @@ def get_customer_ledger(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    q = db.query(models.LedgerEntry).filter(models.LedgerEntry.customer_id == customer_id)
+    all_entries = (
+        db.query(models.LedgerEntry)
+        .filter(models.LedgerEntry.customer_id == customer_id)
+        .order_by(models.LedgerEntry.date, models.LedgerEntry.id)
+        .all()
+    )
 
-    if date_from:
-        q = q.filter(models.LedgerEntry.date >= datetime.fromisoformat(date_from))
-    if date_to:
-        q = q.filter(models.LedgerEntry.date <= datetime.fromisoformat(date_to))
+    dt_from = datetime.fromisoformat(date_from) if date_from else None
+    dt_to   = datetime.fromisoformat(date_to)   if date_to   else None
 
-    return q.order_by(models.LedgerEntry.date, models.LedgerEntry.id).all()
+    # Running balance starts from customer opening balance + any entries before date_from
+    running = customer.opening_balance or 0.0
+    if dt_from:
+        for e in all_entries:
+            if e.date < dt_from:
+                running = round(running + e.debit - e.credit, 2)
+
+    filtered = [e for e in all_entries if
+                (dt_from is None or e.date >= dt_from) and
+                (dt_to   is None or e.date <= dt_to)]
+
+    result = []
+    for e in filtered:
+        running = round(running + e.debit - e.credit, 2)
+        result.append({
+            "id": e.id,
+            "date": e.date.isoformat(),
+            "description": e.description,
+            "debit": e.debit,
+            "credit": e.credit,
+            "balance": running,
+            "entry_type": e.entry_type,
+            "invoice_id": e.invoice_id,
+            "payment_id": e.payment_id,
+            "customer_id": customer_id,
+        })
+    return result
 
 
 @router.get("/statement/{customer_id}")

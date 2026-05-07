@@ -89,7 +89,45 @@ def parse_ai_command(command: str) -> Dict[str, Any]:
     if re.search(r'backup|export\s+database', cmd):
         return {"action": "backup_database", "message": "Starting database backup..."}
 
+    # Delivery note commands
+    dn_create = re.search(r'create\s+delivery\s+note\s+for\s+(.+)', cmd)
+    if dn_create:
+        return {
+            "action": "navigate",
+            "page": "/delivery-notes",
+            "customer_name": dn_create.group(1).strip().title(),
+            "message": f"Opening Delivery Notes — create a note for {dn_create.group(1).title()}"
+        }
+
+    if re.search(r'(show|list|view|open)\s+delivery\s+notes?', cmd):
+        return {"action": "navigate", "page": "/delivery-notes", "message": "Opening Delivery Notes"}
+
+    if re.search(r'delivery\s+note', cmd):
+        return {"action": "navigate", "page": "/delivery-notes", "message": "Opening Delivery Notes"}
+
+    # Statement with date range
+    stmt_range = re.search(
+        r'(?:generate|show|make)\s+statement\s+for\s+(.+?)\s+from\s+(\w+)\s+to\s+(\w+)', cmd
+    )
+    if stmt_range:
+        return {
+            "action": "navigate",
+            "page": "/statements",
+            "customer_name": stmt_range.group(1).strip().title(),
+            "message": f"Opening Statement for {stmt_range.group(1).title()} ({stmt_range.group(2).title()} to {stmt_range.group(3).title()})"
+        }
+
+    # Show customer ledger (generic navigate)
+    if re.search(r'(show|open|view)\s+(customer\s+)?ledger', cmd):
+        return {"action": "navigate", "page": "/ledger", "message": "Opening Customer Ledger"}
+
     return {
         "action": "unknown",
-        "message": f"I couldn't understand: '{command}'. Try: 'Create invoice for [Customer] [Amount] AED', 'Show ledger for [Customer]', 'Make statement for [Month]', 'Add payment [Amount] AED to invoice [Number]'"
+        "message": (
+            f"I couldn't understand: '{command}'. "
+            "Try: 'Create invoice for [Customer] [Amount] AED', "
+            "'Show ledger for [Customer]', 'Make statement for [Month]', "
+            "'Add payment [Amount] AED to invoice [Number]', "
+            "'Create delivery note for [Customer]', 'Show delivery notes'"
+        )
     }
