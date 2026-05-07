@@ -1,7 +1,7 @@
 <div align="center">
 
 <p align="center">
-  <img src="docs/assets/finpilot-logo.png" width="420" alt="FinPilot AI Logo" />
+  <img src="./docs/assets/finpilot-logo.png" width="420" alt="FinPilot AI Logo">
 </p>
 
 # FinPilot AI — Desktop Accounting Software
