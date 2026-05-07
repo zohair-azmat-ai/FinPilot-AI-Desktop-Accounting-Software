@@ -1,0 +1,120 @@
+import axios from "axios";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+
+export const api = axios.create({
+  baseURL: API_URL,
+  headers: { "Content-Type": "application/json" },
+});
+
+// Company
+export const getCompany = () => api.get("/api/company/");
+export const saveCompany = (data: unknown) => api.post("/api/company/", data);
+export const uploadStamp = (file: File) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return api.post("/api/company/stamp", fd, { headers: { "Content-Type": undefined } });
+};
+
+// Customers
+export const getCustomers = () => api.get("/api/customers/");
+export const getCustomer = (id: number) => api.get(`/api/customers/${id}`);
+export const createCustomer = (data: unknown) => api.post("/api/customers/", data);
+export const updateCustomer = (id: number, data: unknown) => api.put(`/api/customers/${id}`, data);
+export const deleteCustomer = (id: number) => api.delete(`/api/customers/${id}`);
+
+// Suppliers
+export const getSuppliers = () => api.get("/api/suppliers/");
+export const createSupplier = (data: unknown) => api.post("/api/suppliers/", data);
+export const updateSupplier = (id: number, data: unknown) => api.put(`/api/suppliers/${id}`, data);
+export const deleteSupplier = (id: number) => api.delete(`/api/suppliers/${id}`);
+
+// Items
+export const getItems = () => api.get("/api/items/");
+export const createItem = (data: unknown) => api.post("/api/items/", data);
+export const updateItem = (id: number, data: unknown) => api.put(`/api/items/${id}`, data);
+export const deleteItem = (id: number) => api.delete(`/api/items/${id}`);
+
+// Quotations
+export const getQuotations = () => api.get("/api/quotations/");
+export const getQuotation = (id: number) => api.get(`/api/quotations/${id}`);
+export const createQuotation = (data: unknown) => api.post("/api/quotations/", data);
+export const convertQuotation = (id: number) => api.post(`/api/quotations/${id}/convert`);
+export const deleteQuotation = (id: number) => api.delete(`/api/quotations/${id}`);
+export const downloadQuotationPDF = (id: number) => `${API_URL}/api/quotations/${id}/pdf`;
+
+// Invoices
+export const getInvoices = (params?: Record<string, unknown>) => api.get("/api/invoices/", { params });
+export const getInvoice = (id: number) => api.get(`/api/invoices/${id}`);
+export const createInvoice = (data: unknown) => api.post("/api/invoices/", data);
+export const updateInvoice = (id: number, data: unknown) => api.put(`/api/invoices/${id}`, data);
+export const deleteInvoice = (id: number) => api.delete(`/api/invoices/${id}`);
+export const downloadInvoicePDF = (id: number) => `${API_URL}/api/invoices/${id}/pdf`;
+
+// Payments
+export const getPayments = (params?: Record<string, unknown>) => api.get("/api/payments/", { params });
+export const createPayment = (data: unknown) => api.post("/api/payments/", data);
+export const deletePayment = (id: number) => api.delete(`/api/payments/${id}`);
+export const downloadPaymentPDF = (id: number) => `${API_URL}/api/payments/${id}/pdf`;
+export const downloadReceiptPDF = (id: number) => `${API_URL}/api/payments/${id}/pdf`;
+
+// Ledger
+export const getCustomerLedger = (customerId: number, params?: Record<string, unknown>) =>
+  api.get(`/api/ledger/customer/${customerId}`, { params });
+export const getStatement = (customerId: number, params?: Record<string, unknown>) =>
+  api.get(`/api/ledger/statement/${customerId}`, { params });
+export const downloadStatementPDF = (customerId: number, params?: Record<string, string>) => {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return `${API_URL}/api/ledger/statement/${customerId}/pdf${qs}`;
+};
+
+// Reports
+export const getDashboard = () => api.get("/api/reports/dashboard");
+export const getSalesReport = (params?: Record<string, unknown>) => api.get("/api/reports/sales", { params });
+export const getOutstandingReport = () => api.get("/api/reports/outstanding");
+export const getVATReport = (params?: Record<string, unknown>) => api.get("/api/reports/vat", { params });
+export const getCustomerBalanceReport = () => api.get("/api/reports/customer-balance");
+
+// AI
+export const processAICommand = (command: string) => api.post("/api/ai/command", { command });
+
+// Backup
+export const backupDatabase = () => api.get("/api/backup");
+
+// Bank Accounts
+export const getBankAccounts = () => api.get("/api/bank-accounts/");
+export const getBankAccountsSummary = () => api.get("/api/bank-accounts/summary");
+export const getBankAccount = (id: number) => api.get(`/api/bank-accounts/${id}`);
+export const getBankBalance = (id: number) => api.get(`/api/bank-accounts/${id}/balance`);
+export const createBankAccount = (data: unknown) => api.post("/api/bank-accounts/", data);
+export const updateBankAccount = (id: number, data: unknown) => api.put(`/api/bank-accounts/${id}`, data);
+export const deleteBankAccount = (id: number) => api.delete(`/api/bank-accounts/${id}`);
+
+// Bank Transactions
+export const getBankTransactions = (params?: Record<string, unknown>) =>
+  api.get("/api/bank-transactions/", { params });
+export const createBankTransaction = (data: unknown) => api.post("/api/bank-transactions/", data);
+export const deleteBankTransaction = (id: number) => api.delete(`/api/bank-transactions/${id}`);
+export const getBankStatement = (accountId: number, params?: Record<string, string>) =>
+  api.get(`/api/bank-transactions/statement/${accountId}`, { params });
+export const downloadBankStatementPDF = (accountId: number, params?: Record<string, string>) => {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  return `${API_URL}/api/bank-transactions/statement/${accountId}/pdf${qs}`;
+};
+
+// Cheques
+export const getCheques = (params?: Record<string, unknown>) => api.get("/api/cheques/", { params });
+export const createCheque = (data: unknown) => api.post("/api/cheques/", data);
+export const updateChequeStatus = (id: number, status: string) =>
+  api.patch(`/api/cheques/${id}/status`, { status });
+export const deleteCheque = (id: number) => api.delete(`/api/cheques/${id}`);
+export const getChequeStats = () => api.get("/api/cheques/summary/stats");
+
+// Expenses
+export const getExpenses = (params?: Record<string, unknown>) => api.get("/api/expenses/", { params });
+export const getExpenseSummary = (params?: Record<string, unknown>) =>
+  api.get("/api/expenses/summary", { params });
+export const getExpenseCategories = () => api.get("/api/expenses/categories");
+export const createExpense = (data: unknown) => api.post("/api/expenses/", data);
+export const updateExpense = (id: number, data: unknown) => api.put(`/api/expenses/${id}`, data);
+export const deleteExpense = (id: number) => api.delete(`/api/expenses/${id}`);

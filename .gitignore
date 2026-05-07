@@ -1,0 +1,68 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+.env
+*.env
+
+# ── Backend build artifacts ───────────────────────────────────────────────────
+backend/__pycache__/
+backend/build/
+backend/dist/
+backend/build_log.txt
+
+# ── Node / Next.js ────────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# ── Tauri / Rust ──────────────────────────────────────────────────────────────
+target/
+src-tauri/target/
+desktop/src-tauri/target/
+*.app
+*.dmg
+
+# ── Database & user data ──────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── PDF exports & backups ─────────────────────────────────────────────────────
+exports/
+backups/
+
+# ── OS / IDE ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+
+# ── Root-level build outputs ──────────────────────────────────────────────────
+/build/
+/dist/
+
+# ── Tauri bundled backend (large binaries — not for version control) ──────────
+desktop/src-tauri/resources/
+src-tauri/resources/
+
+# ── Claude internal files ─────────────────────────────────────────────────────
+.claude/
+
+# ── Large binary assets in desktop ───────────────────────────────────────────
+desktop/src-tauri/target/
+

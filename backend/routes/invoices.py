@@ -1,0 +1,313 @@
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+from typing import List, Optional
+from datetime import datetime
+from database import get_db
+import models, schemas
+from pdf_generator import generate_invoice_pdf
+
+router = APIRouter(prefix="/api/invoices", tags=["invoices"])
+
+
+def _next_invoice_number(db: Session) -> tuple:
+    """Returns (invoice_number_string, use_series_flag).
+    Does NOT modify the DB — caller must increment the counter after a successful commit."""
+    company = db.query(models.Company).first()
+    if company and (company.invoice_current_number or 0) > 0:
+        prefix = company.invoice_prefix or ""
+        return f"{prefix}{company.invoice_current_number:04d}", True
+    # Legacy fallback: derive from last invoice number
+    last = db.query(models.Invoice).order_by(models.Invoice.id.desc()).first()
+    if not last:
+        return "0001", False
+    try:
+        num = int(last.invoice_number.split("-")[-1]) + 1
+    except Exception:
+        num = 1
+    return f"{num:04d}", False
+
+
+def _increment_invoice_counter(db: Session) -> None:
+    """Bump company.invoice_current_number by 1. Called only after invoice commit succeeds."""
+    company = db.query(models.Company).first()
+    if company and (company.invoice_current_number or 0) > 0:
+        company.invoice_current_number += 1
+        db.add(company)
+        db.commit()
+
+
+def _calculate_items(items_data, vat_rate=5.0):
+    subtotal = 0.0
+    vat_total = 0.0
+    processed = []
+    for item in items_data:
+        line_total = item.quantity * item.unit_price
+        vat_amt = round(line_total * (vat_rate / 100), 2) if item.vat_applicable else 0.0
+        item_total = round(line_total + vat_amt, 2)
+        subtotal += line_total
+        vat_total += vat_amt
+        processed.append({**item.model_dump(), "vat_amount": vat_amt, "total": item_total})
+    return processed, round(subtotal, 2), round(vat_total, 2)
+
+
+def _update_ledger(db: Session, invoice: models.Invoice):
+    db.query(models.LedgerEntry).filter(models.LedgerEntry.invoice_id == invoice.id).delete()
+
+    prev_balance = 0.0
+    prev_entries = (
+        db.query(models.LedgerEntry)
+        .filter(models.LedgerEntry.customer_id == invoice.customer_id)
+        .filter(models.LedgerEntry.date < invoice.date)
+        .order_by(models.LedgerEntry.date)
+        .all()
+    )
+    if prev_entries:
+        prev_balance = prev_entries[-1].balance
+
+    entry = models.LedgerEntry(
+        date=invoice.date,
+        customer_id=invoice.customer_id,
+        invoice_id=invoice.id,
+        description=f"Invoice {invoice.invoice_number}",
+        debit=invoice.total,
+        credit=0.0,
+        balance=round(prev_balance + invoice.total, 2),
+        entry_type="invoice"
+    )
+    db.add(entry)
+
+    later_entries = (
+        db.query(models.LedgerEntry)
+        .filter(models.LedgerEntry.customer_id == invoice.customer_id)
+        .filter(models.LedgerEntry.date > invoice.date)
+        .order_by(models.LedgerEntry.date)
+        .all()
+    )
+    running = entry.balance
+    for e in later_entries:
+        running = round(running + e.debit - e.credit, 2)
+        e.balance = running
+
+
+@router.get("/", response_model=List[schemas.InvoiceOut])
+def list_invoices(status: Optional[str] = None, customer_id: Optional[int] = None, db: Session = Depends(get_db)):
+    q = db.query(models.Invoice)
+    if status:
+        q = q.filter(models.Invoice.status == status)
+    if customer_id:
+        q = q.filter(models.Invoice.customer_id == customer_id)
+    return q.order_by(models.Invoice.id.desc()).all()
+
+
+@router.get("/{invoice_id}", response_model=schemas.InvoiceOut)
+def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
+    inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return inv
+
+
+@router.post("/", response_model=schemas.InvoiceOut)
+def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
+    company = db.query(models.Company).first()
+    vat_rate = company.vat_rate if company else 5.0
+
+    processed_items, subtotal, vat_total = _calculate_items(data.items, vat_rate)
+    total = round(subtotal + vat_total - (data.discount or 0), 2)
+    balance_due = total
+
+    inv_number, _use_series = _next_invoice_number(db)
+    invoice = models.Invoice(
+        invoice_number=inv_number,
+        customer_id=data.customer_id,
+        date=data.date or datetime.utcnow(),
+        due_date=data.due_date,
+        discount=data.discount or 0,
+        notes=data.notes or "",
+        letterhead=data.letterhead if data.letterhead is not None else True,
+        lpo_no=data.lpo_no or "",
+        do_no=data.do_no or "",
+        quotation_id=data.quotation_id,
+        is_cash=data.is_cash or False,
+        include_stamp=data.include_stamp or False,
+        require_customer_signature=data.require_customer_signature or False,
+        subtotal=subtotal,
+        vat_amount=vat_total,
+        total=total,
+        amount_paid=0.0,
+        balance_due=balance_due,
+        status="unpaid"
+    )
+    db.add(invoice)
+    db.flush()
+
+    for item in processed_items:
+        db_item = models.InvoiceItem(
+            invoice_id=invoice.id,
+            item_id=item.get("item_id"),
+            description=item["description"],
+            quantity=item["quantity"],
+            unit_price=item["unit_price"],
+            vat_applicable=item["vat_applicable"],
+            vat_amount=item["vat_amount"],
+            total=item["total"]
+        )
+        db.add(db_item)
+
+    db.flush()
+    if not invoice.is_cash:
+        _update_ledger(db, invoice)
+    db.commit()
+    # Increment counter only after successful commit
+    if _use_series:
+        _increment_invoice_counter(db)
+    db.refresh(invoice)
+    return invoice
+
+
+@router.put("/{invoice_id}", response_model=schemas.InvoiceOut)
+def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
+    inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    company = db.query(models.Company).first()
+    vat_rate = company.vat_rate if company else 5.0
+    processed_items, subtotal, vat_total = _calculate_items(data.items, vat_rate)
+    total = round(subtotal + vat_total - (data.discount or 0), 2)
+
+    inv.customer_id = data.customer_id
+    inv.date = data.date or inv.date
+    inv.due_date = data.due_date
+    inv.discount = data.discount or 0
+    inv.notes = data.notes or ""
+    inv.letterhead = data.letterhead if data.letterhead is not None else True
+    inv.lpo_no = data.lpo_no or ""
+    inv.do_no = data.do_no or ""
+    inv.is_cash = data.is_cash or False
+    inv.include_stamp = data.include_stamp or False
+    inv.require_customer_signature = data.require_customer_signature or False
+    inv.subtotal = subtotal
+    inv.vat_amount = vat_total
+    inv.total = total
+    inv.balance_due = round(total - inv.amount_paid, 2)
+    if inv.balance_due <= 0:
+        inv.status = "paid"
+    elif inv.amount_paid > 0:
+        inv.status = "partial"
+    else:
+        inv.status = "unpaid"
+
+    db.query(models.InvoiceItem).filter(models.InvoiceItem.invoice_id == invoice_id).delete()
+    for item in processed_items:
+        db_item = models.InvoiceItem(
+            invoice_id=inv.id,
+            item_id=item.get("item_id"),
+            description=item["description"],
+            quantity=item["quantity"],
+            unit_price=item["unit_price"],
+            vat_applicable=item["vat_applicable"],
+            vat_amount=item["vat_amount"],
+            total=item["total"]
+        )
+        db.add(db_item)
+
+    if not inv.is_cash:
+        _update_ledger(db, inv)
+    db.commit()
+    db.refresh(inv)
+    return inv
+
+
+@router.delete("/{invoice_id}")
+def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
+    inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # 1. Remove payment allocations pointing at this invoice
+    db.query(models.PaymentAllocation).filter(
+        models.PaymentAllocation.invoice_id == invoice_id
+    ).delete(synchronize_session=False)
+
+    # 2. Nullify the legacy invoice_id on Payments (don't delete the payment itself)
+    db.query(models.Payment).filter(
+        models.Payment.invoice_id == invoice_id
+    ).update({"invoice_id": None}, synchronize_session=False)
+
+    # 3. Nullify invoice_id on BankTransactions
+    db.query(models.BankTransaction).filter(
+        models.BankTransaction.invoice_id == invoice_id
+    ).update({"invoice_id": None}, synchronize_session=False)
+
+    # 4. Delete ledger entries for this invoice
+    db.query(models.LedgerEntry).filter(
+        models.LedgerEntry.invoice_id == invoice_id
+    ).delete(synchronize_session=False)
+
+    # 5. Delete invoice items explicitly (cascade handles this too, but be explicit)
+    db.query(models.InvoiceItem).filter(
+        models.InvoiceItem.invoice_id == invoice_id
+    ).delete(synchronize_session=False)
+
+    # 6. Delete the invoice
+    db.delete(inv)
+    db.commit()
+    return {"ok": True, "deleted_id": invoice_id}
+
+
+@router.get("/{invoice_id}/pdf")
+def download_invoice_pdf(invoice_id: int, db: Session = Depends(get_db)):
+    inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    company = db.query(models.Company).first()
+    comp_dict = {}
+    if company:
+        comp_dict = {
+            "name": company.name, "trn": company.trn,
+            "address": company.address, "phone": company.phone,
+            "email": company.email
+        }
+
+    customer = inv.customer
+    cust_dict = {}
+    if customer:
+        cust_dict = {
+            "name": customer.name, "trn": customer.trn,
+            "attn": customer.attn, "phone": customer.phone,
+            "address": customer.address,
+            "po_box": customer.po_box or "",
+        }
+
+    invoice_data = {
+        "invoice_number": inv.invoice_number,
+        "date": inv.date.strftime("%d %b %Y"),
+        "customer": cust_dict,
+        "items": [
+            {
+                "description": it.description,
+                "quantity": it.quantity,
+                "unit_price": it.unit_price,
+                "vat_applicable": it.vat_applicable,
+                "vat_amount": it.vat_amount,
+                "total": it.total
+            } for it in inv.items
+        ],
+        "subtotal": inv.subtotal,
+        "vat_amount": inv.vat_amount,
+        "discount": inv.discount,
+        "total": inv.total,
+        "notes": inv.notes,
+        "letterhead": inv.letterhead,
+        "lpo_no": inv.lpo_no or "",
+        "do_no": inv.do_no or "",
+        "is_cash": inv.is_cash,
+        "include_stamp": inv.include_stamp,
+        "require_customer_signature": inv.require_customer_signature,
+    }
+
+    filepath = generate_invoice_pdf(invoice_data, comp_dict)
+    return FileResponse(filepath, media_type="application/pdf", filename=f"Invoice_{inv.invoice_number}.pdf")

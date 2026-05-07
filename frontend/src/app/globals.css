@@ -1,0 +1,135 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-primary: #0A0B14;
+  --bg-secondary: #10121E;
+  --bg-card: #161828;
+  --bg-border: #1E2235;
+  --brand-indigo: #6366F1;
+  --brand-purple: #8B5CF6;
+}
+
+html, body {
+  background-color: var(--bg-primary);
+  color: #F1F5F9;
+  font-family: 'Inter', system-ui, sans-serif;
+  height: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #10121E;
+}
+::-webkit-scrollbar-thumb {
+  background: #1E2235;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6366F1;
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-gradient-to-r from-brand-indigo to-brand-purple text-white px-4 py-2 rounded-lg font-medium text-sm
+           hover:opacity-90 transition-all duration-150 flex items-center gap-2 shadow-glow-sm;
+  }
+
+  .btn-secondary {
+    @apply bg-bg-card border border-bg-border text-text-primary px-4 py-2 rounded-lg font-medium text-sm
+           hover:bg-bg-hover transition-all duration-150 flex items-center gap-2;
+  }
+
+  .btn-danger {
+    @apply bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-2 rounded-lg font-medium text-sm
+           hover:bg-red-500/20 transition-all duration-150 flex items-center gap-2;
+  }
+
+  .card {
+    @apply bg-bg-card border border-bg-border rounded-xl p-5 shadow-card;
+  }
+
+  .input {
+    @apply bg-bg-secondary border border-bg-border text-text-primary rounded-lg px-3 py-2 text-sm w-full
+           focus:outline-none focus:ring-2 focus:ring-brand-indigo/50 focus:border-brand-indigo
+           placeholder-text-muted transition-all duration-150;
+  }
+
+  .label {
+    @apply text-text-secondary text-xs font-medium uppercase tracking-wide mb-1 block;
+  }
+
+  .table-head {
+    @apply bg-bg-secondary border-b border-bg-border;
+  }
+
+  .table-head th {
+    @apply text-text-secondary text-xs font-semibold uppercase tracking-wide px-4 py-3 text-left;
+  }
+
+  .table-row {
+    @apply border-b border-bg-border hover:bg-bg-hover transition-colors duration-100;
+  }
+
+  .table-row td {
+    @apply px-4 py-3 text-sm text-text-primary;
+  }
+
+  .status-badge {
+    @apply px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-text-secondary
+           hover:text-text-primary hover:bg-bg-hover transition-all duration-150 cursor-pointer;
+  }
+
+  .sidebar-item-active {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white
+           bg-gradient-to-r from-brand-indigo/20 to-brand-purple/10 border border-brand-indigo/30;
+  }
+
+  .modal-overlay {
+    @apply fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4;
+  }
+
+  .modal {
+    @apply bg-bg-card border border-bg-border rounded-2xl shadow-2xl w-full;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bg-glass {
+    background: rgba(22, 24, 40, 0.8);
+    backdrop-filter: blur(12px);
+  }
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.5);
+}
+
+select option {
+  background-color: #161828;
+  color: #F1F5F9;
+}
