@@ -23,6 +23,7 @@ def parse_ai_command(command: str) -> Dict[str, Any]:
     if ledger_show:
         return {
             "action": "show_ledger",
+            "page": "/ledger",
             "customer_name": ledger_show.group(1).strip().title(),
             "message": f"Opening ledger for {ledger_show.group(1).title()}"
         }
@@ -35,6 +36,7 @@ def parse_ai_command(command: str) -> Dict[str, Any]:
     if stmt_month:
         return {
             "action": "show_statement_month",
+            "page": "/statements",
             "month": stmt_month.group(1).title(),
             "message": f"Generating account statements for {stmt_month.group(1).title()}"
         }
@@ -43,6 +45,7 @@ def parse_ai_command(command: str) -> Dict[str, Any]:
     if stmt_customer:
         return {
             "action": "show_statement",
+            "page": "/statements",
             "customer_name": stmt_customer.group(1).strip().title(),
             "message": f"Opening statement for {stmt_customer.group(1).title()}"
         }
