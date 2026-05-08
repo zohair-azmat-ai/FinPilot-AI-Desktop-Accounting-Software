@@ -44,9 +44,13 @@ export default function PurchaseOrdersPage() {
 
   const load = () => {
     setLoading(true);
-    Promise.all([getPurchaseOrders(), getSuppliers()])
-      .then(([po, sup]) => { setPos(po.data); setSuppliers(sup.data); })
-      .catch(() => toast.error("Failed to load data"))
+    Promise.allSettled([getPurchaseOrders(), getSuppliers()])
+      .then(([poRes, supRes]) => {
+        if (poRes.status === "fulfilled") setPos(poRes.value.data);
+        else { console.error("getPurchaseOrders failed:", poRes.reason); toast.error("Failed to load purchase orders"); }
+        if (supRes.status === "fulfilled") setSuppliers(supRes.value.data);
+        else { console.error("getSuppliers failed:", supRes.reason); toast.error("Failed to load suppliers"); }
+      })
       .finally(() => setLoading(false));
   };
 
