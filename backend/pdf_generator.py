@@ -658,8 +658,8 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
 
     stamp_path = _get_stamp_path()
 
-    # Bottom reserve: footer(15mm) + HR gap(5mm) + sig box(34mm) = 54mm
-    _BOT = 54 * mm
+    # Bottom reserve: HR at 18mm + gap(3mm) + sig box(34mm) = 55mm
+    _BOT = 55 * mm
 
     def _draw_stmt_page(canv, _doc):
         canv.saveState()
@@ -674,22 +674,15 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
             canv.line(0, page_h - lh_draw_h - 0.5 * mm,
                       page_w, page_h - lh_draw_h - 0.5 * mm)
 
-        # Footer text
-        footer_y = 11 * mm
-        canv.setFont("Helvetica", 7)
-        canv.setFillColor(MED_GRAY)
-        canv.drawCentredString(page_w / 2, footer_y,
-                               "This is a computer generated statement.")
-
-        # HR above footer
-        hr_y = footer_y + 5 * mm
-        canv.setStrokeColor(MED_GRAY)
-        canv.setLineWidth(0.4)
+        # HR above signature (no footer text on statement)
+        hr_y = 18 * mm
+        canv.setStrokeColor(colors.HexColor("#CBD5E1"))
+        canv.setLineWidth(0.5)
         canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
 
         # Signature block — right half only
         sig_h     = 34 * mm
-        sig_y     = hr_y + 4 * mm
+        sig_y     = hr_y + 3 * mm
         sig_x     = page_w / 2
         sig_w     = page_w - 15 * mm - sig_x
         center_cx = sig_x + sig_w / 2
@@ -757,7 +750,6 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
 
     # ── 2. Info block (2 columns) ─────────────────────────────────────────────
     period    = _period_str(date_from, date_to)
-    stmt_no   = f"ST-{datetime.now().strftime('%Y%m%d%H%M')}"
     today_str = datetime.now().strftime("%d %b %Y")
 
     left_rows = [
@@ -771,14 +763,12 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
                           Paragraph(_xe(customer["trn"]), val_s)])
 
     right_rows = [
-        [Paragraph("Statement No:", lbl_r),
-         Paragraph(stmt_no, val_rb)],
-        [Paragraph("Date:",         lbl_r),
-         Paragraph(today_str, val_r)],
+        [Paragraph("Statement Date:", lbl_r),
+         Paragraph(today_str, val_rb)],
     ]
 
-    left_inner  = Table(left_rows,  colWidths=[24 * mm, 66 * mm])
-    right_inner = Table(right_rows, colWidths=[32 * mm, 42 * mm])
+    left_inner  = Table(left_rows,  colWidths=[26 * mm, 66 * mm])
+    right_inner = Table(right_rows, colWidths=[36 * mm, 42 * mm])
     for t_inner in (left_inner, right_inner):
         t_inner.setStyle(TableStyle([
             ("VALIGN",        (0, 0), (-1, -1), "TOP"),
@@ -827,14 +817,15 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
             Paragraph(f"{entry.get('balance', 0):.2f}", style_rc),
         ])
 
-    # Filler rows to fill the page
+    # Filler rows — fills remaining page height
     _ROW_H  = 7 * mm
     _HDR_H  = 9 * mm
-    _OVER   = 60 * mm   # title + info block + spacers
+    # Overhead: Spacer(4) + title(12) + Spacer(5) + info_outer(~22) + Spacer(4) ≈ 47mm
+    _lh_story = 0 if lh_draw_h else 20 * mm
+    _OVER   = _lh_story + 47 * mm
     _avail  = page_h - top_margin - _BOT - _OVER
     _n_data = len(entries) + 2  # entries + OB + CB
     _fill   = max(0, int((_avail - _HDR_H) / _ROW_H) - _n_data)
-    _fill   = min(_fill, 10)
     for _ in range(_fill):
         data.append([Paragraph("", style_r)] * 5)
 
@@ -1560,11 +1551,8 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     lh_draw_h = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
     top_margin = (lh_draw_h + 6 * mm) if lh_draw_h else 63 * mm
 
-    use_stamp  = dn_data.get("show_stamp", False)
-    stamp_path = _get_stamp_path() if use_stamp else ""
-
-    # Bottom reserve: footer(15mm) + HR gap(5mm) + sig box(34mm) = 54mm
-    _BOT = 54 * mm
+    # Bottom reserve: footer(15mm) + HR gap(5mm) + sig box(32mm) = 52mm
+    _BOT = 52 * mm
 
     def _draw_dn_page(canv, _doc):
         canv.saveState()
@@ -1579,7 +1567,7 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
             canv.line(0, page_h - lh_draw_h - 0.5 * mm,
                       page_w, page_h - lh_draw_h - 0.5 * mm)
 
-        # Footer text (fixed 11mm from page bottom)
+        # Footer text
         footer_y = 11 * mm
         canv.setFont("Helvetica", 7)
         canv.setFillColor(MED_GRAY)
@@ -1587,54 +1575,44 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
                                "This is a computer generated delivery note.")
 
         # HR above footer
-        hr_y = footer_y + 5 * mm
-        canv.setStrokeColor(MED_GRAY)
-        canv.setLineWidth(0.4)
+        hr_y = footer_y + 4 * mm
+        canv.setStrokeColor(colors.HexColor("#CBD5E1"))
+        canv.setLineWidth(0.5)
         canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
 
-        # Signature box (full content width, split into left/right halves)
-        sig_h   = 34 * mm
-        sig_y   = hr_y + 4 * mm
+        # Signature box — full content width, split left (Receiver) / right (Authorized)
+        sig_h   = 32 * mm
+        sig_y   = hr_y + 3 * mm   # moved up slightly
         sig_x   = 15 * mm
         sig_w   = page_w - 30 * mm
         mid_x   = sig_x + sig_w / 2
 
-        # Box + divider
         canv.setStrokeColor(colors.HexColor("#94A3B8"))
-        canv.setLineWidth(0.7)
+        canv.setLineWidth(0.6)
         canv.rect(sig_x, sig_y, sig_w, sig_h)
         canv.line(mid_x, sig_y, mid_x, sig_y + sig_h)
 
-        # Signature line Y (13mm from bottom of sig box)
-        line_y    = sig_y + 13 * mm
-        half_line = 26 * mm
+        # Signature line 12mm from bottom of box
+        line_y    = sig_y + 12 * mm
+        half_line = 28 * mm
 
-        # ── LEFT: Receiver's Signature ──────────────────────────────────────────
+        # LEFT — Receiver's Signature
         left_cx = sig_x + sig_w / 4
         canv.setStrokeColor(PRIMARY)
-        canv.setLineWidth(1.0)
+        canv.setLineWidth(1.5)
         canv.line(left_cx - half_line, line_y, left_cx + half_line, line_y)
         canv.setFont("Helvetica-Bold", 8)
         canv.setFillColor(DARK)
-        canv.drawCentredString(left_cx, line_y - 5 * mm, "Receiver's Signature")
+        canv.drawCentredString(left_cx, line_y - 4.5 * mm, "Receiver's Signature")
 
-        # ── RIGHT: Authorized Signature (+ optional stamp above line) ───────────
+        # RIGHT — Authorized Signature (no stamp on DN)
         right_cx = sig_x + 3 * sig_w / 4
-        if use_stamp and stamp_path:
-            stamp_sz = 20 * mm
-            try:
-                canv.drawImage(stamp_path,
-                               right_cx - stamp_sz / 2, line_y + 2 * mm,
-                               width=stamp_sz, height=stamp_sz,
-                               preserveAspectRatio=True, mask='auto')
-            except Exception:
-                pass
         canv.setStrokeColor(PRIMARY)
-        canv.setLineWidth(1.0)
+        canv.setLineWidth(1.5)
         canv.line(right_cx - half_line, line_y, right_cx + half_line, line_y)
         canv.setFont("Helvetica-Bold", 8)
         canv.setFillColor(DARK)
-        canv.drawCentredString(right_cx, line_y - 5 * mm, "Authorized Signature")
+        canv.drawCentredString(right_cx, line_y - 4.5 * mm, "Authorized Signature")
 
         canv.restoreState()
 
@@ -1646,9 +1624,8 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
 
     # ── Styles ─────────────────────────────────────────────────────────────────
     title_s = ParagraphStyle("dn_title", fontName="Helvetica-Bold", fontSize=16,
-                              textColor=PRIMARY, alignment=TA_CENTER)
-    sub_s   = ParagraphStyle("dn_sub",   fontName="Helvetica",      fontSize=8,
-                              textColor=MED_GRAY, alignment=TA_CENTER)
+                              textColor=PRIMARY, alignment=TA_CENTER,
+                              spaceAfter=0, spaceBefore=0)
     lbl_s   = ParagraphStyle("dn_lbl",   fontName="Helvetica-Bold", fontSize=8, textColor=DARK)
     val_s   = ParagraphStyle("dn_val",   fontName="Helvetica",      fontSize=9, textColor=DARK)
     val_r   = ParagraphStyle("dn_val_r", fontName="Helvetica",      fontSize=9, textColor=DARK,
@@ -1725,12 +1702,12 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     _actual_n  = len(items_data)
     _HDR_H     = 8  * mm
     _ROW_H     = 8  * mm
-    # Story overhead above table: title(9) + arabic(5) + spacer(4) + info_t(~24) + spacer(4) ≈ 46mm
-    # Extra text header (no letterhead) adds ~24mm
-    _overhead  = 46 * mm + (24 * mm if not lh_draw_h else 0)
+    # Story overhead: Spacer(2) + title(11) + Spacer(4) + info_t(~24) + Spacer(4) ≈ 45mm
+    # Extra text header (no letterhead image) adds ~24mm
+    _overhead  = 45 * mm + (24 * mm if not lh_draw_h else 0)
     _avail     = page_h - top_margin - _BOT - _overhead
     _max_rows  = max(_actual_n, int((_avail - _HDR_H) / _ROW_H))
-    MIN_ROWS   = min(_max_rows, max(_actual_n, 12))   # cap at 12 to avoid overflow
+    MIN_ROWS   = _max_rows
 
     dn_col_w   = [14 * mm, 90 * mm, 20 * mm, 56 * mm]
     table_data = [[
@@ -1793,8 +1770,8 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
     lh_draw_h = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
     top_margin = (lh_draw_h + 6 * mm) if lh_draw_h else 63 * mm
 
-    use_stamp  = po_data.get("include_stamp", False)
-    stamp_path = _get_stamp_path() if use_stamp else ""
+    # Stamp always shown if file exists (regardless of include_stamp checkbox)
+    stamp_path = _get_stamp_path()
     _BOT       = 54 * mm
 
     def _draw_po_page(canv, _doc):
@@ -1815,8 +1792,8 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
                                "This is a computer generated purchase order.")
 
         hr_y = footer_y + 5 * mm
-        canv.setStrokeColor(MED_GRAY)
-        canv.setLineWidth(0.4)
+        canv.setStrokeColor(colors.HexColor("#CBD5E1"))
+        canv.setLineWidth(0.5)
         canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
 
         # Authorized signature block (right half)
@@ -1833,7 +1810,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
         line_y    = sig_y + 13 * mm
         half_line = 24 * mm
 
-        if use_stamp and stamp_path:
+        if stamp_path:
             stamp_sz = 20 * mm
             try:
                 canv.drawImage(stamp_path, center_cx - stamp_sz / 2, line_y + 2 * mm,
@@ -1843,11 +1820,11 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
                 pass
 
         canv.setStrokeColor(PRIMARY)
-        canv.setLineWidth(1.0)
+        canv.setLineWidth(1.5)
         canv.line(center_cx - half_line, line_y, center_cx + half_line, line_y)
         canv.setFont("Helvetica-Bold", 8)
         canv.setFillColor(DARK)
-        canv.drawCentredString(center_cx, line_y - 5 * mm, "Authorized Signature")
+        canv.drawCentredString(center_cx, line_y - 4.5 * mm, "Authorized Signature")
         canv.restoreState()
 
     doc = SimpleDocTemplate(
