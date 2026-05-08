@@ -142,3 +142,8 @@ export const restoreBackup = (file: File) => {
   form.append("file", file);
   return api.post("/api/restore", form, { headers: { "Content-Type": "multipart/form-data" } });
 };
+
+// License
+export const getLicenseStatus = () => api.get("/api/license/status");
+export const getLicenseHwid = () => api.get("/api/license/hwid");
+export const activateLicense = (key: string) => api.post("/api/license/activate", { key });

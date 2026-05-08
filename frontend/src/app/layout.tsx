@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
+import LicenseGate from "@/components/LicenseGate";
 import { Toaster } from "react-hot-toast";
 
 export const metadata: Metadata = {
@@ -25,12 +26,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             error: { iconTheme: { primary: "#EF4444", secondary: "#161828" } },
           }}
         />
-        <div className="flex h-screen overflow-hidden">
-          <Sidebar />
-          <main className="flex-1 ml-60 overflow-y-auto">
-            {children}
-          </main>
-        </div>
+        <LicenseGate>
+          <div className="flex h-screen overflow-hidden">
+            <Sidebar />
+            <main className="flex-1 ml-60 overflow-y-auto">
+              {children}
+            </main>
+          </div>
+        </LicenseGate>
       </body>
     </html>
   );

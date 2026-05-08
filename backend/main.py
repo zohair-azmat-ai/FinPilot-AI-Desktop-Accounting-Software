@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import shutil, os
@@ -6,7 +6,9 @@ from datetime import datetime
 
 from database import engine, DB_PATH
 import models
+import license_manager
 from routes import company, customers, suppliers, items, quotations, invoices, payments, ledger, reports, ai_command, bank_accounts, bank_transactions, cheques, expenses, delivery_notes, purchase_orders
+from routes import license as license_router
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -94,6 +96,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# License gate — block all non-license API calls if unlicensed / expired
+_LICENSE_FREE = {"/", "/health", "/api/debug/runtime"}
+
+@app.middleware("http")
+async def license_gate(request: Request, call_next):
+    path = request.url.path
+    # Always allow: license endpoints, root, health, OPTIONS preflight
+    if (path.startswith("/api/license") or
+            path in _LICENSE_FREE or
+            request.method == "OPTIONS"):
+        return await call_next(request)
+    if not license_manager.is_active():
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "License expired or not activated. Please activate FinPilot AI."},
+        )
+    return await call_next(request)
+
+app.include_router(license_router.router)
 app.include_router(company.router)
 app.include_router(customers.router)
 app.include_router(suppliers.router)

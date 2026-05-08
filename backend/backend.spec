@@ -52,12 +52,13 @@ a = Analysis(
         'PIL', 'PIL.Image', 'PIL.ImageDraw', 'PIL.ImageFont',
         # Backend application modules
         'main', 'models', 'schemas', 'database', 'pdf_generator', 'ai_parser',
+        'license_manager',
         # Route modules
         'routes.company', 'routes.customers', 'routes.suppliers', 'routes.items',
         'routes.quotations', 'routes.invoices', 'routes.payments', 'routes.ledger',
         'routes.reports', 'routes.ai_command', 'routes.bank_accounts',
         'routes.bank_transactions', 'routes.cheques', 'routes.expenses',
-        'routes.purchase_orders', 'routes.delivery_notes',
+        'routes.purchase_orders', 'routes.delivery_notes', 'routes.license',
     ],
     hookspath=[],
     runtime_hooks=[],

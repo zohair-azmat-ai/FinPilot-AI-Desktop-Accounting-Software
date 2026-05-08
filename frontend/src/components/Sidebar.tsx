@@ -6,7 +6,7 @@ import {
   FileText, Receipt, CreditCard, BookOpen, BarChart3,
   FileBarChart, Bot, Settings, Database, ChevronRight,
   Landmark, ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon,
-  CheckSquare, Wallet, TrendingDown, ClipboardList, ShoppingCart, HardDrive
+  CheckSquare, Wallet, TrendingDown, ClipboardList, ShoppingCart, HardDrive, KeyRound
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -36,6 +36,7 @@ const NAV_ITEMS = [
   { type: "divider", label: "TOOLS" },
   { label: "AI Command", icon: Bot, href: "/ai" },
   { label: "Backup & Restore", icon: HardDrive, href: "/backup" },
+  { label: "License", icon: KeyRound, href: "/activate" },
   { label: "Settings", icon: Settings, href: "/company" },
 ];
 

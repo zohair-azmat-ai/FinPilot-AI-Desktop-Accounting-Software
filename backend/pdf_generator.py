@@ -1681,8 +1681,6 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     # ── Title ─────────────────────────────────────────────────────────────────
     story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("DELIVERY NOTE", title_s))
-    story.append(Paragraph(
-        "&#x625;&#x634;&#x639;&#x627;&#x631; &#x62A;&#x633;&#x644;&#x64A;&#x645;", sub_s))
     story.append(Spacer(1, 4 * mm))
 
     # ── Customer / DN info block ──────────────────────────────────────────────
@@ -1976,13 +1974,14 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
             Paragraph(f"{it.get('total', 0):.2f}", irc_s),
         ])
 
-    # Filler rows
-    _HDR_H = 9 * mm
-    _ROW_H = 8 * mm
-    _OVER  = 80 * mm
-    _avail = page_h - top_margin - _BOT - _OVER
-    _max   = max(len(items_list), int((_avail - _HDR_H) / _ROW_H))
-    _fill  = min(max(0, _max - len(items_list)), 6)
+    # Filler rows — overhead: story content above + below items table
+    _HDR_H    = 9 * mm
+    _ROW_H    = 8 * mm
+    _lh_story = 0 if lh_draw_h else 25 * mm   # text letterhead in story
+    _OVER     = _lh_story + 100 * mm           # title + boxes + spacers + totals + notes
+    _avail    = page_h - top_margin - _BOT - _OVER
+    _max      = max(len(items_list), int((_avail - _HDR_H) / _ROW_H))
+    _fill     = max(0, _max - len(items_list))
     for _ in range(_fill):
         tbl.append([Paragraph("", ir_s)] * 6)
 
@@ -2029,10 +2028,11 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
     ]))
     story.append(align_t)
 
-    if po_data.get("notes"):
-        story.append(Spacer(1, 3 * mm))
-        note_s = ParagraphStyle("po_ns", fontName="Helvetica", fontSize=8, textColor=DARK)
-        story.append(Paragraph(f"<b>Notes:</b> {_xe(po_data['notes'])}", note_s))
+    _notes_text = po_data.get("notes") or \
+        "Please supply the above materials/services as per agreed price, quality, and delivery terms."
+    story.append(Spacer(1, 3 * mm))
+    note_s = ParagraphStyle("po_ns", fontName="Helvetica", fontSize=8, textColor=DARK)
+    story.append(Paragraph(f"<b>Notes:</b> {_xe(_notes_text)}", note_s))
 
     doc.build(story, onFirstPage=_draw_po_page, onLaterPages=lambda c, d: None)
     return filepath
