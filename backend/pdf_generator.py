@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=33606a5+FIXED LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=3656bd9+PDFPOLY LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -659,8 +659,8 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
 
     stamp_path = _get_stamp_path()
 
-    # Bottom reserve: HR at 18mm + gap(3mm) + sig box(34mm) = 55mm
-    _BOT = 55 * mm
+    # Bottom reserve: HR at 30mm + gap(3mm) + sig area(49mm) = 82mm
+    _BOT = 82 * mm
 
     def _draw_stmt_page(canv, _doc):
         canv.saveState()
@@ -675,8 +675,8 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
             canv.line(0, page_h - lh_draw_h - 0.5 * mm,
                       page_w, page_h - lh_draw_h - 0.5 * mm)
 
-        # Thin HR above signature area
-        hr_y = 17 * mm
+        # Thin HR above signature area — raised by 13mm for more stamp room
+        hr_y = 30 * mm
         canv.setStrokeColor(colors.HexColor("#CBD5E1"))
         canv.setLineWidth(0.5)
         canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
@@ -687,11 +687,11 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
         sig_w     = page_w - 15 * mm - sig_x
         center_cx = sig_x + sig_w / 2
 
-        line_y    = sig_y + 14 * mm
-        half_line = 22 * mm
+        line_y    = sig_y + 17 * mm
+        half_line = 28 * mm
 
         if stamp_path:
-            stamp_sz = 16 * mm
+            stamp_sz = 26 * mm
             try:
                 canv.drawImage(stamp_path,
                                center_cx - stamp_sz / 2, line_y + 2 * mm,
@@ -825,7 +825,7 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
     _lh_story = 0 if lh_draw_h else 20 * mm
     # Story overhead above table: Spacer(2)+title(12)+Spacer(4)+info(20)+Spacer(4) ≈ 42mm
     _OVER     = _lh_story + 42 * mm
-    _below    = 10 * mm   # amount-in-words line below table
+    _below    = 12 * mm   # amount-in-words line + spacer below table
     _avail    = page_h - top_margin - _BOT - _OVER - _below
     _n_data   = len(entries) + 2   # OB + entries + CB
     _fill     = max(0, int((_avail - _HDR_H) / _ROW_H) - _n_data)
@@ -1561,7 +1561,7 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     LH_MIN_H  = 62 * mm
     raw_lh_h  = _lh_page_height() if use_lh else 0.0
     lh_draw_h = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
-    top_margin = (lh_draw_h + 3 * mm) if lh_draw_h else 63 * mm
+    top_margin = (lh_draw_h + 2 * mm) if lh_draw_h else 63 * mm
 
     # Bottom reserve: footer(11mm) + HR gap(4mm) + sig box(32mm) + gap(3mm) = 50mm
     _BOT = 50 * mm
@@ -1707,16 +1707,16 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         ("RIGHTPADDING",  (1, 0), (1,  0),  8),
     ]))
     story.append(info_t)
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 8 * mm))
 
     # ── Items table: rows calculated to fill available page space ─────────────
     items_data = dn_data.get("items", [])
     _actual_n  = len(items_data)
     _HDR_H     = 8  * mm
     _ROW_H     = 8  * mm
-    # Story overhead: Spacer(2) + title(11) + Spacer(4) + info_t(~24) + Spacer(4) ≈ 45mm
+    # Story overhead: Spacer(1) + title(11) + Spacer(3) + info_t(~24) + Spacer(8) ≈ 47mm
     # Extra text header (no letterhead image) adds ~24mm
-    _overhead  = 45 * mm + (24 * mm if not lh_draw_h else 0)
+    _overhead  = 47 * mm + (24 * mm if not lh_draw_h else 0)
     _avail     = page_h - top_margin - _BOT - _overhead
     _max_rows  = max(_actual_n, int((_avail - _HDR_H) / _ROW_H))
     MIN_ROWS   = _max_rows
@@ -1784,7 +1784,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
 
     # Stamp always shown if file exists (regardless of include_stamp checkbox)
     stamp_path = _get_stamp_path()
-    _BOT       = 54 * mm
+    _BOT       = 64 * mm
 
     def _draw_po_page(canv, _doc):
         canv.saveState()
@@ -1808,22 +1808,17 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
         canv.setLineWidth(0.5)
         canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
 
-        # Authorized signature block (right half)
-        sig_h     = 34 * mm
+        # Authorized signature block (right half) — no border box
         sig_y     = hr_y + 4 * mm
         sig_x     = page_w / 2
         sig_w     = page_w - 15 * mm - sig_x
         center_cx = sig_x + sig_w / 2
 
-        canv.setStrokeColor(colors.HexColor("#94A3B8"))
-        canv.setLineWidth(0.7)
-        canv.rect(sig_x, sig_y, sig_w, sig_h)
-
-        line_y    = sig_y + 13 * mm
-        half_line = 24 * mm
+        line_y    = sig_y + 14 * mm
+        half_line = 26 * mm
 
         if stamp_path:
-            stamp_sz = 20 * mm
+            stamp_sz = 26 * mm
             try:
                 canv.drawImage(stamp_path, center_cx - stamp_sz / 2, line_y + 2 * mm,
                                width=stamp_sz, height=stamp_sz,
@@ -1964,10 +1959,10 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
         ])
 
     # Filler rows — overhead: story content above + below items table
-    _HDR_H    = 9 * mm
-    _ROW_H    = 8 * mm
+    _HDR_H    = 11 * mm
+    _ROW_H    = 10 * mm
     _lh_story = 0 if lh_draw_h else 25 * mm   # text letterhead in story
-    _OVER     = _lh_story + 100 * mm           # title + boxes + spacers + totals + notes
+    _OVER     = _lh_story + 85 * mm           # title + boxes + spacers + totals + notes
     _avail    = page_h - top_margin - _BOT - _OVER
     _max      = max(len(items_list), int((_avail - _HDR_H) / _ROW_H))
     _fill     = max(0, _max - len(items_list))
@@ -1980,14 +1975,16 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
         ("ROWBACKGROUNDS",(0, 1), (-1, -1), [LIGHT_GRAY, WHITE]),
         ("GRID",          (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING",    (0, 0), (-1, 0),  5),
+        ("BOTTOMPADDING", (0, 0), (-1, 0),  5),
+        ("TOPPADDING",    (0, 1), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 7),
         ("LEFTPADDING",   (0, 0), (-1, -1), 4),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
         ("LEFTPADDING",   (1, 1), (1, -1),  6),
     ]))
     story.append(items_t)
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 1 * mm))
 
     # Totals block (right-aligned)
     tl_data = [
@@ -2019,7 +2016,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
 
     _notes_text = po_data.get("notes") or \
         "Please supply the above materials/services as per agreed price, quality, and delivery terms."
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 2 * mm))
     note_s = ParagraphStyle("po_ns", fontName="Helvetica", fontSize=8, textColor=DARK)
     story.append(Paragraph(f"<b>Notes:</b> {_xe(_notes_text)}", note_s))
 
