@@ -19,6 +19,8 @@ class CompanyBase(BaseModel):
     show_dn_stamp: Optional[bool] = False
     quotation_prefix: Optional[str] = "QUO-"
     quotation_current_number: Optional[int] = 0
+    po_prefix: Optional[str] = "PO-"
+    po_current_number: Optional[int] = 0
 
 class CompanyCreate(CompanyBase):
     pass
@@ -417,6 +419,65 @@ class ExpenseOut(BaseModel):
     reference: str
     notes: str
     expense_type: str = "general"
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+
+# ── Purchase Orders ────────────────────────────────────────────────────────────
+class PurchaseOrderItemCreate(BaseModel):
+    description: str
+    quantity: float = 1.0
+    unit_price: float = 0.0
+    vat_applicable: bool = True
+
+class PurchaseOrderItemOut(PurchaseOrderItemCreate):
+    id: int
+    vat_amount: float
+    total: float
+    class Config:
+        from_attributes = True
+
+class PurchaseOrderCreate(BaseModel):
+    supplier_id: Optional[int] = None
+    date: Optional[datetime] = None
+    delivery_date: Optional[datetime] = None
+    payment_terms: Optional[str] = ""
+    delivery_terms: Optional[str] = ""
+    notes: Optional[str] = ""
+    include_stamp: Optional[bool] = False
+    letterhead: Optional[bool] = True
+    items: List[PurchaseOrderItemCreate]
+
+class PurchaseOrderUpdate(BaseModel):
+    supplier_id: Optional[int] = None
+    date: Optional[datetime] = None
+    delivery_date: Optional[datetime] = None
+    payment_terms: Optional[str] = None
+    delivery_terms: Optional[str] = None
+    notes: Optional[str] = None
+    include_stamp: Optional[bool] = None
+    letterhead: Optional[bool] = None
+    status: Optional[str] = None
+    items: Optional[List[PurchaseOrderItemCreate]] = None
+
+class PurchaseOrderOut(BaseModel):
+    id: int
+    po_number: str
+    supplier_id: Optional[int] = None
+    supplier: Optional[Supplier] = None
+    date: datetime
+    delivery_date: Optional[datetime] = None
+    payment_terms: str
+    delivery_terms: str
+    notes: str
+    subtotal: float
+    vat_amount: float
+    total: float
+    include_stamp: bool
+    letterhead: bool
+    status: str
+    items: List[PurchaseOrderItemOut]
     created_at: datetime
     class Config:
         from_attributes = True

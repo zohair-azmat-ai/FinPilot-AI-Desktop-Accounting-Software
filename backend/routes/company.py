@@ -28,6 +28,8 @@ def _company_dict(company) -> dict:
         "show_dn_stamp": bool(company.show_dn_stamp) if company.show_dn_stamp is not None else False,
         "quotation_prefix": company.quotation_prefix or "QUO-",
         "quotation_current_number": company.quotation_current_number or 0,
+        "po_prefix": company.po_prefix or "PO-",
+        "po_current_number": company.po_current_number or 0,
         "created_at": company.created_at.isoformat() if company.created_at else None,
     }
 

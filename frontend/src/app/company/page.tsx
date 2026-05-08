@@ -14,6 +14,7 @@ export default function CompanyPage() {
     dn_prefix: "DN-", dn_current_number: 0,
     show_dn_stamp: false,
     quotation_prefix: "QUO-", quotation_current_number: 0,
+    po_prefix: "PO-", po_current_number: 0,
   });
   const [saving, setSaving] = useState(false);
   const [stampUploading, setStampUploading] = useState(false);
@@ -308,6 +309,63 @@ export default function CompanyPage() {
           <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
             <Save size={15} />
             {saving ? "Saving..." : "Save DN Series"}
+          </button>
+        </div>
+
+        {/* PO Series */}
+        <div className="card space-y-4 mt-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-brand-indigo/10 flex items-center justify-center text-brand-indigo">
+              <Hash size={20} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-text-primary">Purchase Order Series</h3>
+              <p className="text-xs text-text-secondary">Controls how PO numbers are generated</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">PO Prefix</label>
+              <input
+                className="input"
+                value={form.po_prefix}
+                onChange={(e) => setForm({ ...form, po_prefix: e.target.value })}
+                placeholder='e.g. PO- (default)'
+              />
+            </div>
+            <div>
+              <label className="label">Current / Starting PO No.</label>
+              <input
+                className="input"
+                type="number"
+                min="1"
+                step="1"
+                value={form.po_current_number || ""}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  setForm({ ...form, po_current_number: isNaN(v) || v < 1 ? 0 : v });
+                }}
+                placeholder="e.g. 100"
+              />
+            </div>
+          </div>
+          {form.po_current_number > 0 ? (
+            <div className="rounded-lg bg-brand-indigo/5 border border-brand-indigo/20 px-4 py-3">
+              <p className="text-xs text-text-muted">Next PO will be:</p>
+              <p className="text-lg font-bold text-brand-indigo mt-0.5">
+                {form.po_prefix || "PO-"}{String(form.po_current_number).padStart(4, "0")}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 px-4 py-3">
+              <p className="text-xs text-amber-400">
+                Enter a starting number (e.g. 100) to enable PO series. Until set, the system auto-increments.
+              </p>
+            </div>
+          )}
+          <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
+            <Save size={15} />
+            {saving ? "Saving..." : "Save PO Series"}
           </button>
         </div>
 

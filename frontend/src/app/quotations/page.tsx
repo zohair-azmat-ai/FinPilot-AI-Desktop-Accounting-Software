@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import { getQuotations, getCustomers, getItems, createQuotation, deleteQuotation, convertQuotation, downloadQuotationPDF } from "@/lib/api";
 import toast from "react-hot-toast";
-import { Plus, FileText, Trash2, FileDown, ArrowRight, X } from "lucide-react";
+import { Plus, FileText, Trash2, FileDown, ArrowRight, X, MessageCircle } from "lucide-react";
 
 interface Customer { id: number; name: string; }
 interface Item { id: number; name: string; price: number; vat_applicable: boolean; }
@@ -126,6 +126,16 @@ export default function QuotationsPage() {
                       {!q.converted_to_invoice && (
                         <button onClick={() => handleConvert(q.id)} className="text-text-muted hover:text-emerald-400" title="Convert to Invoice"><ArrowRight size={14} /></button>
                       )}
+                      <button
+                        onClick={() => {
+                          const msg = encodeURIComponent(`Dear ${q.customer?.name || "Customer"},\n\nPlease find attached Quotation ${q.quotation_number} for AED ${q.total.toFixed(2)}.\n\nKind regards`);
+                          window.open(`https://wa.me/?text=${msg}`, "_blank");
+                        }}
+                        className="text-text-muted hover:text-green-400"
+                        title="Share on WhatsApp"
+                      >
+                        <MessageCircle size={14} />
+                      </button>
                       <button onClick={() => handleDelete(q.id)} className="text-text-muted hover:text-red-400"><Trash2 size={14} /></button>
                     </div></td>
                   </tr>

@@ -22,6 +22,8 @@ class Company(Base):
     show_dn_stamp = Column(Boolean, default=False)
     quotation_prefix = Column(String, default="QUO-")
     quotation_current_number = Column(Integer, default=0)
+    po_prefix = Column(String, default="PO-")
+    po_current_number = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -299,6 +301,42 @@ class DeliveryNoteItem(Base):
     remarks = Column(String, default="")
 
     delivery_note = relationship("DeliveryNote", back_populates="items")
+
+
+class PurchaseOrder(Base):
+    __tablename__ = "purchase_orders"
+    id = Column(Integer, primary_key=True, index=True)
+    po_number = Column(String, unique=True, nullable=False)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
+    date = Column(DateTime, default=datetime.utcnow)
+    delivery_date = Column(DateTime, nullable=True)
+    payment_terms = Column(String, default="")
+    delivery_terms = Column(String, default="")
+    notes = Column(Text, default="")
+    subtotal = Column(Float, default=0.0)
+    vat_amount = Column(Float, default=0.0)
+    total = Column(Float, default=0.0)
+    include_stamp = Column(Boolean, default=False)
+    letterhead = Column(Boolean, default=True)
+    status = Column(String, default="draft")  # draft, sent, received
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    supplier = relationship("Supplier")
+    items = relationship("PurchaseOrderItem", back_populates="po", cascade="all, delete-orphan")
+
+
+class PurchaseOrderItem(Base):
+    __tablename__ = "purchase_order_items"
+    id = Column(Integer, primary_key=True, index=True)
+    po_id = Column(Integer, ForeignKey("purchase_orders.id"))
+    description = Column(String, nullable=False)
+    quantity = Column(Float, default=1.0)
+    unit_price = Column(Float, default=0.0)
+    vat_applicable = Column(Boolean, default=True)
+    vat_amount = Column(Float, default=0.0)
+    total = Column(Float, default=0.0)
+
+    po = relationship("PurchaseOrder", back_populates="items")
 
 
 class Expense(Base):

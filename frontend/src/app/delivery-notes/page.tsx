@@ -6,7 +6,7 @@ import {
   getCustomers, getDeliveryNotes, createDeliveryNote,
   updateDeliveryNote, deleteDeliveryNote, downloadDeliveryNotePDF,
 } from "@/lib/api";
-import { Plus, Trash2, FileDown, Edit2, ClipboardList, CheckCircle, Clock } from "lucide-react";
+import { Plus, Trash2, FileDown, Edit2, ClipboardList, CheckCircle, Clock, MessageCircle } from "lucide-react";
 
 interface Customer { id: number; name: string; }
 interface DNItem { description: string; quantity: number; remarks: string; }
@@ -210,6 +210,16 @@ function DeliveryNotesContent() {
                         onClick={() => openEdit(dn)}
                       >
                         <Edit2 size={14} />
+                      </button>
+                      <button
+                        className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-green-400 transition-colors"
+                        title="Share on WhatsApp"
+                        onClick={() => {
+                          const msg = encodeURIComponent(`Dear ${dn.customer?.name || "Customer"},\n\nPlease find attached Delivery Note ${dn.dn_number}.\n\nKind regards`);
+                          window.open(`https://wa.me/?text=${msg}`, "_blank");
+                        }}
+                      >
+                        <MessageCircle size={14} />
                       </button>
                       <button
                         className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-red-400 transition-colors"

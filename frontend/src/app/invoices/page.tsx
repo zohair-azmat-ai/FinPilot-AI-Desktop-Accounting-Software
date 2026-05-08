@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
 import { getInvoices, deleteInvoice, downloadInvoicePDF, getCustomers } from "@/lib/api";
 import toast from "react-hot-toast";
-import { Plus, Receipt, Edit2, Trash2, FileDown, Filter, Search, DollarSign } from "lucide-react";
+import { Plus, Receipt, Edit2, Trash2, FileDown, Filter, Search, DollarSign, MessageCircle } from "lucide-react";
 
 interface Invoice {
   id: number; invoice_number: string; customer?: { name: string };
@@ -146,6 +146,16 @@ function InvoicesContent() {
                           title="Add Payment"
                         >
                           <DollarSign size={14} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            const msg = encodeURIComponent(`Dear ${inv.customer?.name || "Customer"},\n\nPlease find attached Invoice ${inv.invoice_number} for AED ${inv.total.toFixed(2)}.\n\nKind regards`);
+                            window.open(`https://wa.me/?text=${msg}`, "_blank");
+                          }}
+                          className="text-text-muted hover:text-green-400 transition-colors"
+                          title="Share on WhatsApp"
+                        >
+                          <MessageCircle size={14} />
                         </button>
                         <button onClick={() => handleDelete(inv.id)} className="text-text-muted hover:text-red-400"><Trash2 size={14} /></button>
                       </div>

@@ -1779,3 +1779,260 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
 
     doc.build(story, onFirstPage=_draw_dn_page, onLaterPages=lambda c, d: None)
     return filepath
+
+
+# ── Purchase Order PDF ────────────────────────────────────────────────────────
+def generate_po_pdf(po_data: dict, company: dict) -> str:
+    filename = f"PO_{po_data['po_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
+    filepath = os.path.join(EXPORT_DIR, filename)
+
+    use_lh    = po_data.get("letterhead", True) and os.path.exists(LETTERHEAD_PATH)
+    page_w, page_h = A4
+
+    LH_MAX_H  = 70 * mm
+    LH_MIN_H  = 62 * mm
+    raw_lh_h  = _lh_page_height() if use_lh else 0.0
+    lh_draw_h = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
+    top_margin = (lh_draw_h + 6 * mm) if lh_draw_h else 63 * mm
+
+    use_stamp  = po_data.get("include_stamp", False)
+    stamp_path = _get_stamp_path() if use_stamp else ""
+    _BOT       = 54 * mm
+
+    def _draw_po_page(canv, _doc):
+        canv.saveState()
+        if lh_draw_h:
+            canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
+                           width=page_w, height=lh_draw_h,
+                           preserveAspectRatio=False, mask='auto')
+            canv.setStrokeColor(colors.HexColor("#D0D7DE"))
+            canv.setLineWidth(0.4)
+            canv.line(0, page_h - lh_draw_h - 0.5 * mm,
+                      page_w, page_h - lh_draw_h - 0.5 * mm)
+
+        footer_y = 11 * mm
+        canv.setFont("Helvetica", 7)
+        canv.setFillColor(MED_GRAY)
+        canv.drawCentredString(page_w / 2, footer_y,
+                               "This is a computer generated purchase order.")
+
+        hr_y = footer_y + 5 * mm
+        canv.setStrokeColor(MED_GRAY)
+        canv.setLineWidth(0.4)
+        canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
+
+        # Authorized signature block (right half)
+        sig_h     = 34 * mm
+        sig_y     = hr_y + 4 * mm
+        sig_x     = page_w / 2
+        sig_w     = page_w - 15 * mm - sig_x
+        center_cx = sig_x + sig_w / 2
+
+        canv.setStrokeColor(colors.HexColor("#94A3B8"))
+        canv.setLineWidth(0.7)
+        canv.rect(sig_x, sig_y, sig_w, sig_h)
+
+        line_y    = sig_y + 13 * mm
+        half_line = 24 * mm
+
+        if use_stamp and stamp_path:
+            stamp_sz = 20 * mm
+            try:
+                canv.drawImage(stamp_path, center_cx - stamp_sz / 2, line_y + 2 * mm,
+                               width=stamp_sz, height=stamp_sz,
+                               preserveAspectRatio=True, mask='auto')
+            except Exception:
+                pass
+
+        canv.setStrokeColor(PRIMARY)
+        canv.setLineWidth(1.0)
+        canv.line(center_cx - half_line, line_y, center_cx + half_line, line_y)
+        canv.setFont("Helvetica-Bold", 8)
+        canv.setFillColor(DARK)
+        canv.drawCentredString(center_cx, line_y - 5 * mm, "Authorized Signature")
+        canv.restoreState()
+
+    doc = SimpleDocTemplate(
+        filepath, pagesize=A4,
+        leftMargin=15 * mm, rightMargin=15 * mm,
+        topMargin=top_margin, bottomMargin=_BOT,
+    )
+
+    # ── Styles ──────────────────────────────────────────────────────────────
+    title_s = ParagraphStyle("po_ti", fontName="Helvetica-Bold", fontSize=18,
+                              textColor=PRIMARY, alignment=TA_CENTER)
+    box_hdr = ParagraphStyle("po_bh", fontName="Helvetica-Bold", fontSize=8.5,
+                              textColor=PRIMARY, alignment=TA_CENTER)
+    lbl_s   = ParagraphStyle("po_lb", fontName="Helvetica-Bold", fontSize=8, textColor=MED_GRAY)
+    val_s   = ParagraphStyle("po_vl", fontName="Helvetica",      fontSize=8.5, textColor=DARK)
+    val_b   = ParagraphStyle("po_vb", fontName="Helvetica-Bold", fontSize=9,  textColor=DARK)
+    lbl_r   = ParagraphStyle("po_lr", fontName="Helvetica-Bold", fontSize=8,  textColor=MED_GRAY, alignment=TA_RIGHT)
+    val_r   = ParagraphStyle("po_vr", fontName="Helvetica",      fontSize=8.5, textColor=DARK, alignment=TA_RIGHT)
+    ih_s    = ParagraphStyle("po_ih", fontName="Helvetica-Bold", fontSize=8,  textColor=WHITE, alignment=TA_CENTER)
+    ir_s    = ParagraphStyle("po_ir", fontName="Helvetica",      fontSize=8,  textColor=DARK)
+    irc_s   = ParagraphStyle("po_ic", fontName="Helvetica",      fontSize=8,  textColor=DARK, alignment=TA_RIGHT)
+    icc_s   = ParagraphStyle("po_cc", fontName="Helvetica",      fontSize=8,  textColor=DARK, alignment=TA_CENTER)
+    tl_s    = ParagraphStyle("po_tl", fontName="Helvetica",      fontSize=8.5, textColor=DARK, alignment=TA_RIGHT)
+    tb_s    = ParagraphStyle("po_tb", fontName="Helvetica-Bold", fontSize=10,  textColor=WHITE, alignment=TA_RIGHT)
+    ft_s    = ParagraphStyle("po_ft", fontName="Helvetica",      fontSize=7,   textColor=MED_GRAY, alignment=TA_CENTER)
+
+    story = []
+
+    if not lh_draw_h:
+        comp_s = ParagraphStyle("po_cp", fontName="Helvetica-Bold", fontSize=14,
+                                 textColor=PRIMARY, alignment=TA_CENTER)
+        addr_s = ParagraphStyle("po_ad", fontName="Helvetica", fontSize=8,
+                                 textColor=MED_GRAY, alignment=TA_CENTER)
+        story.append(Paragraph(company.get("name", "Company Name"), comp_s))
+        story.append(Spacer(1, 1 * mm))
+        if company.get("address"):
+            story.append(Paragraph(company["address"].replace("\n", "  |  "), addr_s))
+        story.append(Spacer(1, 3 * mm))
+        story.append(HRFlowable(width="100%", thickness=0.8, color=PRIMARY))
+        story.append(Spacer(1, 2 * mm))
+
+    story.append(Spacer(1, 2 * mm))
+    story.append(Paragraph("PURCHASE ORDER", title_s))
+    story.append(Spacer(1, 5 * mm))
+
+    supplier = po_data.get("supplier") or {}
+    po_no    = po_data.get("po_number", "")
+    po_date  = po_data.get("date", "")
+    del_date = po_data.get("delivery_date", "")
+
+    sup_rows = [[Paragraph("TO:", lbl_s), Paragraph(_xe(supplier.get("name", "—")), val_b)]]
+    if supplier.get("trn"):
+        sup_rows.append([Paragraph("TRN:",  lbl_s), Paragraph(_xe(supplier["trn"]), val_s)])
+    if supplier.get("phone"):
+        sup_rows.append([Paragraph("TEL:",  lbl_s), Paragraph(_xe(supplier["phone"]), val_s)])
+    if supplier.get("address"):
+        sup_rows.append([Paragraph("ADD:",  lbl_s),
+                         Paragraph(_xe(supplier["address"].replace("\n", ", ")), val_s)])
+
+    sup_inner = Table(sup_rows, colWidths=[10 * mm, 68 * mm])
+    sup_inner.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    sup_box = Table([[Paragraph("SUPPLIER DETAILS", box_hdr)], [sup_inner]], colWidths=[88 * mm])
+    sup_box.setStyle(TableStyle([
+        ("BOX",        (0, 0), (-1, -1), 0.8, PRIMARY),
+        ("LINEBELOW",  (0, 0), (-1, 0),  0.8, PRIMARY),
+        ("BACKGROUND", (0, 0), (-1, 0),  colors.HexColor("#EFF6FF")),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+    ]))
+
+    info_rows = [[Paragraph("PO NO:",    lbl_r), Paragraph(_xe(po_no), val_b)],
+                 [Paragraph("DATE:",     lbl_r), Paragraph(_xe(po_date), val_s)]]
+    if del_date:
+        info_rows.append([Paragraph("DEL DATE:", lbl_r), Paragraph(_xe(del_date), val_s)])
+    if po_data.get("payment_terms"):
+        info_rows.append([Paragraph("PAYMENT:", lbl_r),
+                          Paragraph(_xe(po_data["payment_terms"]), val_s)])
+    if po_data.get("delivery_terms"):
+        info_rows.append([Paragraph("DELIVERY:", lbl_r),
+                          Paragraph(_xe(po_data["delivery_terms"]), val_s)])
+
+    info_inner = Table(info_rows, colWidths=[22 * mm, 60 * mm])
+    info_inner.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    info_box = Table([[Paragraph("ORDER DETAILS", box_hdr)], [info_inner]], colWidths=[88 * mm])
+    info_box.setStyle(TableStyle([
+        ("BOX",        (0, 0), (-1, -1), 0.8, PRIMARY),
+        ("LINEBELOW",  (0, 0), (-1, 0),  0.8, PRIMARY),
+        ("BACKGROUND", (0, 0), (-1, 0),  colors.HexColor("#EFF6FF")),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+    ]))
+
+    header_t = Table([[sup_box, info_box]], colWidths=[_CONTENT_W * 0.49, _CONTENT_W * 0.49])
+    header_t.setStyle(TableStyle([
+        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("ALIGN",        (1, 0), (1, 0),   "RIGHT"),
+    ]))
+    story.append(header_t)
+    story.append(Spacer(1, 5 * mm))
+
+    # Items table
+    col_w  = [9 * mm, 70 * mm, 15 * mm, 26 * mm, 26 * mm, 26 * mm]
+    hdrs   = ["#", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)", "VAT\n(AED)", "TOTAL\n(AED)"]
+    tbl    = [[Paragraph(h, ih_s) for h in hdrs]]
+
+    items_list = po_data.get("items", [])
+    for idx, it in enumerate(items_list, 1):
+        tbl.append([
+            Paragraph(str(idx), icc_s),
+            Paragraph(_xe(it.get("description", "")), ir_s),
+            Paragraph(f"{it.get('quantity', 1):.2f}", icc_s),
+            Paragraph(f"{it.get('unit_price', 0):.2f}", irc_s),
+            Paragraph(f"{it.get('vat_amount', 0):.2f}" if it.get("vat_applicable") else "Exempt", irc_s),
+            Paragraph(f"{it.get('total', 0):.2f}", irc_s),
+        ])
+
+    # Filler rows
+    _HDR_H = 9 * mm
+    _ROW_H = 8 * mm
+    _OVER  = 80 * mm
+    _avail = page_h - top_margin - _BOT - _OVER
+    _max   = max(len(items_list), int((_avail - _HDR_H) / _ROW_H))
+    _fill  = min(max(0, _max - len(items_list)), 6)
+    for _ in range(_fill):
+        tbl.append([Paragraph("", ir_s)] * 6)
+
+    items_t = Table(tbl, colWidths=col_w)
+    items_t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  PRIMARY),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [LIGHT_GRAY, WHITE]),
+        ("GRID",          (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (1, 1), (1, -1),  6),
+    ]))
+    story.append(items_t)
+    story.append(Spacer(1, 3 * mm))
+
+    # Totals block (right-aligned)
+    tl_data = [
+        [Paragraph("Subtotal:", tl_s),
+         Paragraph(f"AED {po_data.get('subtotal', 0):.2f}", tl_s)],
+        [Paragraph("VAT (5%):", tl_s),
+         Paragraph(f"AED {po_data.get('vat_amount', 0):.2f}", tl_s)],
+        [Paragraph("TOTAL:", tb_s),
+         Paragraph(f"AED {po_data.get('total', 0):.2f}", tb_s)],
+    ]
+    tl_t = Table(tl_data, colWidths=[35 * mm, 35 * mm])
+    tl_t.setStyle(TableStyle([
+        ("ALIGN",         (0, 0), (-1, -1), "RIGHT"),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LINEABOVE",     (0, -1), (-1, -1), 1, PRIMARY),
+        ("BACKGROUND",    (0, -1), (-1, -1), PRIMARY),
+    ]))
+
+    align_t = Table([[Spacer(1, 1), tl_t]],
+                    colWidths=[_CONTENT_W - 70 * mm, 70 * mm])
+    align_t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(align_t)
+
+    if po_data.get("notes"):
+        story.append(Spacer(1, 3 * mm))
+        note_s = ParagraphStyle("po_ns", fontName="Helvetica", fontSize=8, textColor=DARK)
+        story.append(Paragraph(f"<b>Notes:</b> {_xe(po_data['notes'])}", note_s))
+
+    doc.build(story, onFirstPage=_draw_po_page, onLaterPages=lambda c, d: None)
+    return filepath

@@ -126,3 +126,19 @@ export const getExpenseCategories = () => api.get("/api/expenses/categories");
 export const createExpense = (data: unknown) => api.post("/api/expenses/", data);
 export const updateExpense = (id: number, data: unknown) => api.put(`/api/expenses/${id}`, data);
 export const deleteExpense = (id: number) => api.delete(`/api/expenses/${id}`);
+
+// Purchase Orders
+export const getPurchaseOrders = (params?: Record<string, unknown>) => api.get("/api/purchase-orders/", { params });
+export const getPurchaseOrder = (id: number) => api.get(`/api/purchase-orders/${id}`);
+export const createPurchaseOrder = (data: unknown) => api.post("/api/purchase-orders/", data);
+export const updatePurchaseOrder = (id: number, data: unknown) => api.put(`/api/purchase-orders/${id}`, data);
+export const deletePurchaseOrder = (id: number) => api.delete(`/api/purchase-orders/${id}`);
+export const downloadPurchaseOrderPDF = (id: number) => `${API_URL}/api/purchase-orders/${id}/pdf`;
+
+// Backup & Restore
+export const downloadBackup = () => `${API_URL}/api/backup`;
+export const restoreBackup = (file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  return api.post("/api/restore", form, { headers: { "Content-Type": "multipart/form-data" } });
+};

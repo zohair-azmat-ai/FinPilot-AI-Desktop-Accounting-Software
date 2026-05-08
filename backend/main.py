@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import shutil, os
@@ -6,7 +6,7 @@ from datetime import datetime
 
 from database import engine, DB_PATH
 import models
-from routes import company, customers, suppliers, items, quotations, invoices, payments, ledger, reports, ai_command, bank_accounts, bank_transactions, cheques, expenses, delivery_notes
+from routes import company, customers, suppliers, items, quotations, invoices, payments, ledger, reports, ai_command, bank_accounts, bank_transactions, cheques, expenses, delivery_notes, purchase_orders
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -45,6 +45,12 @@ def _run_migrations():
         ("companies",           "show_dn_stamp",              "INTEGER DEFAULT 0"),
         ("companies",           "quotation_prefix",           "TEXT DEFAULT 'QUO-'"),
         ("companies",           "quotation_current_number",   "INTEGER DEFAULT 0"),
+        ("companies",           "po_prefix",                  "TEXT DEFAULT 'PO-'"),
+        ("companies",           "po_current_number",          "INTEGER DEFAULT 0"),
+        # purchase_orders table is created by create_all; these guard older DBs
+        ("purchase_orders",     "delivery_terms",             "TEXT DEFAULT ''"),
+        ("purchase_orders",     "include_stamp",              "INTEGER DEFAULT 0"),
+        ("purchase_orders",     "letterhead",                 "INTEGER DEFAULT 1"),
     ]
     with engine.connect() as conn:
         for table, column, col_def in migrations:
@@ -66,6 +72,8 @@ def _run_migrations():
             ("UPDATE companies SET dn_current_number = 0 WHERE dn_current_number IS NULL"),
             ("UPDATE companies SET invoice_prefix = '' WHERE invoice_prefix IS NULL"),
             ("UPDATE companies SET invoice_current_number = 0 WHERE invoice_current_number IS NULL"),
+            ("UPDATE companies SET po_prefix = 'PO-' WHERE po_prefix IS NULL OR po_prefix = ''"),
+            ("UPDATE companies SET po_current_number = 0 WHERE po_current_number IS NULL"),
         ]
         for sql in _backfills:
             try:
@@ -101,6 +109,7 @@ app.include_router(bank_transactions.router)
 app.include_router(cheques.router)
 app.include_router(expenses.router)
 app.include_router(delivery_notes.router)
+app.include_router(purchase_orders.router)
 
 
 @app.get("/")
@@ -138,12 +147,43 @@ def debug_runtime():
 
 @app.get("/api/backup")
 def backup_database():
+    from fastapi.responses import FileResponse as _FileResponse
+    import zipfile, tempfile
     backup_dir = os.path.join(os.path.expanduser("~"), "FinPilot", "backups")
     os.makedirs(backup_dir, exist_ok=True)
-    backup_name = f"finpilot_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
-    backup_path = os.path.join(backup_dir, backup_name)
-    shutil.copy2(DB_PATH, backup_path)
-    return {"message": f"Backup created: {backup_name}", "path": backup_path}
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    zip_name = f"FinPilot_Backup_{ts}.zip"
+    zip_path = os.path.join(backup_dir, zip_name)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(DB_PATH, "finpilot.db")
+        # write a metadata file
+        zf.writestr("backup_info.txt",
+                    f"FinPilot AI Backup\nDate: {datetime.now().isoformat()}\nDB: finpilot.db\n")
+    return _FileResponse(zip_path, media_type="application/zip", filename=zip_name)
+
+
+@app.post("/api/restore")
+async def restore_database(file: UploadFile = File(...)):
+    import zipfile, io
+    contents = await file.read()
+    try:
+        with zipfile.ZipFile(io.BytesIO(contents)) as zf:
+            names = zf.namelist()
+            if "finpilot.db" not in names:
+                from fastapi import HTTPException as _H
+                raise _H(status_code=400, detail="Invalid backup: finpilot.db not found in zip")
+            # write to a temp file first, then replace
+            tmp = DB_PATH + ".restore_tmp"
+            with zf.open("finpilot.db") as src, open(tmp, "wb") as dst:
+                dst.write(src.read())
+        # Swap files
+        bak = DB_PATH + f".pre_restore_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        shutil.copy2(DB_PATH, bak)
+        shutil.move(tmp, DB_PATH)
+    except Exception as e:
+        from fastapi import HTTPException as _H
+        raise _H(status_code=400, detail=f"Restore failed: {e}")
+    return {"ok": True, "message": "Database restored. Please restart the app to reload data."}
 
 
 if __name__ == "__main__":
