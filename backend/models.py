@@ -24,6 +24,7 @@ class Company(Base):
     quotation_current_number = Column(Integer, default=0)
     po_prefix = Column(String, default="PO-")
     po_current_number = Column(Integer, default=0)
+    show_lpo_in_statement = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

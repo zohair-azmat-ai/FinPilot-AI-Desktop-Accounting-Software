@@ -21,6 +21,7 @@ class CompanyBase(BaseModel):
     quotation_current_number: Optional[int] = 0
     po_prefix: Optional[str] = "PO-"
     po_current_number: Optional[int] = 0
+    show_lpo_in_statement: Optional[bool] = False
 
 class CompanyCreate(CompanyBase):
     pass

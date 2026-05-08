@@ -138,14 +138,17 @@ def download_statement_pdf(
     customer_id: int,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    lpo_number: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     stmt = get_statement(customer_id, date_from, date_to, db)
 
     company = db.query(models.Company).first()
     comp_dict = {}
+    show_lpo = False
     if company:
         comp_dict = {"name": company.name, "trn": company.trn, "address": company.address, "phone": company.phone, "email": company.email}
+        show_lpo = bool(company.show_lpo_in_statement)
 
     filepath = generate_statement_pdf(
         stmt["customer"],
@@ -153,7 +156,9 @@ def download_statement_pdf(
         date_from, date_to,
         stmt["opening_balance"],
         stmt["closing_balance"],
-        comp_dict
+        comp_dict,
+        show_lpo=show_lpo,
+        lpo_number=lpo_number or "",
     )
     customer = db.query(models.Customer).filter(models.Customer.id == customer_id).first()
     return FileResponse(filepath, media_type="application/pdf", filename=f"Statement_{customer.name.replace(' ', '_')}.pdf")

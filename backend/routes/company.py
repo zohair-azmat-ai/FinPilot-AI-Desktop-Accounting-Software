@@ -30,6 +30,7 @@ def _company_dict(company) -> dict:
         "quotation_current_number": company.quotation_current_number or 0,
         "po_prefix": company.po_prefix or "PO-",
         "po_current_number": company.po_current_number or 0,
+        "show_lpo_in_statement": bool(company.show_lpo_in_statement) if company.show_lpo_in_statement is not None else False,
         "created_at": company.created_at.isoformat() if company.created_at else None,
     }
 

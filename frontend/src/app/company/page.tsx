@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Header from "@/components/Header";
 import { getCompany, saveCompany, uploadStamp } from "@/lib/api";
 import toast from "react-hot-toast";
-import { Building2, Hash, Save, Stamp, Upload } from "lucide-react";
+import { Building2, Hash, Save, Stamp, Upload, FileText } from "lucide-react";
 
 export default function CompanyPage() {
   const [form, setForm] = useState({
@@ -15,6 +15,7 @@ export default function CompanyPage() {
     show_dn_stamp: false,
     quotation_prefix: "QUO-", quotation_current_number: 0,
     po_prefix: "PO-", po_current_number: 0,
+    show_lpo_in_statement: false,
   });
   const [saving, setSaving] = useState(false);
   const [stampUploading, setStampUploading] = useState(false);
@@ -366,6 +367,35 @@ export default function CompanyPage() {
           <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
             <Save size={15} />
             {saving ? "Saving..." : "Save PO Series"}
+          </button>
+        </div>
+
+        {/* Statement Settings */}
+        <div className="card space-y-4 mt-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-brand-indigo/10 flex items-center justify-center text-brand-indigo">
+              <FileText size={20} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-text-primary">Statement Settings</h3>
+              <p className="text-xs text-text-secondary">Options for Account Statement PDF</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between p-3 rounded-lg bg-bg-secondary border border-bg-border">
+            <div>
+              <p className="text-sm font-medium text-text-primary">Show LPO Number in Statement</p>
+              <p className="text-xs text-text-muted">Adds an LPO No. field to the PDF info block</p>
+            </div>
+            <button
+              onClick={() => setForm({ ...form, show_lpo_in_statement: !form.show_lpo_in_statement })}
+              className={`relative w-12 h-6 rounded-full transition-colors ${form.show_lpo_in_statement ? "bg-brand-indigo" : "bg-bg-border"}`}
+            >
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${form.show_lpo_in_statement ? "translate-x-6" : "translate-x-0.5"}`} />
+            </button>
+          </div>
+          <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
+            <Save size={15} />
+            {saving ? "Saving..." : "Save Statement Settings"}
           </button>
         </div>
 

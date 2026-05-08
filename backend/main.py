@@ -53,6 +53,7 @@ def _run_migrations():
         ("purchase_orders",     "delivery_terms",             "TEXT DEFAULT ''"),
         ("purchase_orders",     "include_stamp",              "INTEGER DEFAULT 0"),
         ("purchase_orders",     "letterhead",                 "INTEGER DEFAULT 1"),
+        ("companies",           "show_lpo_in_statement",      "INTEGER DEFAULT 0"),
     ]
     with engine.connect() as conn:
         for table, column, col_def in migrations:

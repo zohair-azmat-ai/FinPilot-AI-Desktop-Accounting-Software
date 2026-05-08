@@ -618,7 +618,8 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
 # ── Account Statement ─────────────────────────────────────────────────────────
 def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
-                           opening_balance: float, closing_balance: float, company: dict) -> str:
+                           opening_balance: float, closing_balance: float, company: dict,
+                           show_lpo: bool = False, lpo_number: str = "") -> str:
 
     # ── Date helpers ──────────────────────────────────────────────────────────
     def _parse_ds(s):
@@ -674,28 +675,23 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
             canv.line(0, page_h - lh_draw_h - 0.5 * mm,
                       page_w, page_h - lh_draw_h - 0.5 * mm)
 
-        # HR above signature (no footer text on statement)
-        hr_y = 18 * mm
+        # Thin HR above signature area
+        hr_y = 17 * mm
         canv.setStrokeColor(colors.HexColor("#CBD5E1"))
         canv.setLineWidth(0.5)
         canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
 
-        # Signature block — right half only
-        sig_h     = 34 * mm
+        # Signature — right side only, no outer box
         sig_y     = hr_y + 3 * mm
         sig_x     = page_w / 2
         sig_w     = page_w - 15 * mm - sig_x
         center_cx = sig_x + sig_w / 2
 
-        canv.setStrokeColor(colors.HexColor("#94A3B8"))
-        canv.setLineWidth(0.7)
-        canv.rect(sig_x, sig_y, sig_w, sig_h)
-
-        line_y    = sig_y + 13 * mm
-        half_line = 24 * mm
+        line_y    = sig_y + 14 * mm
+        half_line = 22 * mm
 
         if stamp_path:
-            stamp_sz = 20 * mm
+            stamp_sz = 16 * mm
             try:
                 canv.drawImage(stamp_path,
                                center_cx - stamp_sz / 2, line_y + 2 * mm,
@@ -705,11 +701,11 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
                 pass
 
         canv.setStrokeColor(PRIMARY)
-        canv.setLineWidth(1.0)
+        canv.setLineWidth(1.5)
         canv.line(center_cx - half_line, line_y, center_cx + half_line, line_y)
         canv.setFont("Helvetica-Bold", 8)
         canv.setFillColor(DARK)
-        canv.drawCentredString(center_cx, line_y - 5 * mm, "Authorized Signature")
+        canv.drawCentredString(center_cx, line_y - 4.5 * mm, "Authorized Signature")
 
         canv.restoreState()
 
@@ -743,15 +739,18 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
 
     story = []
 
-    # ── 1. Centered title ─────────────────────────────────────────────────────
-    story.append(Spacer(1, 4 * mm))
+    # ── 1. Centered title — tighter gap after letterhead ─────────────────────
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("ACCOUNT STATEMENT", title_s))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 4 * mm))
 
     # ── 2. Info block (2 columns) ─────────────────────────────────────────────
     period    = _period_str(date_from, date_to)
     today_str = datetime.now().strftime("%d %b %Y")
 
+    # Outer padding is 6mm each side; inner cols must fit within available content width
+    # Left cell: 180*0.56=100.8mm - 12mm padding = 88.8mm available
+    # Right cell: 180*0.44=79.2mm - 12mm padding = 67.2mm available
     left_rows = [
         [Paragraph("Customer:", lbl_s),
          Paragraph(_xe(customer.get("name", "")), val_b)],
@@ -761,14 +760,17 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
     if customer.get("trn"):
         left_rows.append([Paragraph("TRN:", lbl_s),
                           Paragraph(_xe(customer["trn"]), val_s)])
+    if show_lpo and lpo_number:
+        left_rows.append([Paragraph("LPO No:", lbl_s),
+                          Paragraph(_xe(lpo_number), val_b)])
 
     right_rows = [
         [Paragraph("Statement Date:", lbl_r),
          Paragraph(today_str, val_rb)],
     ]
 
-    left_inner  = Table(left_rows,  colWidths=[26 * mm, 66 * mm])
-    right_inner = Table(right_rows, colWidths=[36 * mm, 42 * mm])
+    left_inner  = Table(left_rows,  colWidths=[22 * mm, 66 * mm])   # 88mm total
+    right_inner = Table(right_rows, colWidths=[30 * mm, 36 * mm])   # 66mm total
     for t_inner in (left_inner, right_inner):
         t_inner.setStyle(TableStyle([
             ("VALIGN",        (0, 0), (-1, -1), "TOP"),
@@ -783,10 +785,10 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
     info_outer.setStyle(TableStyle([
         ("BOX",           (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
         ("BACKGROUND",    (0, 0), (-1, -1), LIGHT_GRAY),
-        ("TOPPADDING",    (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
     ]))
     story.append(info_outer)
     story.append(Spacer(1, 4 * mm))
@@ -817,24 +819,26 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
             Paragraph(f"{entry.get('balance', 0):.2f}", style_rc),
         ])
 
-    # Filler rows — fills remaining page height
-    _ROW_H  = 7 * mm
-    _HDR_H  = 9 * mm
-    # Overhead: Spacer(4) + title(12) + Spacer(5) + info_outer(~22) + Spacer(4) ≈ 47mm
+    # Filler rows — reserve ~10mm below table for amount-in-words line
+    _ROW_H    = 7 * mm
+    _HDR_H    = 9 * mm
     _lh_story = 0 if lh_draw_h else 20 * mm
-    _OVER   = _lh_story + 47 * mm
-    _avail  = page_h - top_margin - _BOT - _OVER
-    _n_data = len(entries) + 2  # entries + OB + CB
-    _fill   = max(0, int((_avail - _HDR_H) / _ROW_H) - _n_data)
+    # Story overhead above table: Spacer(2)+title(12)+Spacer(4)+info(20)+Spacer(4) ≈ 42mm
+    _OVER     = _lh_story + 42 * mm
+    _below    = 10 * mm   # amount-in-words line below table
+    _avail    = page_h - top_margin - _BOT - _OVER - _below
+    _n_data   = len(entries) + 2   # OB + entries + CB
+    _fill     = max(0, int((_avail - _HDR_H) / _ROW_H) - _n_data)
     for _ in range(_fill):
         data.append([Paragraph("", style_r)] * 5)
 
-    # Closing balance row
+    # Closing balance — highlighted row
+    _cb_label = "Closing Balance (Dr)" if closing_balance >= 0 else "Closing Balance (Cr)"
     data.append([
         Paragraph("", style_r),
-        Paragraph("<b>Closing Balance</b>", style_rb),
+        Paragraph(f"<b>{_cb_label}</b>", style_rb),
         Paragraph("", style_rc), Paragraph("", style_rc),
-        Paragraph(f"<b>{closing_balance:.2f}</b>", style_wh),
+        Paragraph(f"<b>{abs(closing_balance):.2f}</b>", style_wh),
     ])
 
     t = Table(data, colWidths=col_widths)
@@ -849,11 +853,19 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
         ("BOTTOMPADDING", (0, 0),  (-1, -1), 4),
         ("LEFTPADDING",   (0, 0),  (-1, -1), 4),
         ("RIGHTPADDING",  (0, 0),  (-1, -1), 4),
-        # Opening balance row: slight highlight + bold
         ("BACKGROUND",    (0, 1),  (-1, 1),  colors.HexColor("#F1F5F9")),
         ("FONTNAME",      (0, 1),  (-1, 1),  "Helvetica-Bold"),
     ]))
     story.append(t)
+
+    # Amount in words
+    _cb_abs   = abs(closing_balance)
+    _cb_words = _amount_in_words(_cb_abs)
+    _cr_dr    = "Credit" if closing_balance < 0 else "Debit"
+    aiw_s     = ParagraphStyle("st_aiw", fontName="Helvetica", fontSize=7.5, textColor=DARK)
+    story.append(Spacer(1, 2 * mm))
+    story.append(Paragraph(
+        f"<b>Amount in Words:</b>  {_xe(_cb_words)} ({_cr_dr})", aiw_s))
 
     doc.build(story, onFirstPage=_draw_stmt_page, onLaterPages=_draw_stmt_page)
     return filepath
@@ -1549,10 +1561,10 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     LH_MIN_H  = 62 * mm
     raw_lh_h  = _lh_page_height() if use_lh else 0.0
     lh_draw_h = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
-    top_margin = (lh_draw_h + 6 * mm) if lh_draw_h else 63 * mm
+    top_margin = (lh_draw_h + 3 * mm) if lh_draw_h else 63 * mm
 
-    # Bottom reserve: footer(15mm) + HR gap(5mm) + sig box(32mm) = 52mm
-    _BOT = 52 * mm
+    # Bottom reserve: footer(11mm) + HR gap(4mm) + sig box(32mm) + gap(3mm) = 50mm
+    _BOT = 50 * mm
 
     def _draw_dn_page(canv, _doc):
         canv.saveState()
@@ -1656,9 +1668,9 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         story.append(Spacer(1, 2 * mm))
 
     # ── Title ─────────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 2 * mm))
+    story.append(Spacer(1, 1 * mm))
     story.append(Paragraph("DELIVERY NOTE", title_s))
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 3 * mm))
 
     # ── Customer / DN info block ──────────────────────────────────────────────
     customer  = dn_data.get("customer") or {}

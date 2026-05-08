@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
-import { getCustomers, getStatement, downloadStatementPDF } from "@/lib/api";
+import { getCustomers, getStatement, downloadStatementPDF, getCompany } from "@/lib/api";
 import { FileBarChart, FileDown } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -19,6 +19,8 @@ function StatementsContent() {
   const [selectedId, setSelectedId] = useState(params.get("customer_id") || "");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [lpoNumber, setLpoNumber] = useState("");
+  const [showLpo, setShowLpo] = useState(false);
   const [stmt, setStmt] = useState<{
     customer: { name: string; trn: string; address: string };
     opening_balance: number; closing_balance: number;
@@ -26,7 +28,10 @@ function StatementsContent() {
   } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { getCustomers().then((r) => setCustomers(r.data)); }, []);
+  useEffect(() => {
+    getCustomers().then((r) => setCustomers(r.data));
+    getCompany().then((r) => setShowLpo(!!r.data.show_lpo_in_statement)).catch(() => {});
+  }, []);
 
   const loadStatement = () => {
     if (!selectedId) return;
@@ -44,6 +49,7 @@ function StatementsContent() {
     const p: Record<string, string> = {};
     if (dateFrom) p.date_from = dateFrom + "T00:00:00";
     if (dateTo) p.date_to = dateTo + "T23:59:59";
+    if (showLpo && lpoNumber) p.lpo_number = lpoNumber;
     window.open(downloadStatementPDF(parseInt(selectedId), p), "_blank");
   };
 
@@ -80,6 +86,19 @@ function StatementsContent() {
               )}
             </div>
           </div>
+          {showLpo && (
+            <div className="mt-3 pt-3 border-t border-bg-border">
+              <div className="w-64">
+                <label className="label">LPO Number <span className="text-text-muted font-normal">(optional — printed on PDF)</span></label>
+                <input
+                  className="input"
+                  placeholder="e.g. LPO-2026-001"
+                  value={lpoNumber}
+                  onChange={(e) => setLpoNumber(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Statement */}
