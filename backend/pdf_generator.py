@@ -619,41 +619,197 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 # ── Account Statement ─────────────────────────────────────────────────────────
 def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
                            opening_balance: float, closing_balance: float, company: dict) -> str:
-    filename = f"Statement_{customer.get('name', 'Customer').replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
+
+    # ── Date helpers ──────────────────────────────────────────────────────────
+    def _parse_ds(s):
+        if not s:
+            return None
+        try:
+            return datetime.fromisoformat(str(s).split("T")[0])
+        except Exception:
+            return None
+
+    def _fmt_d(d):
+        return d.strftime("%d %b %Y") if d else ""
+
+    def _period_str(df, dt):
+        d1, d2 = _parse_ds(df), _parse_ds(dt)
+        if not d1 and not d2:
+            return "All Dates"
+        if not d1:
+            return f"Up to {_fmt_d(d2)}"
+        if not d2:
+            return f"From {_fmt_d(d1)}"
+        if d1.month == d2.month and d1.year == d2.year:
+            return d1.strftime("%B %Y")
+        return f"{_fmt_d(d1)} to {_fmt_d(d2)}"
+
+    filename = (f"Statement_{customer.get('name', 'Customer').replace(' ', '_')}_"
+                f"{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
     filepath = os.path.join(EXPORT_DIR, filename)
 
-    top_margin = 5 * mm if os.path.exists(LETTERHEAD_PATH) else 15 * mm
+    page_w, page_h = A4
+    use_lh    = os.path.exists(LETTERHEAD_PATH)
+    LH_MAX_H  = 70 * mm
+    LH_MIN_H  = 62 * mm
+    raw_lh_h  = _lh_page_height() if use_lh else 0.0
+    lh_draw_h = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
+    top_margin = (lh_draw_h + 6 * mm) if lh_draw_h else 15 * mm
+
+    stamp_path = _get_stamp_path()
+
+    # Bottom reserve: footer(15mm) + HR gap(5mm) + sig box(34mm) = 54mm
+    _BOT = 54 * mm
+
+    def _draw_stmt_page(canv, _doc):
+        canv.saveState()
+
+        # Letterhead
+        if lh_draw_h:
+            canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
+                           width=page_w, height=lh_draw_h,
+                           preserveAspectRatio=False, mask='auto')
+            canv.setStrokeColor(colors.HexColor("#D0D7DE"))
+            canv.setLineWidth(0.4)
+            canv.line(0, page_h - lh_draw_h - 0.5 * mm,
+                      page_w, page_h - lh_draw_h - 0.5 * mm)
+
+        # Footer text
+        footer_y = 11 * mm
+        canv.setFont("Helvetica", 7)
+        canv.setFillColor(MED_GRAY)
+        canv.drawCentredString(page_w / 2, footer_y,
+                               "This is a computer generated statement.")
+
+        # HR above footer
+        hr_y = footer_y + 5 * mm
+        canv.setStrokeColor(MED_GRAY)
+        canv.setLineWidth(0.4)
+        canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
+
+        # Signature block — right half only
+        sig_h     = 34 * mm
+        sig_y     = hr_y + 4 * mm
+        sig_x     = page_w / 2
+        sig_w     = page_w - 15 * mm - sig_x
+        center_cx = sig_x + sig_w / 2
+
+        canv.setStrokeColor(colors.HexColor("#94A3B8"))
+        canv.setLineWidth(0.7)
+        canv.rect(sig_x, sig_y, sig_w, sig_h)
+
+        line_y    = sig_y + 13 * mm
+        half_line = 24 * mm
+
+        if stamp_path:
+            stamp_sz = 20 * mm
+            try:
+                canv.drawImage(stamp_path,
+                               center_cx - stamp_sz / 2, line_y + 2 * mm,
+                               width=stamp_sz, height=stamp_sz,
+                               preserveAspectRatio=True, mask='auto')
+            except Exception:
+                pass
+
+        canv.setStrokeColor(PRIMARY)
+        canv.setLineWidth(1.0)
+        canv.line(center_cx - half_line, line_y, center_cx + half_line, line_y)
+        canv.setFont("Helvetica-Bold", 8)
+        canv.setFillColor(DARK)
+        canv.drawCentredString(center_cx, line_y - 5 * mm, "Authorized Signature")
+
+        canv.restoreState()
+
     doc = SimpleDocTemplate(
         filepath, pagesize=A4,
         leftMargin=15 * mm, rightMargin=15 * mm,
-        topMargin=top_margin, bottomMargin=20 * mm,
+        topMargin=top_margin, bottomMargin=_BOT,
     )
+
+    # ── Styles ─────────────────────────────────────────────────────────────────
+    title_s  = ParagraphStyle("st_ti",  fontName="Helvetica-Bold", fontSize=18,
+                               textColor=PRIMARY, alignment=TA_CENTER)
+    lbl_s    = ParagraphStyle("st_lb",  fontName="Helvetica-Bold", fontSize=8.5,
+                               textColor=MED_GRAY)
+    val_s    = ParagraphStyle("st_vl",  fontName="Helvetica",      fontSize=9,  textColor=DARK)
+    val_b    = ParagraphStyle("st_vb",  fontName="Helvetica-Bold", fontSize=9,  textColor=DARK)
+    lbl_r    = ParagraphStyle("st_lr",  fontName="Helvetica-Bold", fontSize=8.5,
+                               textColor=MED_GRAY, alignment=TA_RIGHT)
+    val_r    = ParagraphStyle("st_vr",  fontName="Helvetica",      fontSize=9,
+                               textColor=DARK, alignment=TA_RIGHT)
+    val_rb   = ParagraphStyle("st_vrb", fontName="Helvetica-Bold", fontSize=9,
+                               textColor=DARK, alignment=TA_RIGHT)
+    style_h  = ParagraphStyle("st_h",   fontName="Helvetica-Bold", fontSize=8,  textColor=WHITE)
+    style_r  = ParagraphStyle("st_r",   fontName="Helvetica",      fontSize=8,  textColor=DARK)
+    style_rc = ParagraphStyle("st_rc",  fontName="Helvetica",      fontSize=8,
+                               textColor=DARK, alignment=TA_RIGHT)
+    style_rb = ParagraphStyle("st_rb",  fontName="Helvetica-Bold", fontSize=8,
+                               textColor=DARK, alignment=TA_RIGHT)
+    style_wh = ParagraphStyle("st_wh",  fontName="Helvetica-Bold", fontSize=8,
+                               textColor=WHITE, alignment=TA_RIGHT)
 
     story = []
-    _build_top(
-        story, company, "ACCOUNT STATEMENT",
-        f"AS-{datetime.now().strftime('%Y%m%d')}",
-        datetime.now().strftime("%d %b %Y"),
-    )
+
+    # ── 1. Centered title ─────────────────────────────────────────────────────
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph("ACCOUNT STATEMENT", title_s))
     story.append(Spacer(1, 5 * mm))
 
-    info_style = ParagraphStyle("inf", fontName="Helvetica", fontSize=9, textColor=DARK)
-    story.append(Paragraph(f"<b>Customer:</b> {customer.get('name', '')}", info_style))
-    period = f"{date_from} to {date_to}" if date_from and date_to else "All Dates"
-    story.append(Paragraph(f"<b>Period:</b> {period}", info_style))
+    # ── 2. Info block (2 columns) ─────────────────────────────────────────────
+    period    = _period_str(date_from, date_to)
+    stmt_no   = f"ST-{datetime.now().strftime('%Y%m%d%H%M')}"
+    today_str = datetime.now().strftime("%d %b %Y")
+
+    left_rows = [
+        [Paragraph("Customer:", lbl_s),
+         Paragraph(_xe(customer.get("name", "")), val_b)],
+        [Paragraph("Period:",   lbl_s),
+         Paragraph(period, val_s)],
+    ]
+    if customer.get("trn"):
+        left_rows.append([Paragraph("TRN:", lbl_s),
+                          Paragraph(_xe(customer["trn"]), val_s)])
+
+    right_rows = [
+        [Paragraph("Statement No:", lbl_r),
+         Paragraph(stmt_no, val_rb)],
+        [Paragraph("Date:",         lbl_r),
+         Paragraph(today_str, val_r)],
+    ]
+
+    left_inner  = Table(left_rows,  colWidths=[24 * mm, 66 * mm])
+    right_inner = Table(right_rows, colWidths=[32 * mm, 42 * mm])
+    for t_inner in (left_inner, right_inner):
+        t_inner.setStyle(TableStyle([
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ]))
+
+    info_outer = Table([[left_inner, right_inner]],
+                       colWidths=[_CONTENT_W * 0.56, _CONTENT_W * 0.44])
+    info_outer.setStyle(TableStyle([
+        ("BOX",           (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ("BACKGROUND",    (0, 0), (-1, -1), LIGHT_GRAY),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+    ]))
+    story.append(info_outer)
     story.append(Spacer(1, 4 * mm))
 
-    style_h  = ParagraphStyle("h",  fontName="Helvetica-Bold", fontSize=8, textColor=WHITE)
-    style_r  = ParagraphStyle("r",  fontName="Helvetica",      fontSize=8, textColor=DARK)
-    style_rc = ParagraphStyle("rc", fontName="Helvetica",      fontSize=8, textColor=DARK, alignment=TA_RIGHT)
-    style_rb = ParagraphStyle("rb", fontName="Helvetica-Bold", fontSize=8, textColor=DARK, alignment=TA_RIGHT)
-
+    # ── 3. Ledger table ───────────────────────────────────────────────────────
     headers    = ["Date", "Description", "Debit (AED)", "Credit (AED)", "Balance (AED)"]
-    col_widths = [22 * mm, 73 * mm, 25 * mm, 25 * mm, 25 * mm]
-    data = [[Paragraph(h, style_h) for h in headers]]
+    col_widths = [25 * mm, 75 * mm, 25 * mm, 25 * mm, 25 * mm]
+    data       = [[Paragraph(h, style_h) for h in headers]]
 
+    # Opening balance row
+    ob_date = _fmt_d(_parse_ds(date_from))
     data.append([
-        Paragraph("", style_r),
+        Paragraph(ob_date, style_r),
         Paragraph("<b>Opening Balance</b>", style_r),
         Paragraph("", style_rc), Paragraph("", style_rc),
         Paragraph(f"{opening_balance:.2f}", style_rb),
@@ -664,41 +820,51 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
         if isinstance(date_str, datetime):
             date_str = date_str.strftime("%d %b %Y")
         data.append([
-            Paragraph(str(date_str)[:11], style_r),
-            Paragraph(entry.get("description", ""), style_r),
-            Paragraph(f"{entry.get('debit', 0):.2f}" if entry.get("debit", 0) else "-", style_rc),
-            Paragraph(f"{entry.get('credit', 0):.2f}" if entry.get("credit", 0) else "-", style_rc),
+            Paragraph(str(date_str), style_r),
+            Paragraph(_xe(entry.get("description", "")), style_r),
+            Paragraph(f"{entry.get('debit', 0):.2f}"  if entry.get("debit",  0) else "—", style_rc),
+            Paragraph(f"{entry.get('credit', 0):.2f}" if entry.get("credit", 0) else "—", style_rc),
             Paragraph(f"{entry.get('balance', 0):.2f}", style_rc),
         ])
 
+    # Filler rows to fill the page
+    _ROW_H  = 7 * mm
+    _HDR_H  = 9 * mm
+    _OVER   = 60 * mm   # title + info block + spacers
+    _avail  = page_h - top_margin - _BOT - _OVER
+    _n_data = len(entries) + 2  # entries + OB + CB
+    _fill   = max(0, int((_avail - _HDR_H) / _ROW_H) - _n_data)
+    _fill   = min(_fill, 10)
+    for _ in range(_fill):
+        data.append([Paragraph("", style_r)] * 5)
+
+    # Closing balance row
     data.append([
         Paragraph("", style_r),
         Paragraph("<b>Closing Balance</b>", style_rb),
         Paragraph("", style_rc), Paragraph("", style_rc),
-        Paragraph(f"<b>{closing_balance:.2f}</b>", style_rb),
+        Paragraph(f"<b>{closing_balance:.2f}</b>", style_wh),
     ])
 
     t = Table(data, colWidths=col_widths)
     t.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0),  (-1, 0),  PRIMARY),
         ("ROWBACKGROUNDS",(0, 1),  (-1, -2), [LIGHT_GRAY, WHITE]),
-        ("BACKGROUND",    (0, -1), (-1, -1), colors.HexColor("#EFF6FF")),
+        ("BACKGROUND",    (0, -1), (-1, -1), PRIMARY),
+        ("FONTSIZE",      (0, 0),  (-1, -1), 8),
         ("GRID",          (0, 0),  (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
         ("VALIGN",        (0, 0),  (-1, -1), "MIDDLE"),
         ("TOPPADDING",    (0, 0),  (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0),  (-1, -1), 4),
         ("LEFTPADDING",   (0, 0),  (-1, -1), 4),
         ("RIGHTPADDING",  (0, 0),  (-1, -1), 4),
+        # Opening balance row: slight highlight + bold
+        ("BACKGROUND",    (0, 1),  (-1, 1),  colors.HexColor("#F1F5F9")),
+        ("FONTNAME",      (0, 1),  (-1, 1),  "Helvetica-Bold"),
     ]))
     story.append(t)
 
-    story.append(Spacer(1, 8 * mm))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=MED_GRAY))
-    footer_style = ParagraphStyle("footer", fontName="Helvetica", fontSize=7, textColor=MED_GRAY, alignment=TA_CENTER)
-    story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph("This is a computer generated statement.", footer_style))
-
-    doc.build(story)
+    doc.build(story, onFirstPage=_draw_stmt_page, onLaterPages=_draw_stmt_page)
     return filepath
 
 
@@ -1394,45 +1560,115 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     lh_draw_h = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
     top_margin = (lh_draw_h + 6 * mm) if lh_draw_h else 63 * mm
 
-    def _draw_lh_dn(canv, _doc):
-        if not lh_draw_h:
-            return
+    use_stamp  = dn_data.get("show_stamp", False)
+    stamp_path = _get_stamp_path() if use_stamp else ""
+
+    # Bottom reserve: footer(15mm) + HR gap(5mm) + sig box(34mm) = 54mm
+    _BOT = 54 * mm
+
+    def _draw_dn_page(canv, _doc):
         canv.saveState()
-        canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
-                       width=page_w, height=lh_draw_h,
-                       preserveAspectRatio=False, mask='auto')
-        canv.setStrokeColor(colors.HexColor("#D0D7DE"))
+
+        # Letterhead
+        if lh_draw_h:
+            canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
+                           width=page_w, height=lh_draw_h,
+                           preserveAspectRatio=False, mask='auto')
+            canv.setStrokeColor(colors.HexColor("#D0D7DE"))
+            canv.setLineWidth(0.4)
+            canv.line(0, page_h - lh_draw_h - 0.5 * mm,
+                      page_w, page_h - lh_draw_h - 0.5 * mm)
+
+        # Footer text (fixed 11mm from page bottom)
+        footer_y = 11 * mm
+        canv.setFont("Helvetica", 7)
+        canv.setFillColor(MED_GRAY)
+        canv.drawCentredString(page_w / 2, footer_y,
+                               "This is a computer generated delivery note.")
+
+        # HR above footer
+        hr_y = footer_y + 5 * mm
+        canv.setStrokeColor(MED_GRAY)
         canv.setLineWidth(0.4)
-        canv.line(0, page_h - lh_draw_h - 0.5 * mm, page_w, page_h - lh_draw_h - 0.5 * mm)
+        canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
+
+        # Signature box (full content width, split into left/right halves)
+        sig_h   = 34 * mm
+        sig_y   = hr_y + 4 * mm
+        sig_x   = 15 * mm
+        sig_w   = page_w - 30 * mm
+        mid_x   = sig_x + sig_w / 2
+
+        # Box + divider
+        canv.setStrokeColor(colors.HexColor("#94A3B8"))
+        canv.setLineWidth(0.7)
+        canv.rect(sig_x, sig_y, sig_w, sig_h)
+        canv.line(mid_x, sig_y, mid_x, sig_y + sig_h)
+
+        # Signature line Y (13mm from bottom of sig box)
+        line_y    = sig_y + 13 * mm
+        half_line = 26 * mm
+
+        # ── LEFT: Receiver's Signature ──────────────────────────────────────────
+        left_cx = sig_x + sig_w / 4
+        canv.setStrokeColor(PRIMARY)
+        canv.setLineWidth(1.0)
+        canv.line(left_cx - half_line, line_y, left_cx + half_line, line_y)
+        canv.setFont("Helvetica-Bold", 8)
+        canv.setFillColor(DARK)
+        canv.drawCentredString(left_cx, line_y - 5 * mm, "Receiver's Signature")
+
+        # ── RIGHT: Authorized Signature (+ optional stamp above line) ───────────
+        right_cx = sig_x + 3 * sig_w / 4
+        if use_stamp and stamp_path:
+            stamp_sz = 20 * mm
+            try:
+                canv.drawImage(stamp_path,
+                               right_cx - stamp_sz / 2, line_y + 2 * mm,
+                               width=stamp_sz, height=stamp_sz,
+                               preserveAspectRatio=True, mask='auto')
+            except Exception:
+                pass
+        canv.setStrokeColor(PRIMARY)
+        canv.setLineWidth(1.0)
+        canv.line(right_cx - half_line, line_y, right_cx + half_line, line_y)
+        canv.setFont("Helvetica-Bold", 8)
+        canv.setFillColor(DARK)
+        canv.drawCentredString(right_cx, line_y - 5 * mm, "Authorized Signature")
+
         canv.restoreState()
 
     doc = SimpleDocTemplate(
         filepath, pagesize=A4,
         leftMargin=15 * mm, rightMargin=15 * mm,
-        topMargin=top_margin, bottomMargin=4 * mm,
+        topMargin=top_margin, bottomMargin=_BOT,
     )
 
-    title_s = ParagraphStyle("dn_title", fontName="Helvetica-Bold", fontSize=15,
+    # ── Styles ─────────────────────────────────────────────────────────────────
+    title_s = ParagraphStyle("dn_title", fontName="Helvetica-Bold", fontSize=16,
                               textColor=PRIMARY, alignment=TA_CENTER)
     sub_s   = ParagraphStyle("dn_sub",   fontName="Helvetica",      fontSize=8,
                               textColor=MED_GRAY, alignment=TA_CENTER)
     lbl_s   = ParagraphStyle("dn_lbl",   fontName="Helvetica-Bold", fontSize=8, textColor=DARK)
     val_s   = ParagraphStyle("dn_val",   fontName="Helvetica",      fontSize=9, textColor=DARK)
-    val_r   = ParagraphStyle("dn_val_r", fontName="Helvetica",      fontSize=9, textColor=DARK, alignment=TA_RIGHT)
-    hdr_s   = ParagraphStyle("dn_hdr",   fontName="Helvetica-Bold", fontSize=8, textColor=WHITE, alignment=TA_CENTER)
-    row_c   = ParagraphStyle("dn_rc",    fontName="Helvetica",      fontSize=8, textColor=DARK, alignment=TA_CENTER)
+    val_r   = ParagraphStyle("dn_val_r", fontName="Helvetica",      fontSize=9, textColor=DARK,
+                              alignment=TA_RIGHT)
+    hdr_s   = ParagraphStyle("dn_hdr",   fontName="Helvetica-Bold", fontSize=8,
+                              textColor=WHITE, alignment=TA_CENTER)
+    row_c   = ParagraphStyle("dn_rc",    fontName="Helvetica",      fontSize=8,
+                              textColor=DARK, alignment=TA_CENTER)
     row_l   = ParagraphStyle("dn_rl",    fontName="Helvetica",      fontSize=8, textColor=DARK)
-    sig_s   = ParagraphStyle("dn_sig",   fontName="Helvetica",      fontSize=8, textColor=MED_GRAY, alignment=TA_CENTER)
-    sig_b   = ParagraphStyle("dn_sigb",  fontName="Helvetica-Bold", fontSize=8, textColor=DARK, alignment=TA_CENTER)
-    foot_s  = ParagraphStyle("dn_foot",  fontName="Helvetica",      fontSize=7, textColor=MED_GRAY, alignment=TA_CENTER)
 
     story = []
 
+    # ── Optional text company header (when no letterhead image) ───────────────
     if not lh_draw_h:
-        comp_s = ParagraphStyle("dn_comp", fontName="Helvetica-Bold", fontSize=14, textColor=PRIMARY, alignment=TA_CENTER)
+        comp_s = ParagraphStyle("dn_comp", fontName="Helvetica-Bold", fontSize=14,
+                                 textColor=PRIMARY, alignment=TA_CENTER)
+        addr_s = ParagraphStyle("dn_addr", fontName="Helvetica",      fontSize=8,
+                                 textColor=MED_GRAY, alignment=TA_CENTER)
         story.append(Paragraph(company.get("name", "Company Name"), comp_s))
         story.append(Spacer(1, 1 * mm))
-        addr_s = ParagraphStyle("dn_addr", fontName="Helvetica", fontSize=8, textColor=MED_GRAY, alignment=TA_CENTER)
         if company.get("address"):
             story.append(Paragraph(company["address"].replace("\n", "  |  "), addr_s))
         if company.get("phone") or company.get("email"):
@@ -1442,17 +1678,23 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         story.append(HRFlowable(width="100%", thickness=0.8, color=PRIMARY))
         story.append(Spacer(1, 2 * mm))
 
-    story.append(Spacer(1, 1 * mm))
+    # ── Title ─────────────────────────────────────────────────────────────────
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("DELIVERY NOTE", title_s))
-    story.append(Paragraph("&#x625;&#x634;&#x639;&#x627;&#x631; &#x62A;&#x633;&#x644;&#x64A;&#x645;", sub_s))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Paragraph(
+        "&#x625;&#x634;&#x639;&#x627;&#x631; &#x62A;&#x633;&#x644;&#x64A;&#x645;", sub_s))
+    story.append(Spacer(1, 4 * mm))
 
+    # ── Customer / DN info block ──────────────────────────────────────────────
     customer  = dn_data.get("customer") or {}
     dn_number = dn_data.get("dn_number", "")
     dn_date   = dn_data.get("date", datetime.now().strftime("%d %b %Y"))
     remarks   = dn_data.get("remarks", "")
 
-    left_cell = [Paragraph("<b>To:</b>", lbl_s), Paragraph(f"<b>{_xe(customer.get('name', '—'))}</b>", val_s)]
+    left_cell = [
+        Paragraph("<b>To:</b>", lbl_s),
+        Paragraph(f"<b>{_xe(customer.get('name', '—'))}</b>", val_s),
+    ]
     if customer.get("address"):
         left_cell.append(Paragraph(_xe(customer["address"].replace("\n", "<br/>")), val_s))
     if customer.get("phone"):
@@ -1465,31 +1707,34 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         Paragraph(f"<b>Date:</b>    {_xe(str(dn_date))}", val_r),
     ]
     if remarks:
-        right_cell.append(Spacer(1, 3))
+        right_cell.append(Spacer(1, 2))
         right_cell.append(Paragraph(f"<b>Remarks:</b> {_xe(remarks)}", val_r))
 
     info_t = Table([[left_cell, right_cell]], colWidths=[100 * mm, 80 * mm])
     info_t.setStyle(TableStyle([
-        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
-        ("BOX",          (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-        ("TOPPADDING",   (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
-        ("LEFTPADDING",  (0, 0), (0, 0),   8),
-        ("RIGHTPADDING", (1, 0), (1, 0),   8),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("BOX",           (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (0,  0),  8),
+        ("RIGHTPADDING",  (1, 0), (1,  0),  8),
     ]))
     story.append(info_t)
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 4 * mm))
 
+    # ── Items table: rows calculated to fill available page space ─────────────
     items_data = dn_data.get("items", [])
     _actual_n  = len(items_data)
-    _ROW_H_DN    = 8  * mm
-    _usable_h    = page_h - top_margin - 55 * mm   # reserve space for sig block + footer
-    _max_rows    = max(0, int(_usable_h / _ROW_H_DN))
-    _target      = min(10, _max_rows)               # aim for 10 rows total (compact pad style)
-    MIN_ROWS     = max(_actual_n, _target)
+    _HDR_H     = 8  * mm
+    _ROW_H     = 8  * mm
+    # Story overhead above table: title(9) + arabic(5) + spacer(4) + info_t(~24) + spacer(4) ≈ 46mm
+    # Extra text header (no letterhead) adds ~24mm
+    _overhead  = 46 * mm + (24 * mm if not lh_draw_h else 0)
+    _avail     = page_h - top_margin - _BOT - _overhead
+    _max_rows  = max(_actual_n, int((_avail - _HDR_H) / _ROW_H))
+    MIN_ROWS   = min(_max_rows, max(_actual_n, 12))   # cap at 12 to avoid overflow
 
-    dn_col_w = [14 * mm, 90 * mm, 20 * mm, 56 * mm]
-
+    dn_col_w   = [14 * mm, 90 * mm, 20 * mm, 56 * mm]
     table_data = [[
         Paragraph("S.NO",        hdr_s),
         Paragraph("DESCRIPTION", hdr_s),
@@ -1497,11 +1742,11 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         Paragraph("REMARKS",     hdr_s),
     ]]
 
-    for row_idx in range(MIN_ROWS):
-        if row_idx < _actual_n:
-            it = items_data[row_idx]
+    for idx in range(MIN_ROWS):
+        if idx < _actual_n:
+            it = items_data[idx]
             table_data.append([
-                Paragraph(str(it.get("sno", row_idx + 1)), row_c),
+                Paragraph(str(it.get("sno", idx + 1)), row_c),
                 Paragraph(_xe(str(it.get("description", ""))), row_l),
                 Paragraph(str(it.get("quantity", "")), row_c),
                 Paragraph(_xe(str(it.get("remarks", ""))), row_l),
@@ -1510,11 +1755,8 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
             table_data.append([Paragraph("", row_c), Paragraph("", row_l),
                                 Paragraph("", row_c), Paragraph("", row_l)])
 
-    dn_table = Table(
-        table_data,
-        colWidths=dn_col_w,
-        rowHeights=[8 * mm] + [_ROW_H_DN] * MIN_ROWS
-    )
+    dn_table = Table(table_data, colWidths=dn_col_w,
+                     rowHeights=[_HDR_H] + [_ROW_H] * MIN_ROWS)
     dn_table.setStyle(TableStyle([
         ("BACKGROUND",     (0, 0), (-1, 0),  PRIMARY),
         ("FONTSIZE",       (0, 0), (-1, -1), 8),
@@ -1524,53 +1766,16 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [LIGHT_GRAY, WHITE]),
         ("GRID",           (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
         ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",     (0, 1), (-1, -1), 5),
-        ("BOTTOMPADDING",  (0, 1), (-1, -1), 5),
+        ("TOPPADDING",     (0, 0), (-1, 0),  5),
+        ("BOTTOMPADDING",  (0, 0), (-1, 0),  5),
+        ("TOPPADDING",     (0, 1), (-1, -1), 4),
+        ("BOTTOMPADDING",  (0, 1), (-1, -1), 4),
         ("LEFTPADDING",    (0, 0), (-1, -1), 4),
         ("RIGHTPADDING",   (0, 0), (-1, -1), 4),
         ("LEFTPADDING",    (1, 1), (1, -1),  6),
         ("LEFTPADDING",    (3, 1), (3, -1),  6),
     ]))
     story.append(dn_table)
-    story.append(Spacer(1, 6 * mm))
 
-    use_stamp  = dn_data.get("show_stamp", False)
-    stamp_path = _get_stamp_path() if use_stamp else ""
-    recv_cell  = [
-        Spacer(1, 10 * mm),
-        Paragraph("________________________", sig_s),
-        Spacer(1, 2 * mm),
-        Paragraph("Receiver's Signature", sig_b),
-    ]
-    auth_cell = []
-    if use_stamp and stamp_path:
-        try:
-            auth_cell.append(Image(stamp_path, width=22 * mm, height=22 * mm))
-        except Exception:
-            auth_cell.append(Spacer(1, 22 * mm))
-    else:
-        auth_cell.append(Spacer(1, 10 * mm))
-    auth_cell += [
-        Paragraph("________________________", sig_s),
-        Spacer(1, 2 * mm),
-        Paragraph("Authorized Signature", sig_b),
-    ]
-
-    sig_t = Table([[recv_cell, auth_cell]], colWidths=[90 * mm, 90 * mm], rowHeights=[28 * mm])
-    sig_t.setStyle(TableStyle([
-        ("BOX",          (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-        ("INNERGRID",    (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-        ("VALIGN",       (0, 0), (-1, -1), "BOTTOM"),
-        ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
-        ("TOPPADDING",   (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
-    ]))
-    story.append(sig_t)
-
-    story.append(Spacer(1, 4 * mm))
-    story.append(HRFlowable(width="100%", thickness=0.4, color=MED_GRAY))
-    story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph("This is a computer generated delivery note.", foot_s))
-
-    doc.build(story, onFirstPage=_draw_lh_dn, onLaterPages=lambda c, d: None)
+    doc.build(story, onFirstPage=_draw_dn_page, onLaterPages=lambda c, d: None)
     return filepath
