@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=3656bd9+PDFPOLY LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=93946a6+LAYOUT3 LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -659,13 +659,11 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
 
     stamp_path = _get_stamp_path()
 
-    # Bottom reserve: HR at 30mm + gap(3mm) + sig area(49mm) = 82mm
-    _BOT = 82 * mm
+    # Sig block is now in the story; only a small bottom margin needed
+    _BOT = 15 * mm
 
     def _draw_stmt_page(canv, _doc):
         canv.saveState()
-
-        # Letterhead
         if lh_draw_h:
             canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
                            width=page_w, height=lh_draw_h,
@@ -674,39 +672,6 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
             canv.setLineWidth(0.4)
             canv.line(0, page_h - lh_draw_h - 0.5 * mm,
                       page_w, page_h - lh_draw_h - 0.5 * mm)
-
-        # Thin HR above signature area — raised by 13mm for more stamp room
-        hr_y = 30 * mm
-        canv.setStrokeColor(colors.HexColor("#CBD5E1"))
-        canv.setLineWidth(0.5)
-        canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
-
-        # Signature — right side only, no outer box
-        sig_y     = hr_y + 3 * mm
-        sig_x     = page_w / 2
-        sig_w     = page_w - 15 * mm - sig_x
-        center_cx = sig_x + sig_w / 2
-
-        line_y    = sig_y + 17 * mm
-        half_line = 28 * mm
-
-        if stamp_path:
-            stamp_sz = 26 * mm
-            try:
-                canv.drawImage(stamp_path,
-                               center_cx - stamp_sz / 2, line_y + 2 * mm,
-                               width=stamp_sz, height=stamp_sz,
-                               preserveAspectRatio=True, mask='auto')
-            except Exception:
-                pass
-
-        canv.setStrokeColor(PRIMARY)
-        canv.setLineWidth(1.5)
-        canv.line(center_cx - half_line, line_y, center_cx + half_line, line_y)
-        canv.setFont("Helvetica-Bold", 8)
-        canv.setFillColor(DARK)
-        canv.drawCentredString(center_cx, line_y - 4.5 * mm, "Authorized Signature")
-
         canv.restoreState()
 
     doc = SimpleDocTemplate(
@@ -791,7 +756,7 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
         ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
     ]))
     story.append(info_outer)
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 10 * mm))
 
     # ── 3. Ledger table ───────────────────────────────────────────────────────
     headers    = ["Date", "Description", "Debit (AED)", "Credit (AED)", "Balance (AED)"]
@@ -819,13 +784,14 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
             Paragraph(f"{entry.get('balance', 0):.2f}", style_rc),
         ])
 
-    # Filler rows — reserve ~10mm below table for amount-in-words line
-    _ROW_H    = 7 * mm
+    # Filler rows — sig block lives in story so _BOT is tiny
+    _ROW_H    = 8 * mm
     _HDR_H    = 9 * mm
     _lh_story = 0 if lh_draw_h else 20 * mm
-    # Story overhead above table: Spacer(2)+title(12)+Spacer(4)+info(20)+Spacer(4) ≈ 42mm
-    _OVER     = _lh_story + 42 * mm
-    _below    = 12 * mm   # amount-in-words line + spacer below table
+    # Overhead above table: Spacer(2)+title(8)+Spacer(4)+info(22)+Spacer(10) ≈ 46mm
+    # _below includes HR+spacers+sig table (stamp 38mm + sig line) ≈ 63mm
+    _OVER     = _lh_story + 52 * mm
+    _below    = 63 * mm
     _avail    = page_h - top_margin - _BOT - _OVER - _below
     _n_data   = len(entries) + 2   # OB + entries + CB
     _fill     = max(0, int((_avail - _HDR_H) / _ROW_H) - _n_data)
@@ -858,14 +824,54 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
     ]))
     story.append(t)
 
-    # Amount in words
+    from reportlab.platypus import KeepTogether
+
     _cb_abs   = abs(closing_balance)
     _cb_words = _amount_in_words(_cb_abs)
     _cr_dr    = "Credit" if closing_balance < 0 else "Debit"
-    aiw_s     = ParagraphStyle("st_aiw", fontName="Helvetica", fontSize=7.5, textColor=DARK)
-    story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph(
-        f"<b>Amount in Words:</b>  {_xe(_cb_words)} ({_cr_dr})", aiw_s))
+    aiw_s    = ParagraphStyle("st_aiw", fontName="Helvetica",      fontSize=7.5, textColor=DARK)
+    sig_ln_s = ParagraphStyle("st_sln", fontName="Helvetica",      fontSize=8,   textColor=DARK, alignment=TA_CENTER)
+    sig_lb_s = ParagraphStyle("st_slb", fontName="Helvetica-Bold", fontSize=8,   textColor=DARK, alignment=TA_CENTER)
+
+    aiw_para = Paragraph(
+        f"<b>Amount in Words:</b><br/>{_xe(_cb_words)} ({_cr_dr})", aiw_s)
+
+    sig_right = []
+    if stamp_path:
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(stamp_path) as _simg:
+                _sw, _sh = _simg.size
+            _st_w = 38 * mm
+            _st_h = min(_st_w, _st_w * _sh / _sw)
+            sig_right.append(Image(stamp_path, width=_st_w, height=_st_h))
+            sig_right.append(Spacer(1, 2 * mm))
+        except Exception:
+            pass
+    sig_right.append(Paragraph("_" * 36, sig_ln_s))
+    sig_right.append(Spacer(1, 1 * mm))
+    sig_right.append(Paragraph("Authorized Signature", sig_lb_s))
+
+    sig_tbl = Table(
+        [[aiw_para, sig_right]],
+        colWidths=[_CONTENT_W * 0.55, _CONTENT_W * 0.45],
+    )
+    sig_tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN",         (1, 0), (1,  0),  "CENTER"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LINEAFTER",     (0, 0), (0,  0),  0.3, colors.HexColor("#CBD5E1")),
+    ]))
+
+    story.append(KeepTogether([
+        Spacer(1, 3 * mm),
+        HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1")),
+        Spacer(1, 4 * mm),
+        sig_tbl,
+    ]))
 
     doc.build(story, onFirstPage=_draw_stmt_page, onLaterPages=_draw_stmt_page)
     return filepath
@@ -1668,9 +1674,9 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         story.append(Spacer(1, 2 * mm))
 
     # ── Title ─────────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 1 * mm))
+    story.append(Spacer(1, 5 * mm))
     story.append(Paragraph("DELIVERY NOTE", title_s))
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 6 * mm))
 
     # ── Customer / DN info block ──────────────────────────────────────────────
     customer  = dn_data.get("customer") or {}
@@ -1707,16 +1713,15 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         ("RIGHTPADDING",  (1, 0), (1,  0),  8),
     ]))
     story.append(info_t)
-    story.append(Spacer(1, 8 * mm))
+    story.append(Spacer(1, 12 * mm))
 
     # ── Items table: rows calculated to fill available page space ─────────────
     items_data = dn_data.get("items", [])
     _actual_n  = len(items_data)
     _HDR_H     = 8  * mm
-    _ROW_H     = 8  * mm
-    # Story overhead: Spacer(1) + title(11) + Spacer(3) + info_t(~24) + Spacer(8) ≈ 47mm
-    # Extra text header (no letterhead image) adds ~24mm
-    _overhead  = 47 * mm + (24 * mm if not lh_draw_h else 0)
+    _ROW_H     = 9  * mm
+    # Story overhead: Spacer(5) + title(11) + Spacer(6) + info_t(~24) + Spacer(12) ≈ 58mm
+    _overhead  = 58 * mm + (24 * mm if not lh_draw_h else 0)
     _avail     = page_h - top_margin - _BOT - _overhead
     _max_rows  = max(_actual_n, int((_avail - _HDR_H) / _ROW_H))
     MIN_ROWS   = _max_rows
@@ -1784,7 +1789,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
 
     # Stamp always shown if file exists (regardless of include_stamp checkbox)
     stamp_path = _get_stamp_path()
-    _BOT       = 64 * mm
+    _BOT       = 15 * mm
 
     def _draw_po_page(canv, _doc):
         canv.saveState()
@@ -1796,42 +1801,10 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
             canv.setLineWidth(0.4)
             canv.line(0, page_h - lh_draw_h - 0.5 * mm,
                       page_w, page_h - lh_draw_h - 0.5 * mm)
-
-        footer_y = 11 * mm
         canv.setFont("Helvetica", 7)
         canv.setFillColor(MED_GRAY)
-        canv.drawCentredString(page_w / 2, footer_y,
+        canv.drawCentredString(page_w / 2, 8 * mm,
                                "This is a computer generated purchase order.")
-
-        hr_y = footer_y + 5 * mm
-        canv.setStrokeColor(colors.HexColor("#CBD5E1"))
-        canv.setLineWidth(0.5)
-        canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
-
-        # Authorized signature block (right half) — no border box
-        sig_y     = hr_y + 4 * mm
-        sig_x     = page_w / 2
-        sig_w     = page_w - 15 * mm - sig_x
-        center_cx = sig_x + sig_w / 2
-
-        line_y    = sig_y + 14 * mm
-        half_line = 26 * mm
-
-        if stamp_path:
-            stamp_sz = 26 * mm
-            try:
-                canv.drawImage(stamp_path, center_cx - stamp_sz / 2, line_y + 2 * mm,
-                               width=stamp_sz, height=stamp_sz,
-                               preserveAspectRatio=True, mask='auto')
-            except Exception:
-                pass
-
-        canv.setStrokeColor(PRIMARY)
-        canv.setLineWidth(1.5)
-        canv.line(center_cx - half_line, line_y, center_cx + half_line, line_y)
-        canv.setFont("Helvetica-Bold", 8)
-        canv.setFillColor(DARK)
-        canv.drawCentredString(center_cx, line_y - 4.5 * mm, "Authorized Signature")
         canv.restoreState()
 
     doc = SimpleDocTemplate(
@@ -1873,9 +1846,9 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
         story.append(HRFlowable(width="100%", thickness=0.8, color=PRIMARY))
         story.append(Spacer(1, 2 * mm))
 
-    story.append(Spacer(1, 2 * mm))
+    story.append(Spacer(1, 3 * mm))
     story.append(Paragraph("PURCHASE ORDER", title_s))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 8 * mm))
 
     supplier = po_data.get("supplier") or {}
     po_no    = po_data.get("po_number", "")
@@ -1940,7 +1913,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
         ("ALIGN",        (1, 0), (1, 0),   "RIGHT"),
     ]))
     story.append(header_t)
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 10 * mm))
 
     # Items table
     col_w  = [9 * mm, 70 * mm, 15 * mm, 26 * mm, 26 * mm, 26 * mm]
@@ -1958,11 +1931,12 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
             Paragraph(f"{it.get('total', 0):.2f}", irc_s),
         ])
 
-    # Filler rows — overhead: story content above + below items table
+    # Filler rows — sig block now in story; _BOT is minimal
+    # Overhead: above table(53mm) + totals+notes(27mm) + sig block(55mm) = 135mm
     _HDR_H    = 11 * mm
     _ROW_H    = 10 * mm
-    _lh_story = 0 if lh_draw_h else 25 * mm   # text letterhead in story
-    _OVER     = _lh_story + 85 * mm           # title + boxes + spacers + totals + notes
+    _lh_story = 0 if lh_draw_h else 25 * mm
+    _OVER     = _lh_story + 135 * mm
     _avail    = page_h - top_margin - _BOT - _OVER
     _max      = max(len(items_list), int((_avail - _HDR_H) / _ROW_H))
     _fill     = max(0, _max - len(items_list))
@@ -2014,11 +1988,61 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
     ]))
     story.append(align_t)
 
+    from reportlab.platypus import KeepTogether
+
     _notes_text = po_data.get("notes") or \
         "Please supply the above materials/services as per agreed price, quality, and delivery terms."
     story.append(Spacer(1, 2 * mm))
     note_s = ParagraphStyle("po_ns", fontName="Helvetica", fontSize=8, textColor=DARK)
     story.append(Paragraph(f"<b>Notes:</b> {_xe(_notes_text)}", note_s))
+
+    po_tc_s  = ParagraphStyle("po_tc",  fontName="Helvetica",      fontSize=7.5, textColor=DARK)
+    po_sln_s = ParagraphStyle("po_sln", fontName="Helvetica",      fontSize=8,   textColor=DARK, alignment=TA_CENTER)
+    po_slb_s = ParagraphStyle("po_slb", fontName="Helvetica-Bold", fontSize=8,   textColor=DARK, alignment=TA_CENTER)
+
+    po_terms = [
+        Paragraph("<b>Terms &amp; Conditions:</b>", po_tc_s),
+        Paragraph("1) Delivery as per agreed schedule.", po_tc_s),
+        Paragraph("2) Prices are subject to prevailing taxes.", po_tc_s),
+        Paragraph("3) Goods once approved cannot be returned.", po_tc_s),
+    ]
+
+    po_sig_right = []
+    if stamp_path:
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(stamp_path) as _simg:
+                _sw, _sh = _simg.size
+            _st_w = 36 * mm
+            _st_h = min(_st_w, _st_w * _sh / _sw)
+            po_sig_right.append(Image(stamp_path, width=_st_w, height=_st_h))
+            po_sig_right.append(Spacer(1, 2 * mm))
+        except Exception:
+            pass
+    po_sig_right.append(Paragraph("_" * 36, po_sln_s))
+    po_sig_right.append(Spacer(1, 1 * mm))
+    po_sig_right.append(Paragraph("Authorized Signature", po_slb_s))
+
+    po_sig_tbl = Table(
+        [[po_terms, po_sig_right]],
+        colWidths=[_CONTENT_W * 0.55, _CONTENT_W * 0.45],
+    )
+    po_sig_tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
+        ("ALIGN",         (1, 0), (1,  0),  "CENTER"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LINEAFTER",     (0, 0), (0,  0),  0.3, colors.HexColor("#CBD5E1")),
+    ]))
+
+    story.append(KeepTogether([
+        Spacer(1, 3 * mm),
+        HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1")),
+        Spacer(1, 3 * mm),
+        po_sig_tbl,
+    ]))
 
     doc.build(story, onFirstPage=_draw_po_page, onLaterPages=lambda c, d: None)
     return filepath
