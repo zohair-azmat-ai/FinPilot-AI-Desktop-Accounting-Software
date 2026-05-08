@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=93946a6+LAYOUT3 LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=4665d51+ROWFIX LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -756,7 +756,7 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
         ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
     ]))
     story.append(info_outer)
-    story.append(Spacer(1, 10 * mm))
+    story.append(Spacer(1, 15 * mm))
 
     # ── 3. Ledger table ───────────────────────────────────────────────────────
     headers    = ["Date", "Description", "Debit (AED)", "Credit (AED)", "Balance (AED)"]
@@ -784,30 +784,34 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
             Paragraph(f"{entry.get('balance', 0):.2f}", style_rc),
         ])
 
-    # Filler rows — sig block lives in story so _BOT is tiny
+    # Filler rows — explicit rowHeights so table EXACTLY fills calculated space
+    # Actual row render: 8pt text + 4+4pt pad ≈ 6.2mm — use 8mm so rows are taller/visible
     _ROW_H    = 8 * mm
-    _HDR_H    = 9 * mm
+    _HDR_H    = 8 * mm
     _lh_story = 0 if lh_draw_h else 20 * mm
-    # Overhead above table: Spacer(2)+title(8)+Spacer(4)+info(22)+Spacer(10) ≈ 46mm
-    # _below includes HR+spacers+sig table (stamp 38mm + sig line) ≈ 63mm
-    _OVER     = _lh_story + 52 * mm
-    _below    = 63 * mm
+    # Overhead above table: Spacer(2)+title(8)+Spacer(4)+info(13)+Spacer(15) ≈ 42mm; +1mm margin
+    # _below: Spacer(3)+HR+Spacer(4)+sig_tbl(38mm stamp ≈ 55mm) ≈ 62mm; +1mm margin
+    _OVER     = _lh_story + 43 * mm
+    _below    = 62 * mm
     _avail    = page_h - top_margin - _BOT - _OVER - _below
     _n_data   = len(entries) + 2   # OB + entries + CB
     _fill     = max(0, int((_avail - _HDR_H) / _ROW_H) - _n_data)
     for _ in range(_fill):
         data.append([Paragraph("", style_r)] * 5)
 
-    # Closing balance — highlighted row
+    # Closing balance — highlighted row; all text WHITE on dark blue background
     _cb_label = "Closing Balance (Dr)" if closing_balance >= 0 else "Closing Balance (Cr)"
+    style_wc = ParagraphStyle("st_wc", fontName="Helvetica-Bold", fontSize=8, textColor=WHITE, alignment=TA_CENTER)
+    style_wl = ParagraphStyle("st_wl", fontName="Helvetica-Bold", fontSize=8, textColor=WHITE)
     data.append([
-        Paragraph("", style_r),
-        Paragraph(f"<b>{_cb_label}</b>", style_rb),
-        Paragraph("", style_rc), Paragraph("", style_rc),
+        Paragraph("", style_wl),
+        Paragraph(f"<b>{_cb_label}</b>", style_wl),
+        Paragraph("", style_wh), Paragraph("", style_wh),
         Paragraph(f"<b>{abs(closing_balance):.2f}</b>", style_wh),
     ])
 
-    t = Table(data, colWidths=col_widths)
+    t = Table(data, colWidths=col_widths,
+              rowHeights=[_HDR_H] + [_ROW_H] * (len(data) - 1))
     t.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0),  (-1, 0),  PRIMARY),
         ("ROWBACKGROUNDS",(0, 1),  (-1, -2), [LIGHT_GRAY, WHITE]),
@@ -1931,19 +1935,21 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
             Paragraph(f"{it.get('total', 0):.2f}", irc_s),
         ])
 
-    # Filler rows — sig block now in story; _BOT is minimal
-    # Overhead: above table(53mm) + totals+notes(27mm) + sig block(55mm) = 135mm
-    _HDR_H    = 11 * mm
-    _ROW_H    = 10 * mm
+    # Filler rows — explicit rowHeights so table exactly fills available space
+    # Actual row render: 8pt text + 7+7pt pad ≈ 8.3mm — use 8mm (slight underestimate = more rows)
+    # Overhead: above(49mm) + totals+notes(23mm) + sig block(48mm) = 120mm; +2mm margin = 122mm
+    _HDR_H    = 9 * mm
+    _ROW_H    = 8 * mm
     _lh_story = 0 if lh_draw_h else 25 * mm
-    _OVER     = _lh_story + 135 * mm
+    _OVER     = _lh_story + 122 * mm
     _avail    = page_h - top_margin - _BOT - _OVER
     _max      = max(len(items_list), int((_avail - _HDR_H) / _ROW_H))
     _fill     = max(0, _max - len(items_list))
     for _ in range(_fill):
         tbl.append([Paragraph("", ir_s)] * 6)
 
-    items_t = Table(tbl, colWidths=col_w)
+    items_t = Table(tbl, colWidths=col_w,
+                    rowHeights=[_HDR_H] + [_ROW_H] * _max)
     items_t.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, 0),  PRIMARY),
         ("ROWBACKGROUNDS",(0, 1), (-1, -1), [LIGHT_GRAY, WHITE]),
