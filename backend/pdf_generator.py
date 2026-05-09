@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=PGFIX2+STAMP_OVERHEAD LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=INV_AUTOFIT_V2 LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -387,17 +387,17 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     story.append(HRFlowable(width="100%", thickness=0.4, color=colors.HexColor("#CBD5E1")))
     story.append(Spacer(1, 1.5 * mm))
 
-    # ── 4. Items table ────────────────────────────────────────────────────────
+    # ── 4. Items table — auto-fit to 1 page ──────────────────────────────────
     stamp_path_check = _get_stamp_path() if include_stamp else ""
+    actual_items = invoice_data.get("items", [])
 
-    # Dynamic MIN_ROWS: 0–2 filler rows with overflow safety guard
-    _actual_n = len(invoice_data.get("items", []))
-    _ROW_H    = 8.0 * mm   # overestimate per data row (7+6 padding + 8pt font ≈ 7.7mm)
-    _OVERHEAD = 158 * mm   # fixed height: all story except item data rows
-    _usable_h = A4[1] - top_margin - 4 * mm  # matches bottomMargin
-    _max_rows = max(0, int((_usable_h - _OVERHEAD) / _ROW_H))
-    _filler_n = min(5, max(0, _max_rows - _actual_n))
-    MIN_ROWS  = _actual_n + _filler_n
+    # Space available for the ENTIRE items table (header + data rows).
+    # _OVERHEAD: conservative sum of all other story elements:
+    # title(~10) + info(~8) + customer(~22) + spacers/HR(~7) +
+    # totals(~25) + words+bank(~22) + terms+sig+footer(~39) + buffers ≈ 165 mm
+    _usable_h       = A4[1] - top_margin - 4 * mm   # bottomMargin = 4 mm
+    _OVERHEAD       = 165 * mm
+    _avail_for_tbl  = max(0.0, _usable_h - _OVERHEAD)
 
     col_w = [9*mm, 59*mm, 13*mm, 23*mm, 23*mm, 13*mm, 20*mm, 20*mm]
     ih_s  = ParagraphStyle("ih",  fontName="Helvetica-Bold", fontSize=7.5, textColor=WHITE, alignment=TA_CENTER)
@@ -407,47 +407,77 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
     hdrs = ["SR\nNO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)",
             "AMOUNT\n(AED)", "TAX\nRATE", "TAX AMT\n(AED)", "TOTAL\n(AED)"]
-    tbl_data = [[Paragraph(h, ih_s) for h in hdrs]]
 
-    actual_items = invoice_data.get("items", [])
-    for idx, item in enumerate(actual_items, 1):
-        qty       = item.get("quantity", 1)
-        up        = item.get("unit_price", 0)
-        amt       = round(qty * up, 2)
-        vat_app   = item.get("vat_applicable", True)
-        tax_rate  = "5%" if vat_app else "0%"
-        tax_amt   = item.get("vat_amount", 0)
-        total_amt = item.get("total", round(amt + tax_amt, 2))
-        tbl_data.append([
-            Paragraph(str(idx),   icc_s),
-            Paragraph(item.get("description", ""), ir_s),
-            Paragraph(f"{qty:.2f}", icc_s),
-            Paragraph(f"{up:.2f}",  irc_s),
-            Paragraph(f"{amt:.2f}", irc_s),
-            Paragraph(tax_rate,     icc_s),
-            Paragraph(f"{tax_amt:.2f}",   irc_s),
-            Paragraph(f"{total_amt:.2f}", irc_s),
-        ])
+    def _base_rows():
+        rows = [[Paragraph(h, ih_s) for h in hdrs]]
+        for idx, item in enumerate(actual_items, 1):
+            qty      = item.get("quantity", 1)
+            up       = item.get("unit_price", 0)
+            amt      = round(qty * up, 2)
+            vat_app  = item.get("vat_applicable", True)
+            tax_rate = "5%" if vat_app else "0%"
+            tax_amt  = item.get("vat_amount", 0)
+            total_a  = item.get("total", round(amt + tax_amt, 2))
+            rows.append([
+                Paragraph(str(idx),                    icc_s),
+                Paragraph(item.get("description", ""), ir_s),
+                Paragraph(f"{qty:.2f}",    icc_s),
+                Paragraph(f"{up:.2f}",     irc_s),
+                Paragraph(f"{amt:.2f}",    irc_s),
+                Paragraph(tax_rate,        icc_s),
+                Paragraph(f"{tax_amt:.2f}",  irc_s),
+                Paragraph(f"{total_a:.2f}", irc_s),
+            ])
+        return rows
 
-    empty_row = [Paragraph("", ir_s)] * 8
-    for _ in range(max(0, MIN_ROWS - len(actual_items))):
-        tbl_data.append(empty_row)
+    def _make_tbl(rows, pad_t, pad_b):
+        t = Table(rows, colWidths=col_w)
+        t.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0),  (-1, 0),  PRIMARY),
+            ("ROWBACKGROUNDS",(0, 1),  (-1, -1), [LIGHT_GRAY, WHITE]),
+            ("GRID",          (0, 0),  (-1, -1), 0.5, colors.HexColor("#C0C8D8")),
+            ("VALIGN",        (0, 0),  (-1, -1), "MIDDLE"),
+            ("TOPPADDING",    (0, 0),  (-1, 0),  5),
+            ("BOTTOMPADDING", (0, 0),  (-1, 0),  5),
+            ("TOPPADDING",    (0, 1),  (-1, -1), pad_t),
+            ("BOTTOMPADDING", (0, 1),  (-1, -1), pad_b),
+            ("LEFTPADDING",   (0, 0),  (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0),  (-1, -1), 4),
+        ]))
+        return t
 
-    items_t = Table(tbl_data, colWidths=col_w)
-    items_t.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0),  (-1, 0),  PRIMARY),
-        ("ROWBACKGROUNDS",(0, 1),  (-1, -1), [LIGHT_GRAY, WHITE]),
-        ("GRID",          (0, 0),  (-1, -1), 0.5, colors.HexColor("#C0C8D8")),
-        ("VALIGN",        (0, 0),  (-1, -1), "MIDDLE"),
-        # Header row padding
-        ("TOPPADDING",    (0, 0),  (-1, 0),  5),
-        ("BOTTOMPADDING", (0, 0),  (-1, 0),  5),
-        # Data row padding — gives ~7.7mm row height (7+6 pt = +1.5mm vs previous)
-        ("TOPPADDING",    (0, 1),  (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 1),  (-1, -1), 6),
-        ("LEFTPADDING",   (0, 0),  (-1, -1), 4),
-        ("RIGHTPADDING",  (0, 0),  (-1, -1), 4),
-    ]))
+    base_rows = _base_rows()
+
+    # Measure actual height with normal padding (7/6 pt) — accounts for description wrapping
+    _tbl_normal = _make_tbl(base_rows, 7, 6)
+    _h_normal   = _tbl_normal.wrap(_CONTENT_W, 9999 * mm)[1]
+
+    if _h_normal <= _avail_for_tbl:
+        # Fits at normal padding — try adding filler rows to fill space
+        _filler_h  = 8 * mm   # estimated height per filler row at normal padding
+        _filler_n  = min(5, int((_avail_for_tbl - _h_normal) / _filler_h))
+        if _filler_n > 0:
+            empty_row = [Paragraph("", ir_s)] * 8
+            filler_rows = base_rows + [empty_row] * _filler_n
+            items_t = _make_tbl(filler_rows, 7, 6)
+        else:
+            items_t = _tbl_normal
+        _dbg(f"invoice items: normal layout n={len(actual_items)} filler={_filler_n} h={_h_normal:.1f}")
+    else:
+        # Items overflow at normal padding — try progressively tighter padding
+        items_t = None
+        for _pt, _pb in [(5, 4), (4, 3), (3, 2), (2, 2)]:
+            _t = _make_tbl(base_rows, _pt, _pb)
+            _h = _t.wrap(_CONTENT_W, 9999 * mm)[1]
+            if _h <= _avail_for_tbl:
+                items_t = _t
+                _dbg(f"invoice items: compressed pad={_pt}/{_pb} n={len(actual_items)} h={_h:.1f}")
+                break
+        if items_t is None:
+            # Best effort at minimum padding — still renders, may be tight
+            items_t = _make_tbl(base_rows, 2, 2)
+            _dbg(f"invoice items: minimum padding n={len(actual_items)} h_normal={_h_normal:.1f}")
+
     story.append(items_t)
 
     # ── 5. Totals ─────────────────────────────────────────────────────────────
