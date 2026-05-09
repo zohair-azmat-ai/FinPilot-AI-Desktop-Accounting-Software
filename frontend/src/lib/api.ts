@@ -147,3 +147,19 @@ export const restoreBackup = (file: File) => {
 export const getLicenseStatus = () => api.get("/api/license/status");
 export const getLicenseHwid = () => api.get("/api/license/hwid");
 export const activateLicense = (key: string) => api.post("/api/license/activate", { key });
+
+// Supplier Bills
+export const getSupplierBills = (params?: Record<string, unknown>) => api.get("/api/supplier-bills/", { params });
+export const getSupplierBill = (id: number) => api.get(`/api/supplier-bills/${id}`);
+export const createSupplierBill = (data: unknown) => api.post("/api/supplier-bills/", data);
+export const updateSupplierBill = (id: number, data: unknown) => api.put(`/api/supplier-bills/${id}`, data);
+export const deleteSupplierBill = (id: number) => api.delete(`/api/supplier-bills/${id}`);
+export const downloadSupplierBillPDF = (id: number) => `${API_URL}/api/supplier-bills/${id}/pdf`;
+export const getSupplierLedger = (supplierId: number) => api.get(`/api/supplier-bills/ledger/${supplierId}`);
+
+// Supplier Payments
+export const getSupplierPayments = (params?: Record<string, unknown>) => api.get("/api/supplier-payments/", { params });
+export const createSupplierPayment = (data: unknown) => api.post("/api/supplier-payments/", data);
+export const updateSupplierPayment = (id: number, data: unknown) => api.put(`/api/supplier-payments/${id}`, data);
+export const deleteSupplierPayment = (id: number) => api.delete(`/api/supplier-payments/${id}`);
+export const downloadSupplierPaymentPDF = (id: number) => `${API_URL}/api/supplier-payments/${id}/pdf`;

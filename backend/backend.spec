@@ -59,6 +59,7 @@ a = Analysis(
         'routes.reports', 'routes.ai_command', 'routes.bank_accounts',
         'routes.bank_transactions', 'routes.cheques', 'routes.expenses',
         'routes.purchase_orders', 'routes.delivery_notes', 'routes.license',
+        'routes.supplier_bills', 'routes.supplier_payments',
     ],
     hookspath=[],
     runtime_hooks=[],

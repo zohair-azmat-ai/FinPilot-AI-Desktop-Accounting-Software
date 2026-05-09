@@ -482,3 +482,91 @@ class PurchaseOrderOut(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
+
+
+# ── Supplier Bills ────────────────────────────────────────────────────────────
+
+class SupplierBillItemCreate(BaseModel):
+    description: str
+    quantity: float = 1.0
+    unit_price: float = 0.0
+    vat_applicable: bool = True
+
+class SupplierBillItemOut(SupplierBillItemCreate):
+    id: int
+    vat_amount: float
+    total: float
+    class Config:
+        from_attributes = True
+
+class SupplierBillCreate(BaseModel):
+    supplier_id: Optional[int] = None
+    date: Optional[datetime] = None
+    due_date: Optional[datetime] = None
+    trn: Optional[str] = ""
+    lpo_no: Optional[str] = ""
+    notes: Optional[str] = ""
+    items: List[SupplierBillItemCreate]
+
+class SupplierBillOut(BaseModel):
+    id: int
+    bill_number: str
+    supplier_id: Optional[int] = None
+    supplier: Optional[Supplier] = None
+    date: datetime
+    due_date: Optional[datetime] = None
+    trn: str = ""
+    lpo_no: str = ""
+    notes: str = ""
+    subtotal: float
+    vat_amount: float
+    total: float
+    amount_paid: float
+    balance_due: float
+    status: str
+    items: List[SupplierBillItemOut]
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+
+# ── Supplier Payments ─────────────────────────────────────────────────────────
+
+class SupplierPaymentCreate(BaseModel):
+    supplier_id: Optional[int] = None
+    date: Optional[datetime] = None
+    amount: float
+    method: Optional[str] = "cash"
+    reference: Optional[str] = ""
+    notes: Optional[str] = ""
+
+class SupplierPaymentOut(BaseModel):
+    id: int
+    payment_number: str
+    supplier_id: Optional[int] = None
+    supplier: Optional[Supplier] = None
+    date: datetime
+    amount: float
+    method: str
+    reference: str
+    notes: str
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+
+# ── Supplier with computed balance ────────────────────────────────────────────
+
+class SupplierWithBalance(BaseModel):
+    id: int
+    name: str
+    trn: str = ""
+    attn: str = ""
+    phone: str = ""
+    email: str = ""
+    address: str = ""
+    opening_balance: float = 0.0
+    current_balance: float = 0.0
+    created_at: datetime
+    class Config:
+        from_attributes = True

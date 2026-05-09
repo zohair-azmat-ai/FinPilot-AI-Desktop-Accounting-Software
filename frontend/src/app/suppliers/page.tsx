@@ -4,16 +4,19 @@ import { useEffect, useState } from "react";
 import Header from "@/components/Header";
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from "@/lib/api";
 import toast from "react-hot-toast";
-import { Plus, Edit2, Trash2, Truck, X, Search } from "lucide-react";
+import { Plus, Edit2, Trash2, Truck, X, Search, BookOpen } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface Supplier {
   id: number; name: string; trn: string; attn: string;
-  phone: string; email: string; address: string; opening_balance: number;
+  phone: string; email: string; address: string;
+  opening_balance: number; current_balance: number;
 }
 
 const emptyForm = { name: "", trn: "", attn: "", phone: "", email: "", address: "", opening_balance: 0 };
 
 export default function SuppliersPage() {
+  const router = useRouter();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -58,11 +61,11 @@ export default function SuppliersPage() {
         <div className="card p-0 overflow-hidden">
           <table className="w-full">
             <thead className="table-head">
-              <tr><th>Name</th><th>TRN</th><th>Phone</th><th>Email</th><th>Opening Balance</th><th></th></tr>
+              <tr><th>Name</th><th>TRN</th><th>Phone</th><th>Email</th><th>Opening Balance</th><th>Current Balance</th><th></th></tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-12 text-text-muted">
+                <tr><td colSpan={7} className="text-center py-12 text-text-muted">
                   <Truck size={32} className="mx-auto mb-2 opacity-30" /><p>No suppliers found.</p>
                 </td></tr>
               ) : filtered.map((s) => (
@@ -72,7 +75,9 @@ export default function SuppliersPage() {
                   <td className="text-text-secondary">{s.phone || "—"}</td>
                   <td className="text-text-secondary">{s.email || "—"}</td>
                   <td>AED {s.opening_balance.toFixed(2)}</td>
+                  <td className="font-semibold text-amber-400">AED {(s.current_balance ?? s.opening_balance).toFixed(2)}</td>
                   <td><div className="flex gap-2">
+                    <button onClick={() => router.push(`/suppliers/ledger?id=${s.id}`)} className="text-text-muted hover:text-brand-indigo" title="View Ledger"><BookOpen size={14} /></button>
                     <button onClick={() => openEdit(s)} className="text-text-muted hover:text-brand-indigo"><Edit2 size={14} /></button>
                     <button onClick={() => handleDelete(s.id)} className="text-text-muted hover:text-red-400"><Trash2 size={14} /></button>
                   </div></td>

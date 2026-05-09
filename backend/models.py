@@ -59,6 +59,8 @@ class Supplier(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     payments = relationship("Payment", back_populates="supplier")
+    bills = relationship("SupplierBill", back_populates="supplier", cascade="all, delete-orphan")
+    supplier_payments = relationship("SupplierPayment", back_populates="supplier", cascade="all, delete-orphan")
 
 
 class Item(Base):
@@ -338,6 +340,70 @@ class PurchaseOrderItem(Base):
     total = Column(Float, default=0.0)
 
     po = relationship("PurchaseOrder", back_populates="items")
+
+
+class SupplierBill(Base):
+    __tablename__ = "supplier_bills"
+    id = Column(Integer, primary_key=True, index=True)
+    bill_number = Column(String, unique=True, nullable=False)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
+    date = Column(DateTime, default=datetime.utcnow)
+    due_date = Column(DateTime, nullable=True)
+    trn = Column(String, default="")
+    lpo_no = Column(String, default="")
+    notes = Column(Text, default="")
+    subtotal = Column(Float, default=0.0)
+    vat_amount = Column(Float, default=0.0)
+    total = Column(Float, default=0.0)
+    amount_paid = Column(Float, default=0.0)
+    balance_due = Column(Float, default=0.0)
+    status = Column(String, default="unpaid")  # unpaid, partial, paid
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    supplier = relationship("Supplier", back_populates="bills")
+    items = relationship("SupplierBillItem", back_populates="bill", cascade="all, delete-orphan")
+    supplier_payment_allocations = relationship("SupplierPaymentAllocation", back_populates="bill", cascade="all, delete-orphan")
+
+
+class SupplierBillItem(Base):
+    __tablename__ = "supplier_bill_items"
+    id = Column(Integer, primary_key=True, index=True)
+    bill_id = Column(Integer, ForeignKey("supplier_bills.id"))
+    description = Column(String, nullable=False)
+    quantity = Column(Float, default=1.0)
+    unit_price = Column(Float, default=0.0)
+    vat_applicable = Column(Boolean, default=True)
+    vat_amount = Column(Float, default=0.0)
+    total = Column(Float, default=0.0)
+
+    bill = relationship("SupplierBill", back_populates="items")
+
+
+class SupplierPayment(Base):
+    __tablename__ = "supplier_payments"
+    id = Column(Integer, primary_key=True, index=True)
+    payment_number = Column(String, unique=True, nullable=False)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
+    date = Column(DateTime, default=datetime.utcnow)
+    amount = Column(Float, default=0.0)
+    method = Column(String, default="cash")
+    reference = Column(String, default="")
+    notes = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    supplier = relationship("Supplier", back_populates="supplier_payments")
+    allocations = relationship("SupplierPaymentAllocation", back_populates="payment", cascade="all, delete-orphan")
+
+
+class SupplierPaymentAllocation(Base):
+    __tablename__ = "supplier_payment_allocations"
+    id = Column(Integer, primary_key=True, index=True)
+    payment_id = Column(Integer, ForeignKey("supplier_payments.id"), nullable=False)
+    bill_id = Column(Integer, ForeignKey("supplier_bills.id"), nullable=False)
+    amount = Column(Float, default=0.0)
+
+    payment = relationship("SupplierPayment", back_populates="allocations")
+    bill = relationship("SupplierBill", back_populates="supplier_payment_allocations")
 
 
 class Expense(Base):

@@ -6,7 +6,8 @@ import {
   FileText, Receipt, CreditCard, BookOpen, BarChart3,
   FileBarChart, Bot, Settings, Database, ChevronRight,
   Landmark, ArrowDownLeft, ArrowUpRight as ArrowUpRightIcon,
-  CheckSquare, Wallet, TrendingDown, ClipboardList, ShoppingCart, HardDrive, KeyRound
+  CheckSquare, Wallet, TrendingDown, ClipboardList, ShoppingCart, HardDrive, KeyRound,
+  FileInput, HandCoins
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -18,6 +19,9 @@ const NAV_ITEMS = [
   { label: "Payments", icon: CreditCard, href: "/payments" },
   { label: "Delivery Notes", icon: ClipboardList, href: "/delivery-notes" },
   { label: "Purchase Orders", icon: ShoppingCart, href: "/purchase-orders" },
+  { type: "divider", label: "PAYABLES" },
+  { label: "Supplier Bills", icon: FileInput, href: "/supplier-bills" },
+  { label: "Supplier Payments", icon: HandCoins, href: "/supplier-payments" },
   { type: "divider", label: "BANK / CASH" },
   { label: "Bank Accounts", icon: Landmark, href: "/bank" },
   { label: "Transactions", icon: ArrowDownLeft, href: "/bank/transactions" },

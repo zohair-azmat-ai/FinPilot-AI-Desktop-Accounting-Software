@@ -7,7 +7,7 @@ from datetime import datetime
 from database import engine, DB_PATH
 import models
 import license_manager
-from routes import company, customers, suppliers, items, quotations, invoices, payments, ledger, reports, ai_command, bank_accounts, bank_transactions, cheques, expenses, delivery_notes, purchase_orders
+from routes import company, customers, suppliers, items, quotations, invoices, payments, ledger, reports, ai_command, bank_accounts, bank_transactions, cheques, expenses, delivery_notes, purchase_orders, supplier_bills, supplier_payments
 from routes import license as license_router
 
 models.Base.metadata.create_all(bind=engine)
@@ -54,6 +54,12 @@ def _run_migrations():
         ("purchase_orders",     "include_stamp",              "INTEGER DEFAULT 0"),
         ("purchase_orders",     "letterhead",                 "INTEGER DEFAULT 1"),
         ("companies",           "show_lpo_in_statement",      "INTEGER DEFAULT 0"),
+        # Supplier accounting tables are created by create_all; these guard older DBs
+        ("supplier_bills",      "trn",                        "TEXT DEFAULT ''"),
+        ("supplier_bills",      "lpo_no",                     "TEXT DEFAULT ''"),
+        ("supplier_bills",      "amount_paid",                "REAL DEFAULT 0.0"),
+        ("supplier_bills",      "balance_due",                "REAL DEFAULT 0.0"),
+        ("supplier_bills",      "status",                     "TEXT DEFAULT 'unpaid'"),
     ]
     with engine.connect() as conn:
         for table, column, col_def in migrations:
@@ -132,6 +138,8 @@ app.include_router(cheques.router)
 app.include_router(expenses.router)
 app.include_router(delivery_notes.router)
 app.include_router(purchase_orders.router)
+app.include_router(supplier_bills.router)
+app.include_router(supplier_payments.router)
 
 
 @app.get("/")
