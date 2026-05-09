@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=4665d51+ROWFIX LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=PGFIX2+STAMP_OVERHEAD LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -704,10 +704,9 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
 
     story = []
 
-    # ── 1. Centered title — tighter gap after letterhead ─────────────────────
-    story.append(Spacer(1, 2 * mm))
+    # ── 1. Centered title — tight to letterhead, breathing room below before customer block
     story.append(Paragraph("ACCOUNT STATEMENT", title_s))
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 10 * mm))
 
     # ── 2. Info block (2 columns) ─────────────────────────────────────────────
     period    = _period_str(date_from, date_to)
@@ -1935,13 +1934,16 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
             Paragraph(f"{it.get('total', 0):.2f}", irc_s),
         ])
 
-    # Filler rows — explicit rowHeights so table exactly fills available space
-    # Actual row render: 8pt text + 7+7pt pad ≈ 8.3mm — use 8mm (slight underestimate = more rows)
-    # Overhead: above(49mm) + totals+notes(23mm) + sig block(48mm) = 120mm; +2mm margin = 122mm
+    # Filler rows — explicit rowHeights so table fills available space without overflowing to page 2.
+    # _OVER = fixed story height above+below items table (conservative, stamp-aware).
+    # above(~53mm): title+spacers+header_boxes+spacer
+    # below(~27mm): spacer+totals_table+spacer+notes
+    # sig block: KeepTogether(spacers+HR+sig_tbl) — height depends on stamp presence
     _HDR_H    = 9 * mm
     _ROW_H    = 8 * mm
     _lh_story = 0 if lh_draw_h else 25 * mm
-    _OVER     = _lh_story + 122 * mm
+    _sig_h    = 60 * mm if stamp_path else 25 * mm
+    _OVER     = _lh_story + 80 * mm + _sig_h
     _avail    = page_h - top_margin - _BOT - _OVER
     _max      = max(len(items_list), int((_avail - _HDR_H) / _ROW_H))
     _fill     = max(0, _max - len(items_list))
