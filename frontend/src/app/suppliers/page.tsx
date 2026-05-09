@@ -58,14 +58,21 @@ export default function SuppliersPage() {
           <button className="btn-primary" onClick={openNew}><Plus size={15} /> Add Supplier</button>
         </div>
 
-        <div className="card p-0 overflow-hidden">
-          <table className="w-full">
+        <div className="card p-0 overflow-x-auto">
+          <table className="w-full min-w-[640px]">
             <thead className="table-head">
-              <tr><th>Name</th><th>TRN</th><th>Phone</th><th>Email</th><th>Opening Balance</th><th>Current Balance</th><th></th></tr>
+              <tr>
+                <th className="w-[28%]">Name</th>
+                <th className="w-[14%]">TRN</th>
+                <th className="w-[14%]">Phone</th>
+                <th className="w-[20%]">Email</th>
+                <th className="w-[16%]">Current Balance</th>
+                <th className="w-[8%]"></th>
+              </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-12 text-text-muted">
+                <tr><td colSpan={6} className="text-center py-12 text-text-muted">
                   <Truck size={32} className="mx-auto mb-2 opacity-30" /><p>No suppliers found.</p>
                 </td></tr>
               ) : filtered.map((s) => (
@@ -73,14 +80,19 @@ export default function SuppliersPage() {
                   <td className="font-medium">{s.name}</td>
                   <td className="text-text-secondary font-mono text-xs">{s.trn || "—"}</td>
                   <td className="text-text-secondary">{s.phone || "—"}</td>
-                  <td className="text-text-secondary">{s.email || "—"}</td>
-                  <td>AED {s.opening_balance.toFixed(2)}</td>
-                  <td className="font-semibold text-amber-400">AED {(s.current_balance ?? s.opening_balance).toFixed(2)}</td>
-                  <td><div className="flex gap-2">
-                    <button onClick={() => router.push(`/suppliers/ledger?id=${s.id}`)} className="text-text-muted hover:text-brand-indigo" title="View Ledger"><BookOpen size={14} /></button>
-                    <button onClick={() => openEdit(s)} className="text-text-muted hover:text-brand-indigo"><Edit2 size={14} /></button>
-                    <button onClick={() => handleDelete(s.id)} className="text-text-muted hover:text-red-400"><Trash2 size={14} /></button>
-                  </div></td>
+                  <td className="text-text-secondary text-sm">{s.email || "—"}</td>
+                  <td>
+                    <span className="font-semibold text-amber-400">
+                      AED {(s.current_balance ?? s.opening_balance).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => router.push(`/suppliers/ledger?id=${s.id}`)} className="text-text-muted hover:text-brand-indigo" title="View Ledger"><BookOpen size={14} /></button>
+                      <button onClick={() => openEdit(s)} className="text-text-muted hover:text-brand-indigo" title="Edit"><Edit2 size={14} /></button>
+                      <button onClick={() => handleDelete(s.id)} className="text-text-muted hover:text-red-400" title="Delete"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
