@@ -62,12 +62,12 @@ export default function SuppliersPage() {
           <table className="w-full min-w-[640px]">
             <thead className="table-head">
               <tr>
-                <th className="w-[28%]">Name</th>
-                <th className="w-[14%]">TRN</th>
-                <th className="w-[14%]">Phone</th>
-                <th className="w-[20%]">Email</th>
-                <th className="w-[16%]">Current Balance</th>
-                <th className="w-[8%]"></th>
+                <th className="w-[24%]">Name</th>
+                <th className="w-[12%]">TRN</th>
+                <th className="w-[13%]">Phone</th>
+                <th className="w-[17%]">Email</th>
+                <th className="w-[14%]">Current Balance</th>
+                <th className="w-[20%]">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -87,10 +87,15 @@ export default function SuppliersPage() {
                     </span>
                   </td>
                   <td>
-                    <div className="flex gap-2 justify-end">
-                      <button onClick={() => router.push(`/suppliers/ledger?id=${s.id}`)} className="text-text-muted hover:text-brand-indigo" title="View Ledger"><BookOpen size={14} /></button>
-                      <button onClick={() => openEdit(s)} className="text-text-muted hover:text-brand-indigo" title="Edit"><Edit2 size={14} /></button>
-                      <button onClick={() => handleDelete(s.id)} className="text-text-muted hover:text-red-400" title="Delete"><Trash2 size={14} /></button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => router.push(`/suppliers/ledger?id=${s.id}`)}
+                        className="flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold bg-brand-indigo/15 text-brand-indigo hover:bg-brand-indigo/30 transition-colors"
+                      >
+                        <BookOpen size={12} /> Ledger
+                      </button>
+                      <button onClick={() => openEdit(s)} className="text-text-muted hover:text-brand-indigo p-1" title="Edit"><Edit2 size={14} /></button>
+                      <button onClick={() => handleDelete(s.id)} className="text-text-muted hover:text-red-400 p-1" title="Delete"><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
