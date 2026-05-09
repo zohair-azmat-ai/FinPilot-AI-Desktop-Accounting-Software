@@ -10,29 +10,47 @@ from pdf_generator import generate_invoice_pdf
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
 
+def _max_invoice_num(db: Session) -> int:
+    """Return the highest numeric suffix among all existing invoice numbers."""
+    rows = db.query(models.Invoice.invoice_number).all()
+    max_n = 0
+    for (inv_no,) in rows:
+        try:
+            n = int(inv_no.split("-")[-1])
+            if n > max_n:
+                max_n = n
+        except Exception:
+            pass
+    return max_n
+
+
 def _next_invoice_number(db: Session) -> tuple:
     """Returns (invoice_number_string, use_series_flag).
-    Does NOT modify the DB — caller must increment the counter after a successful commit."""
+    Always derives next number from actual DB records so deletes don't cause reuse."""
     company = db.query(models.Company).first()
-    if company and (company.invoice_current_number or 0) > 0:
-        prefix = company.invoice_prefix or ""
-        return f"{prefix}{company.invoice_current_number:04d}", True
-    # Legacy fallback: derive from last invoice number
-    last = db.query(models.Invoice).order_by(models.Invoice.id.desc()).first()
-    if not last:
-        return "0001", False
-    try:
-        num = int(last.invoice_number.split("-")[-1]) + 1
-    except Exception:
-        num = 1
-    return f"{num:04d}", False
+    prefix = (company.invoice_prefix or "") if company else ""
+    counter = (company.invoice_current_number or 0) if company else 0
+
+    db_max = _max_invoice_num(db)
+    next_num = max(db_max + 1, counter if counter > 0 else 1)
+
+    if company and next_num != counter:
+        company.invoice_current_number = next_num
+        db.add(company)
+        db.commit()
+
+    return f"{prefix}{next_num:04d}", True
 
 
 def _increment_invoice_counter(db: Session) -> None:
-    """Bump company.invoice_current_number by 1. Called only after invoice commit succeeds."""
+    """Advance company.invoice_current_number to max_existing + 1 after a successful commit."""
     company = db.query(models.Company).first()
-    if company and (company.invoice_current_number or 0) > 0:
-        company.invoice_current_number += 1
+    if not company:
+        return
+    db_max = _max_invoice_num(db)
+    next_val = db_max + 1
+    if next_val != (company.invoice_current_number or 0):
+        company.invoice_current_number = next_val
         db.add(company)
         db.commit()
 

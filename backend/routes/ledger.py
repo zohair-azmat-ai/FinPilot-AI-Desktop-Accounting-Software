@@ -150,9 +150,20 @@ def download_statement_pdf(
         comp_dict = {"name": company.name, "trn": company.trn, "address": company.address, "phone": company.phone, "email": company.email}
         show_lpo = bool(company.show_lpo_in_statement)
 
+    # Enrich each entry description with LPO number from the linked invoice
+    enriched_entries = []
+    for entry in stmt["entries"]:
+        e = dict(entry)
+        inv_id = e.get("invoice_id")
+        if inv_id:
+            inv = db.query(models.Invoice).filter(models.Invoice.id == inv_id).first()
+            if inv and inv.lpo_no:
+                e["description"] = f"{e['description']} / LPO: {inv.lpo_no}"
+        enriched_entries.append(e)
+
     filepath = generate_statement_pdf(
         stmt["customer"],
-        stmt["entries"],
+        enriched_entries,
         date_from, date_to,
         stmt["opening_balance"],
         stmt["closing_balance"],

@@ -10,27 +10,43 @@ from pdf_generator import generate_quotation_pdf
 router = APIRouter(prefix="/api/quotations", tags=["quotations"])
 
 
+def _max_quotation_num(db: Session) -> int:
+    rows = db.query(models.Quotation.quotation_number).all()
+    max_n = 0
+    for (q_no,) in rows:
+        try:
+            n = int(q_no.split("-")[-1])
+            if n > max_n:
+                max_n = n
+        except Exception:
+            pass
+    return max_n
+
+
 def _next_quotation_number(db: Session) -> str:
     company = db.query(models.Company).first()
-    if company and (company.quotation_current_number or 0) > 0:
-        prefix = company.quotation_prefix or "QUO-"
-        return f"{prefix}{company.quotation_current_number:04d}"
-    last = db.query(models.Quotation).order_by(models.Quotation.id.desc()).first()
-    if not last:
-        prefix = (company.quotation_prefix if company else None) or "QUO-"
-        return f"{prefix}0001"
-    try:
-        num = int(last.quotation_number.split("-")[-1]) + 1
-    except Exception:
-        num = 1
-    prefix = (company.quotation_prefix if company else None) or "QUO-"
-    return f"{prefix}{num:04d}"
+    prefix = (company.quotation_prefix or "QUO-") if company else "QUO-"
+    counter = (company.quotation_current_number or 0) if company else 0
+
+    db_max = _max_quotation_num(db)
+    next_num = max(db_max + 1, counter if counter > 0 else 1)
+
+    if company and next_num != counter:
+        company.quotation_current_number = next_num
+        db.add(company)
+        db.commit()
+
+    return f"{prefix}{next_num:04d}"
 
 
 def _increment_quotation_counter(db: Session) -> None:
     company = db.query(models.Company).first()
-    if company and (company.quotation_current_number or 0) > 0:
-        company.quotation_current_number += 1
+    if not company:
+        return
+    db_max = _max_quotation_num(db)
+    next_val = db_max + 1
+    if next_val != (company.quotation_current_number or 0):
+        company.quotation_current_number = next_val
         db.add(company)
         db.commit()
 
