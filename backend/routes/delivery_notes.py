@@ -10,28 +10,29 @@ from pdf_generator import generate_delivery_note_pdf
 router = APIRouter(prefix="/api/delivery-notes", tags=["delivery-notes"])
 
 
-def _max_dn_num(db: Session) -> int:
-    rows = db.query(models.DeliveryNote.dn_number).all()
-    max_n = 0
-    for (dn_no,) in rows:
-        try:
-            n = int(dn_no.split("-")[-1])
-            if n > max_n:
-                max_n = n
-        except Exception:
-            pass
-    return max_n
-
-
 def _next_dn_number(db: Session) -> str:
+    """Fills the lowest gap first; if no gap, uses max+1."""
     company = db.query(models.Company).first()
     prefix = (company.dn_prefix or "DN-") if company else "DN-"
-    counter = (company.dn_current_number or 0) if company else 0
 
-    db_max = _max_dn_num(db)
-    next_num = max(db_max + 1, counter if counter > 0 else 1)
+    rows = db.query(models.DeliveryNote.dn_number).all()
+    existing = set()
+    for (dn_no,) in rows:
+        try:
+            existing.add(int(dn_no.split("-")[-1]))
+        except Exception:
+            pass
 
-    if company and next_num != counter:
+    if not existing:
+        counter = (company.dn_current_number or 0) if company else 0
+        next_num = counter if counter > 0 else 1
+    else:
+        candidate = min(existing)
+        while candidate in existing:
+            candidate += 1
+        next_num = candidate
+
+    if company and next_num != (company.dn_current_number or 0):
         company.dn_current_number = next_num
         db.add(company)
         db.commit()
@@ -40,15 +41,7 @@ def _next_dn_number(db: Session) -> str:
 
 
 def _increment_dn_counter(db: Session) -> None:
-    company = db.query(models.Company).first()
-    if not company:
-        return
-    db_max = _max_dn_num(db)
-    next_val = db_max + 1
-    if next_val != (company.dn_current_number or 0):
-        company.dn_current_number = next_val
-        db.add(company)
-        db.commit()
+    pass
 
 
 @router.get("/", response_model=List[schemas.DeliveryNoteOut])

@@ -10,28 +10,29 @@ from pdf_generator import generate_quotation_pdf
 router = APIRouter(prefix="/api/quotations", tags=["quotations"])
 
 
-def _max_quotation_num(db: Session) -> int:
-    rows = db.query(models.Quotation.quotation_number).all()
-    max_n = 0
-    for (q_no,) in rows:
-        try:
-            n = int(q_no.split("-")[-1])
-            if n > max_n:
-                max_n = n
-        except Exception:
-            pass
-    return max_n
-
-
 def _next_quotation_number(db: Session) -> str:
+    """Fills the lowest gap first; if no gap, uses max+1."""
     company = db.query(models.Company).first()
     prefix = (company.quotation_prefix or "QUO-") if company else "QUO-"
-    counter = (company.quotation_current_number or 0) if company else 0
 
-    db_max = _max_quotation_num(db)
-    next_num = max(db_max + 1, counter if counter > 0 else 1)
+    rows = db.query(models.Quotation.quotation_number).all()
+    existing = set()
+    for (q_no,) in rows:
+        try:
+            existing.add(int(q_no.split("-")[-1]))
+        except Exception:
+            pass
 
-    if company and next_num != counter:
+    if not existing:
+        counter = (company.quotation_current_number or 0) if company else 0
+        next_num = counter if counter > 0 else 1
+    else:
+        candidate = min(existing)
+        while candidate in existing:
+            candidate += 1
+        next_num = candidate
+
+    if company and next_num != (company.quotation_current_number or 0):
         company.quotation_current_number = next_num
         db.add(company)
         db.commit()
@@ -40,15 +41,7 @@ def _next_quotation_number(db: Session) -> str:
 
 
 def _increment_quotation_counter(db: Session) -> None:
-    company = db.query(models.Company).first()
-    if not company:
-        return
-    db_max = _max_quotation_num(db)
-    next_val = db_max + 1
-    if next_val != (company.quotation_current_number or 0):
-        company.quotation_current_number = next_val
-        db.add(company)
-        db.commit()
+    pass
 
 
 def _calculate_items(items_data, vat_rate=5.0):

@@ -10,31 +10,31 @@ from pdf_generator import generate_invoice_pdf
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
 
-def _max_invoice_num(db: Session) -> int:
-    """Return the highest numeric suffix among all existing invoice numbers."""
-    rows = db.query(models.Invoice.invoice_number).all()
-    max_n = 0
-    for (inv_no,) in rows:
-        try:
-            n = int(inv_no.split("-")[-1])
-            if n > max_n:
-                max_n = n
-        except Exception:
-            pass
-    return max_n
-
-
 def _next_invoice_number(db: Session) -> tuple:
-    """Returns (invoice_number_string, use_series_flag).
-    Always derives next number from actual DB records so deletes don't cause reuse."""
+    """Returns (invoice_number_string, True).
+    Fills the lowest gap first; if no gap, uses max+1."""
     company = db.query(models.Company).first()
     prefix = (company.invoice_prefix or "") if company else ""
-    counter = (company.invoice_current_number or 0) if company else 0
 
-    db_max = _max_invoice_num(db)
-    next_num = max(db_max + 1, counter if counter > 0 else 1)
+    rows = db.query(models.Invoice.invoice_number).all()
+    existing = set()
+    for (inv_no,) in rows:
+        try:
+            existing.add(int(inv_no.split("-")[-1]))
+        except Exception:
+            pass
 
-    if company and next_num != counter:
+    if not existing:
+        counter = (company.invoice_current_number or 0) if company else 0
+        next_num = counter if counter > 0 else 1
+    else:
+        # walk from min upward until first gap
+        candidate = min(existing)
+        while candidate in existing:
+            candidate += 1
+        next_num = candidate
+
+    if company and next_num != (company.invoice_current_number or 0):
         company.invoice_current_number = next_num
         db.add(company)
         db.commit()
@@ -43,16 +43,8 @@ def _next_invoice_number(db: Session) -> tuple:
 
 
 def _increment_invoice_counter(db: Session) -> None:
-    """Advance company.invoice_current_number to max_existing + 1 after a successful commit."""
-    company = db.query(models.Company).first()
-    if not company:
-        return
-    db_max = _max_invoice_num(db)
-    next_val = db_max + 1
-    if next_val != (company.invoice_current_number or 0):
-        company.invoice_current_number = next_val
-        db.add(company)
-        db.commit()
+    """Re-sync counter after a successful commit (next call to _next_invoice_number recomputes anyway)."""
+    pass
 
 
 def _calculate_items(items_data, vat_rate=5.0):
