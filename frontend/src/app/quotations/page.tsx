@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
-import { getQuotations, getCustomers, getItems, createQuotation, deleteQuotation, convertQuotation, downloadQuotationPDF } from "@/lib/api";
+import { getQuotations, getQuotation, getCustomers, getItems, createQuotation, updateQuotation, deleteQuotation, convertQuotation, downloadQuotationPDF, apiErr } from "@/lib/api";
 import toast from "react-hot-toast";
-import { Plus, FileText, Trash2, FileDown, ArrowRight, X, MessageCircle } from "lucide-react";
+import { Plus, FileText, Trash2, FileDown, ArrowRight, X, MessageCircle, Edit2 } from "lucide-react";
 
 interface Customer { id: number; name: string; }
 interface Item { id: number; name: string; price: number; vat_applicable: boolean; }
@@ -15,12 +15,26 @@ interface Quotation {
   date: string; total: number; status: string; converted_to_invoice: boolean;
 }
 
+const emptyForm = () => ({
+  customerId: "",
+  date: new Date().toISOString().split("T")[0],
+  validUntil: "",
+  discount: 0,
+  notes: "",
+  paymentTerms: "",
+  delivery: "",
+  includeStamp: false,
+  lines: [{ item_id: null, description: "", quantity: 1, unit_price: 0, vat_applicable: true }] as LineItem[],
+});
+
 export default function QuotationsPage() {
   const router = useRouter();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
   const [customerId, setCustomerId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [validUntil, setValidUntil] = useState("");
@@ -37,6 +51,49 @@ export default function QuotationsPage() {
     getCustomers().then((r) => setCustomers(r.data));
     getItems().then((r) => setItems(r.data));
   }, []);
+
+  const resetForm = () => {
+    const f = emptyForm();
+    setEditingId(null);
+    setCustomerId(f.customerId);
+    setDate(f.date);
+    setValidUntil(f.validUntil);
+    setDiscount(f.discount);
+    setNotes(f.notes);
+    setPaymentTerms(f.paymentTerms);
+    setDelivery(f.delivery);
+    setIncludeStamp(f.includeStamp);
+    setLines(f.lines);
+  };
+
+  const openNew = () => { resetForm(); setShowModal(true); };
+
+  const openEdit = async (id: number) => {
+    try {
+      const { data: q } = await getQuotation(id);
+      setEditingId(id);
+      setCustomerId(String(q.customer_id));
+      setDate(q.date.split("T")[0]);
+      setValidUntil(q.valid_until ? q.valid_until.split("T")[0] : "");
+      setDiscount(q.discount || 0);
+      setNotes(q.notes || "");
+      setPaymentTerms(q.payment_terms || "");
+      setDelivery(q.delivery || "");
+      setIncludeStamp(q.include_stamp || false);
+      setLines(
+        q.items.map((it: { item_id: number | null; description: string; quantity: number; unit_price: number; vat_applicable: boolean }) => ({
+          item_id: it.item_id ?? null,
+          description: it.description,
+          quantity: it.quantity,
+          unit_price: it.unit_price,
+          vat_applicable: it.vat_applicable,
+        }))
+      );
+      setShowModal(true);
+    } catch {
+      toast.error("Failed to load quotation.");
+    }
+  };
 
   const addLine = () => setLines([...lines, { item_id: null, description: "", quantity: 1, unit_price: 0, vat_applicable: true }]);
   const removeLine = (i: number) => setLines(lines.filter((_, idx) => idx !== i));
@@ -57,19 +114,27 @@ export default function QuotationsPage() {
 
   const handleSave = async () => {
     if (!customerId) return toast.error("Select a customer");
+    const payload = {
+      customer_id: parseInt(customerId),
+      date: new Date(date).toISOString(),
+      valid_until: validUntil ? new Date(validUntil).toISOString() : null,
+      discount, notes,
+      payment_terms: paymentTerms,
+      delivery,
+      include_stamp: includeStamp,
+      items: lines,
+    };
     try {
-      await createQuotation({
-        customer_id: parseInt(customerId),
-        date: new Date(date).toISOString(),
-        valid_until: validUntil ? new Date(validUntil).toISOString() : null,
-        discount, notes,
-        payment_terms: paymentTerms,
-        delivery,
-        include_stamp: includeStamp,
-        items: lines,
-      });
-      toast.success("Quotation created!"); setShowModal(false); load();
-    } catch { toast.error("Failed."); }
+      if (editingId) {
+        await updateQuotation(editingId, payload);
+        toast.success("Quotation updated!");
+      } else {
+        await createQuotation(payload);
+        toast.success("Quotation created!");
+      }
+      setShowModal(false);
+      load();
+    } catch (e) { toast.error(apiErr(e, "Failed to save quotation.")); }
   };
 
   const handleConvert = async (id: number) => {
@@ -99,7 +164,7 @@ export default function QuotationsPage() {
       <Header title="Quotations" />
       <div className="p-6 space-y-5">
         <div className="flex justify-end">
-          <button className="btn-primary" onClick={() => setShowModal(true)}><Plus size={15} /> New Quotation</button>
+          <button className="btn-primary" onClick={openNew}><Plus size={15} /> New Quotation</button>
         </div>
 
         <div className="card p-0 overflow-hidden">
@@ -122,9 +187,12 @@ export default function QuotationsPage() {
                     <td className="font-medium">AED {q.total.toFixed(2)}</td>
                     <td><span className={`status-badge border ${sc}`}>{q.status}</span></td>
                     <td><div className="flex gap-2">
-                      <button onClick={() => window.open(downloadQuotationPDF(q.id), "_blank")} className="text-text-muted hover:text-brand-indigo"><FileDown size={14} /></button>
+                      <button onClick={() => window.open(downloadQuotationPDF(q.id), "_blank")} className="text-text-muted hover:text-brand-indigo" title="Download PDF"><FileDown size={14} /></button>
                       {!q.converted_to_invoice && (
-                        <button onClick={() => handleConvert(q.id)} className="text-text-muted hover:text-emerald-400" title="Convert to Invoice"><ArrowRight size={14} /></button>
+                        <>
+                          <button onClick={() => openEdit(q.id)} className="text-text-muted hover:text-brand-indigo" title="Edit"><Edit2 size={14} /></button>
+                          <button onClick={() => handleConvert(q.id)} className="text-text-muted hover:text-emerald-400" title="Convert to Invoice"><ArrowRight size={14} /></button>
+                        </>
                       )}
                       <button
                         onClick={() => {
@@ -136,7 +204,7 @@ export default function QuotationsPage() {
                       >
                         <MessageCircle size={14} />
                       </button>
-                      <button onClick={() => handleDelete(q.id)} className="text-text-muted hover:text-red-400"><Trash2 size={14} /></button>
+                      <button onClick={() => handleDelete(q.id)} className="text-text-muted hover:text-red-400" title="Delete"><Trash2 size={14} /></button>
                     </div></td>
                   </tr>
                 );
@@ -150,7 +218,7 @@ export default function QuotationsPage() {
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-5 border-b border-bg-border">
-              <h3 className="font-semibold">New Quotation</h3>
+              <h3 className="font-semibold">{editingId ? "Edit Quotation" : "New Quotation"}</h3>
               <button onClick={() => setShowModal(false)}><X size={18} /></button>
             </div>
             <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
@@ -224,7 +292,9 @@ export default function QuotationsPage() {
 
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1 justify-center">Cancel</button>
-                <button onClick={handleSave} className="btn-primary flex-1 justify-center">Create Quotation</button>
+                <button onClick={handleSave} className="btn-primary flex-1 justify-center">
+                  {editingId ? "Update Quotation" : "Create Quotation"}
+                </button>
               </div>
             </div>
           </div>

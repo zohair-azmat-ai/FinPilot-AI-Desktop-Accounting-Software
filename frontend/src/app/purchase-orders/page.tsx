@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Header from "@/components/Header";
 import {
   getSuppliers, getPurchaseOrders, createPurchaseOrder,
-  updatePurchaseOrder, deletePurchaseOrder, downloadPurchaseOrderPDF,
+  updatePurchaseOrder, deletePurchaseOrder, downloadPurchaseOrderPDF, apiErr,
 } from "@/lib/api";
 import { Plus, Trash2, FileDown, Edit2, ShoppingCart, Save, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -124,8 +124,8 @@ export default function PurchaseOrdersPage() {
       }
       setShowModal(false);
       load();
-    } catch {
-      toast.error("Failed to save purchase order");
+    } catch (e) {
+      toast.error(apiErr(e, "Failed to save purchase order"));
     } finally {
       setSaving(false);
     }

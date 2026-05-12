@@ -35,6 +35,7 @@ const NAV_ITEMS = [
   { label: "Items / Services", icon: Package, href: "/items" },
   { type: "divider", label: "ACCOUNTS" },
   { label: "Ledger", icon: BookOpen, href: "/ledger" },
+  { label: "Supplier Ledger", icon: BookOpen, href: "/supplier-ledger" },
   { label: "Statements", icon: FileBarChart, href: "/statements" },
   { label: "Reports", icon: BarChart3, href: "/reports" },
   { type: "divider", label: "TOOLS" },

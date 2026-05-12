@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
-import { getSuppliers, createSupplierPayment } from "@/lib/api";
+import { getSuppliers, createSupplierPayment, apiErr } from "@/lib/api";
 import toast from "react-hot-toast";
 import { ArrowLeft } from "lucide-react";
 
@@ -43,8 +43,8 @@ export default function SupplierPaymentFormPage() {
       });
       toast.success("Payment recorded!");
       router.push("/supplier-payments");
-    } catch {
-      toast.error("Failed to save payment.");
+    } catch (e) {
+      toast.error(apiErr(e, "Failed to save payment."));
     }
   };
 

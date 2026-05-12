@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
-import { getSuppliers, getSupplierBill, createSupplierBill, updateSupplierBill, getCompany } from "@/lib/api";
+import { getSuppliers, getSupplierBill, createSupplierBill, updateSupplierBill, getCompany, apiErr } from "@/lib/api";
 import toast from "react-hot-toast";
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 
@@ -98,8 +98,8 @@ export default function SupplierBillFormPage() {
         toast.success("Bill created!");
       }
       router.push("/supplier-bills");
-    } catch {
-      toast.error("Failed to save bill.");
+    } catch (e) {
+      toast.error(apiErr(e, "Failed to save bill."));
     }
   };
 

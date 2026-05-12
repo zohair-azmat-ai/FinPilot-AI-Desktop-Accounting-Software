@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
-import { getCustomers, getItems, createInvoice, getInvoice, updateInvoice, getCompany, saveCompany } from "@/lib/api";
+import { getCustomers, getItems, createInvoice, getInvoice, updateInvoice, getCompany, saveCompany, apiErr } from "@/lib/api";
 import toast from "react-hot-toast";
 import { Plus, Trash2, ArrowLeft, Save } from "lucide-react";
 
@@ -125,8 +125,8 @@ function InvoiceEditorContent() {
       editId ? await updateInvoice(parseInt(editId), payload) : await createInvoice(payload);
       toast.success(editId ? "Invoice updated!" : "Invoice created!");
       router.push("/invoices");
-    } catch {
-      toast.error("Failed to save invoice.");
+    } catch (e) {
+      toast.error(apiErr(e, "Failed to save invoice."));
     } finally {
       setSaving(false);
     }

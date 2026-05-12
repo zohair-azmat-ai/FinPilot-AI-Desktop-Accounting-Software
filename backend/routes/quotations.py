@@ -181,6 +181,52 @@ def convert_to_invoice(quotation_id: int, db: Session = Depends(get_db)):
     return invoice
 
 
+@router.put("/{quotation_id}", response_model=schemas.QuotationOut)
+def update_quotation(quotation_id: int, data: schemas.QuotationCreate, db: Session = Depends(get_db)):
+    q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+
+    company = db.query(models.Company).first()
+    vat_rate = company.vat_rate if company else 5.0
+
+    processed_items, subtotal, vat_total = _calculate_items(data.items, vat_rate)
+    total = round(subtotal + vat_total - (data.discount or 0), 2)
+
+    q.customer_id = data.customer_id
+    q.date = data.date or q.date
+    q.valid_until = data.valid_until
+    q.discount = data.discount or 0
+    q.notes = data.notes or ""
+    q.payment_terms = data.payment_terms or ""
+    q.delivery = data.delivery or ""
+    q.include_stamp = data.include_stamp or False
+    q.letterhead = data.letterhead if data.letterhead is not None else True
+    q.subtotal = subtotal
+    q.vat_amount = vat_total
+    q.total = total
+
+    for old_item in q.items:
+        db.delete(old_item)
+    db.flush()
+
+    for item in processed_items:
+        db.add(models.QuotationItem(
+            quotation_id=q.id,
+            item_id=item.get("item_id"),
+            description=item["description"],
+            quantity=item["quantity"],
+            unit_price=item["unit_price"],
+            vat_applicable=item["vat_applicable"],
+            vat_amount=item["vat_amount"],
+            total=item["total"]
+        ))
+
+    db.commit()
+    db.refresh(q)
+    return q
+
+
 @router.delete("/{quotation_id}")
 def delete_quotation(quotation_id: int, db: Session = Depends(get_db)):
     q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id).first()

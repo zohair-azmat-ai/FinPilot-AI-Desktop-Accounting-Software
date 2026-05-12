@@ -7,6 +7,16 @@ export const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+type ApiErrorShape = { response?: { data?: { detail?: string | { msg: string }[] } } };
+export function apiErr(e: unknown, fallback = "Failed"): string {
+  const err = e as ApiErrorShape;
+  const detail = err?.response?.data?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return detail.map((d) => d.msg).join("; ");
+  return fallback;
+}
+
 // Company
 export const getCompany = () => api.get("/api/company/");
 export const saveCompany = (data: unknown) => api.post("/api/company/", data);
@@ -39,6 +49,7 @@ export const deleteItem = (id: number) => api.delete(`/api/items/${id}`);
 export const getQuotations = () => api.get("/api/quotations/");
 export const getQuotation = (id: number) => api.get(`/api/quotations/${id}`);
 export const createQuotation = (data: unknown) => api.post("/api/quotations/", data);
+export const updateQuotation = (id: number, data: unknown) => api.put(`/api/quotations/${id}`, data);
 export const convertQuotation = (id: number) => api.post(`/api/quotations/${id}/convert`);
 export const deleteQuotation = (id: number) => api.delete(`/api/quotations/${id}`);
 export const downloadQuotationPDF = (id: number) => `${API_URL}/api/quotations/${id}/pdf`;
