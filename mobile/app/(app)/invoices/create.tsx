@@ -44,6 +44,7 @@ export default function InvoiceFormScreen() {
   const [notes, setNotes] = useState('');
   const [discountStr, setDiscountStr] = useState('0');
   const [isCash, setIsCash] = useState(false);
+  const [letterhead, setLetterhead] = useState(true);
   const [includeStamp, setIncludeStamp] = useState(false);
   const [requireSig, setRequireSig] = useState(false);
 
@@ -83,6 +84,7 @@ export default function InvoiceFormScreen() {
           setNotes(inv.notes ?? '');
           setDiscountStr(String(inv.discount ?? 0));
           setIsCash(!!(inv.is_cash));
+          setLetterhead(inv.letterhead !== false && inv.letterhead !== 0);
           setIncludeStamp(!!(inv.include_stamp));
           setRequireSig(!!(inv.require_customer_signature));
           setAmountPaid(inv.amount_paid ?? 0);
@@ -135,7 +137,7 @@ export default function InvoiceFormScreen() {
         do_no: doNo.trim() || null,
         notes: notes.trim() || null,
         discount,
-        is_cash: isCash, include_stamp: includeStamp,
+        is_cash: isCash, letterhead, include_stamp: includeStamp,
         require_customer_signature: requireSig,
         amount_paid: amountPaid,
       };
@@ -244,6 +246,7 @@ export default function InvoiceFormScreen() {
           <View style={s.card}>
             <Text style={s.cardTitle}>Options</Text>
             <ToggleRow label="Cash Invoice" value={isCash} onChange={setIsCash} />
+            <ToggleRow label="Print Letterhead" value={letterhead} onChange={setLetterhead} />
             <ToggleRow label="Include Stamp" value={includeStamp} onChange={setIncludeStamp} />
             <ToggleRow label="Require Customer Signature" value={requireSig} onChange={setRequireSig} />
             <Field label="Notes" value={notes} onChange={setNotes} placeholder="Payment terms, remarks…" multiline />

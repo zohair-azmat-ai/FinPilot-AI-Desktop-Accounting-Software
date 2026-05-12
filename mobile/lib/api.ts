@@ -16,7 +16,6 @@ function headers(anonKey: string): Record<string, string> {
     'Content-Type': 'application/json',
     Accept: 'application/json',
   };
-  // Old JWT anon keys are also valid Bearer tokens; new publishable keys are not.
   if (anonKey.startsWith('eyJ')) h['Authorization'] = `Bearer ${anonKey}`;
   return h;
 }
@@ -60,7 +59,7 @@ export async function getCompany() {
 // ── Customers ─────────────────────────────────────────────────────────────────
 export async function getCustomers() {
   return pg<any>('customers', {
-    select: 'id,name,phone,email,trn,address,opening_balance',
+    select: 'id,name,phone,email,trn,address,po_box,opening_balance',
     order: 'name.asc',
     limit: '500',
   });
@@ -105,11 +104,98 @@ export async function getInvoicesByCustomer(customerId: number) {
     customer_id: `eq.${customerId}`,
     select: 'id,invoice_number,date,total,balance_due,status',
     order: 'date.desc',
-    limit: '100',
+    limit: '200',
   });
 }
 
-// ── Supplier bills ────────────────────────────────────────────────────────────
+// ── Quotations ────────────────────────────────────────────────────────────────
+export async function getQuotations() {
+  return pg<any>('quotations', {
+    select: 'id,quotation_number,date,valid_until,total,status,customer_id,converted_to_invoice',
+    order: 'date.desc',
+    limit: '500',
+  });
+}
+export async function getQuotation(id: number) {
+  const d = await pg<any>('quotations', { id: `eq.${id}`, limit: '1' });
+  return d[0] ?? null;
+}
+export async function getQuotationItems(quotationId: number) {
+  return pg<any>('quotation_items', { quotation_id: `eq.${quotationId}` });
+}
+export async function getNextQuotationNumber(): Promise<string> {
+  try {
+    const rows = await pg<any>('quotations', { select: 'quotation_number', order: 'id.desc', limit: '1' });
+    if (rows.length && rows[0].quotation_number) {
+      const m = rows[0].quotation_number.match(/(\d+)$/);
+      if (m) {
+        const next = String(parseInt(m[1]) + 1).padStart(m[1].length, '0');
+        return rows[0].quotation_number.replace(/\d+$/, next);
+      }
+    }
+  } catch {}
+  return `QUO-${String(new Date().getFullYear()).slice(2)}${String(new Date().getMonth()+1).padStart(2,'0')}01`;
+}
+
+// ── Delivery Notes ────────────────────────────────────────────────────────────
+export async function getDeliveryNotes() {
+  return pg<any>('delivery_notes', {
+    select: 'id,dn_number,date,status,customer_id',
+    order: 'date.desc',
+    limit: '500',
+  });
+}
+export async function getDeliveryNote(id: number) {
+  const d = await pg<any>('delivery_notes', { id: `eq.${id}`, limit: '1' });
+  return d[0] ?? null;
+}
+export async function getDeliveryNoteItems(dnId: number) {
+  return pg<any>('delivery_note_items', { dn_id: `eq.${dnId}` });
+}
+export async function getNextDNNumber(): Promise<string> {
+  try {
+    const rows = await pg<any>('delivery_notes', { select: 'dn_number', order: 'id.desc', limit: '1' });
+    if (rows.length && rows[0].dn_number) {
+      const m = rows[0].dn_number.match(/(\d+)$/);
+      if (m) {
+        const next = String(parseInt(m[1]) + 1).padStart(m[1].length, '0');
+        return rows[0].dn_number.replace(/\d+$/, next);
+      }
+    }
+  } catch {}
+  return `DN-0001`;
+}
+
+// ── Purchase Orders ───────────────────────────────────────────────────────────
+export async function getPurchaseOrders() {
+  return pg<any>('purchase_orders', {
+    select: 'id,po_number,date,total,status,supplier_id',
+    order: 'date.desc',
+    limit: '500',
+  });
+}
+export async function getPurchaseOrder(id: number) {
+  const d = await pg<any>('purchase_orders', { id: `eq.${id}`, limit: '1' });
+  return d[0] ?? null;
+}
+export async function getPurchaseOrderItems(poId: number) {
+  return pg<any>('purchase_order_items', { po_id: `eq.${poId}` });
+}
+export async function getNextPONumber(): Promise<string> {
+  try {
+    const rows = await pg<any>('purchase_orders', { select: 'po_number', order: 'id.desc', limit: '1' });
+    if (rows.length && rows[0].po_number) {
+      const m = rows[0].po_number.match(/(\d+)$/);
+      if (m) {
+        const next = String(parseInt(m[1]) + 1).padStart(m[1].length, '0');
+        return rows[0].po_number.replace(/\d+$/, next);
+      }
+    }
+  } catch {}
+  return `PO-0001`;
+}
+
+// ── Supplier Bills ────────────────────────────────────────────────────────────
 export async function getSupplierBills(supplierId?: number) {
   const params: Record<string, string> = {
     select: 'id,bill_number,date,due_date,total,amount_paid,balance_due,status,supplier_id',
@@ -119,13 +205,55 @@ export async function getSupplierBills(supplierId?: number) {
   if (supplierId) params.supplier_id = `eq.${supplierId}`;
   return pg<any>('supplier_bills', params);
 }
+export async function getSupplierBill(id: number) {
+  const d = await pg<any>('supplier_bills', { id: `eq.${id}`, limit: '1' });
+  return d[0] ?? null;
+}
+export async function getSupplierBillItems(billId: number) {
+  return pg<any>('supplier_bill_items', { bill_id: `eq.${billId}` });
+}
+export async function getNextBillNumber(): Promise<string> {
+  try {
+    const rows = await pg<any>('supplier_bills', { select: 'bill_number', order: 'id.desc', limit: '1' });
+    if (rows.length && rows[0].bill_number) {
+      const m = rows[0].bill_number.match(/(\d+)$/);
+      if (m) {
+        const next = String(parseInt(m[1]) + 1).padStart(m[1].length, '0');
+        return rows[0].bill_number.replace(/\d+$/, next);
+      }
+    }
+  } catch {}
+  return `BILL-0001`;
+}
 
-// ── Payments ──────────────────────────────────────────────────────────────────
-export async function getPayments() {
-  return pg<any>('payments', {
-    select: 'id,payment_number,date,amount,method,payment_direction',
+// ── Supplier Payments ─────────────────────────────────────────────────────────
+export async function getSupplierPayments(supplierId?: number) {
+  const params: Record<string, string> = {
+    select: 'id,payment_number,date,amount,method,reference,supplier_id',
     order: 'date.desc',
     limit: '500',
+  };
+  if (supplierId) params.supplier_id = `eq.${supplierId}`;
+  return pg<any>('supplier_payments', params);
+}
+
+// ── Customer Payments ─────────────────────────────────────────────────────────
+export async function getPayments(customerId?: number) {
+  const params: Record<string, string> = {
+    select: 'id,payment_number,date,amount,method,payment_direction,customer_id,supplier_id,reference',
+    order: 'date.desc',
+    limit: '500',
+  };
+  if (customerId) params.customer_id = `eq.${customerId}`;
+  return pg<any>('payments', params);
+}
+
+// ── Ledger entries ────────────────────────────────────────────────────────────
+export async function getLedgerEntries(customerId: number) {
+  return pg<any>('ledger_entries', {
+    customer_id: `eq.${customerId}`,
+    order: 'date.asc,id.asc',
+    limit: '1000',
   });
 }
 
@@ -133,12 +261,8 @@ export async function getPayments() {
 export async function getDashboard() {
   const [company, invoices, bills] = await Promise.all([
     pg<any>('companies', { limit: '1' }),
-    pg<any>('invoices', {
-      select: 'total,amount_paid,balance_due,status,date,customer_id',
-    }),
-    pg<any>('supplier_bills', {
-      select: 'total,balance_due,status',
-    }),
+    pg<any>('invoices', { select: 'total,amount_paid,balance_due,status,date,customer_id' }),
+    pg<any>('supplier_bills', { select: 'total,balance_due,status' }),
   ]);
 
   const mm = new Date().toISOString().slice(0, 7);
@@ -160,10 +284,7 @@ export async function getDashboard() {
 export async function getReports() {
   const [invoices, payments, expenses] = await Promise.all([
     pg<any>('invoices', { select: 'total,amount_paid,date,status' }),
-    pg<any>('payments', {
-      select: 'amount,date',
-      payment_direction: 'eq.received',
-    }),
+    pg<any>('payments', { select: 'amount,date', payment_direction: 'eq.received' }),
     pg<any>('expenses', { select: 'amount,date,category' }),
   ]);
 
@@ -178,16 +299,12 @@ export async function getReports() {
     totalCollected: payments.reduce((s: number, p: any) => s + (p.amount ?? 0), 0),
     totalExpenses: expenses.reduce((s: number, e: any) => s + (e.amount ?? 0), 0),
     invoiceCount: invoices.length,
-    monthlyRevenue: Object.entries(byMonth)
-      .sort(([a], [b]) => b.localeCompare(a))
-      .slice(0, 6),
+    monthlyRevenue: Object.entries(byMonth).sort(([a], [b]) => b.localeCompare(a)).slice(0, 6),
   };
 }
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
 
-// Monotonic ID: Date.now() seed puts values in the billions,
-// far above SQLite desktop auto-increment IDs (typically 1-99999).
 let _idSeed = Date.now();
 function nextId(): number { return ++_idSeed; }
 
@@ -259,6 +376,37 @@ async function pgDeleteWhere(table: string, extra: Record<string, string>): Prom
   }
 }
 
+// ── Shared totals calculation ─────────────────────────────────────────────────
+
+export interface LineItemDraft {
+  description: string;
+  quantity: number;
+  unit_price: number;
+  vat_applicable: boolean;
+}
+
+export type InvoiceItemDraft = LineItemDraft;
+
+export function calcLineTotals(items: LineItemDraft[], discount = 0) {
+  const subtotal = items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
+  const vat_amount = items.reduce((s, i) =>
+    s + (i.vat_applicable ? i.quantity * i.unit_price * 0.05 : 0), 0);
+  const total = Math.max(0, subtotal + vat_amount - discount);
+  return { subtotal, vat_amount, discount, total };
+}
+
+export const calcInvoiceTotals = calcLineTotals;
+
+// Per-item total including VAT (matches desktop behaviour)
+function itemTotal(it: LineItemDraft): number {
+  const line = it.quantity * it.unit_price;
+  return it.vat_applicable ? line * 1.05 : line;
+}
+
+function itemVatAmount(it: LineItemDraft): number {
+  return it.vat_applicable ? it.quantity * it.unit_price * 0.05 : 0;
+}
+
 // ── Customer CRUD ─────────────────────────────────────────────────────────────
 
 export async function createCustomer(d: {
@@ -296,21 +444,6 @@ export async function deleteCustomer(id: number) {
 
 // ── Invoice CRUD ──────────────────────────────────────────────────────────────
 
-export interface InvoiceItemDraft {
-  description: string;
-  quantity: number;
-  unit_price: number;
-  vat_applicable: boolean;
-}
-
-export function calcInvoiceTotals(items: InvoiceItemDraft[], discount = 0) {
-  const subtotal = items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
-  const vat_amount = items.reduce((s, i) =>
-    s + (i.vat_applicable ? i.quantity * i.unit_price * 0.05 : 0), 0);
-  const total = Math.max(0, subtotal + vat_amount - discount);
-  return { subtotal, vat_amount, discount, total };
-}
-
 export async function getNextInvoiceNumber(): Promise<string> {
   try {
     const rows = await pg<any>('invoices', { select: 'invoice_number', order: 'id.desc', limit: '1' });
@@ -331,12 +464,13 @@ export async function createInvoice(
     invoice_number: string; customer_id: number | null;
     date: string; due_date?: string | null; lpo_no?: string | null;
     do_no?: string | null; notes?: string | null; discount?: number;
-    is_cash?: boolean; include_stamp?: boolean; require_customer_signature?: boolean;
+    is_cash?: boolean; letterhead?: boolean; include_stamp?: boolean;
+    require_customer_signature?: boolean;
   },
-  items: InvoiceItemDraft[],
+  items: LineItemDraft[],
 ) {
   if (!_cfg) throw new Error('Not connected');
-  const t = calcInvoiceTotals(items, inv.discount ?? 0);
+  const t = calcLineTotals(items, inv.discount ?? 0);
   const invoiceId = nextId();
   await pgPost('invoices', {
     id: invoiceId, invoice_number: inv.invoice_number,
@@ -348,18 +482,19 @@ export async function createInvoice(
     discount: t.discount, total: t.total,
     amount_paid: 0, balance_due: t.total, status: 'unpaid',
     is_cash: inv.is_cash ? 1 : 0,
+    letterhead: inv.letterhead !== false ? 1 : 0,
     include_stamp: inv.include_stamp ? 1 : 0,
     require_customer_signature: inv.require_customer_signature ? 1 : 0,
     workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
   });
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
+  for (const it of items) {
     await pgPost('invoice_items', {
       id: nextId(), invoice_id: invoiceId,
       description: it.description,
       quantity: it.quantity, unit_price: it.unit_price,
       vat_applicable: it.vat_applicable ? 1 : 0,
-      total: it.quantity * it.unit_price,
+      vat_amount: itemVatAmount(it),
+      total: itemTotal(it),
       workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
     });
   }
@@ -372,13 +507,13 @@ export async function updateInvoice(
     invoice_number: string; customer_id: number | null;
     date: string; due_date?: string | null; lpo_no?: string | null;
     do_no?: string | null; notes?: string | null; discount?: number;
-    is_cash?: boolean; include_stamp?: boolean; require_customer_signature?: boolean;
-    amount_paid?: number;
+    is_cash?: boolean; letterhead?: boolean; include_stamp?: boolean;
+    require_customer_signature?: boolean; amount_paid?: number;
   },
-  items: InvoiceItemDraft[],
+  items: LineItemDraft[],
 ) {
   if (!_cfg) throw new Error('Not connected');
-  const t = calcInvoiceTotals(items, inv.discount ?? 0);
+  const t = calcLineTotals(items, inv.discount ?? 0);
   const amountPaid = inv.amount_paid ?? 0;
   const balanceDue = Math.max(0, t.total - amountPaid);
   const status = balanceDue <= 0 ? 'paid' : amountPaid > 0 ? 'partial' : 'unpaid';
@@ -391,6 +526,7 @@ export async function updateInvoice(
     discount: t.discount, total: t.total,
     balance_due: balanceDue, status,
     is_cash: inv.is_cash ? 1 : 0,
+    letterhead: inv.letterhead !== false ? 1 : 0,
     include_stamp: inv.include_stamp ? 1 : 0,
     require_customer_signature: inv.require_customer_signature ? 1 : 0,
     updated_at: isoNow(),
@@ -401,7 +537,8 @@ export async function updateInvoice(
       id: nextId(), invoice_id: id,
       description: it.description, quantity: it.quantity,
       unit_price: it.unit_price, vat_applicable: it.vat_applicable ? 1 : 0,
-      total: it.quantity * it.unit_price,
+      vat_amount: itemVatAmount(it),
+      total: itemTotal(it),
       workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
     });
   }
@@ -411,6 +548,392 @@ export async function deleteInvoice(id: number) {
   if (!_cfg) throw new Error('Not connected');
   await pgDeleteWhere('invoice_items', { invoice_id: `eq.${id}` });
   await pgDelete('invoices', id);
+}
+
+// ── Quotation CRUD ────────────────────────────────────────────────────────────
+
+export async function createQuotation(
+  q: {
+    quotation_number: string; customer_id: number | null;
+    date: string; valid_until?: string | null;
+    discount?: number; notes?: string | null;
+    payment_terms?: string | null; delivery?: string | null;
+    include_stamp?: boolean; letterhead?: boolean;
+  },
+  items: LineItemDraft[],
+) {
+  if (!_cfg) throw new Error('Not connected');
+  const t = calcLineTotals(items, q.discount ?? 0);
+  const qId = nextId();
+  await pgPost('quotations', {
+    id: qId, quotation_number: q.quotation_number,
+    customer_id: q.customer_id ?? null,
+    date: q.date, valid_until: q.valid_until ?? null,
+    discount: q.discount ?? 0,
+    notes: q.notes ?? null,
+    payment_terms: q.payment_terms ?? null,
+    delivery: q.delivery ?? null,
+    include_stamp: q.include_stamp ? 1 : 0,
+    letterhead: q.letterhead !== false ? 1 : 0,
+    subtotal: t.subtotal, vat_amount: t.vat_amount, total: t.total,
+    status: 'draft',
+    converted_to_invoice: 0,
+    workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+  });
+  for (const it of items) {
+    await pgPost('quotation_items', {
+      id: nextId(), quotation_id: qId,
+      description: it.description, quantity: it.quantity,
+      unit_price: it.unit_price, vat_applicable: it.vat_applicable ? 1 : 0,
+      vat_amount: itemVatAmount(it), total: itemTotal(it),
+      workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+    });
+  }
+  return qId;
+}
+
+export async function updateQuotation(
+  id: number,
+  q: {
+    quotation_number: string; customer_id: number | null;
+    date: string; valid_until?: string | null;
+    discount?: number; notes?: string | null;
+    payment_terms?: string | null; delivery?: string | null;
+    include_stamp?: boolean; letterhead?: boolean;
+  },
+  items: LineItemDraft[],
+) {
+  if (!_cfg) throw new Error('Not connected');
+  const t = calcLineTotals(items, q.discount ?? 0);
+  await pgPatch('quotations', id, {
+    quotation_number: q.quotation_number, customer_id: q.customer_id ?? null,
+    date: q.date, valid_until: q.valid_until ?? null,
+    discount: q.discount ?? 0, notes: q.notes ?? null,
+    payment_terms: q.payment_terms ?? null, delivery: q.delivery ?? null,
+    include_stamp: q.include_stamp ? 1 : 0, letterhead: q.letterhead !== false ? 1 : 0,
+    subtotal: t.subtotal, vat_amount: t.vat_amount, total: t.total,
+    updated_at: isoNow(),
+  });
+  await pgDeleteWhere('quotation_items', { quotation_id: `eq.${id}` });
+  for (const it of items) {
+    await pgPost('quotation_items', {
+      id: nextId(), quotation_id: id,
+      description: it.description, quantity: it.quantity,
+      unit_price: it.unit_price, vat_applicable: it.vat_applicable ? 1 : 0,
+      vat_amount: itemVatAmount(it), total: itemTotal(it),
+      workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+    });
+  }
+}
+
+export async function deleteQuotation(id: number) {
+  if (!_cfg) throw new Error('Not connected');
+  await pgDeleteWhere('quotation_items', { quotation_id: `eq.${id}` });
+  await pgDelete('quotations', id);
+}
+
+// ── Delivery Note CRUD ────────────────────────────────────────────────────────
+
+export interface DNItemDraft { description: string; quantity: number; remarks?: string; }
+
+export async function createDeliveryNote(
+  dn: {
+    dn_number: string; customer_id: number | null;
+    date: string; remarks?: string | null; letterhead?: boolean;
+  },
+  items: DNItemDraft[],
+) {
+  if (!_cfg) throw new Error('Not connected');
+  const dnId = nextId();
+  await pgPost('delivery_notes', {
+    id: dnId, dn_number: dn.dn_number,
+    customer_id: dn.customer_id ?? null,
+    date: dn.date, remarks: dn.remarks ?? null,
+    letterhead: dn.letterhead !== false ? 1 : 0,
+    status: 'draft',
+    workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+  });
+  for (const it of items) {
+    await pgPost('delivery_note_items', {
+      id: nextId(), dn_id: dnId,
+      description: it.description, quantity: it.quantity,
+      remarks: it.remarks ?? null,
+      workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+    });
+  }
+  return dnId;
+}
+
+export async function updateDeliveryNote(
+  id: number,
+  dn: {
+    dn_number: string; customer_id: number | null;
+    date: string; remarks?: string | null; letterhead?: boolean; status?: string;
+  },
+  items: DNItemDraft[],
+) {
+  if (!_cfg) throw new Error('Not connected');
+  await pgPatch('delivery_notes', id, {
+    dn_number: dn.dn_number, customer_id: dn.customer_id ?? null,
+    date: dn.date, remarks: dn.remarks ?? null,
+    letterhead: dn.letterhead !== false ? 1 : 0,
+    status: dn.status ?? 'draft',
+    updated_at: isoNow(),
+  });
+  await pgDeleteWhere('delivery_note_items', { dn_id: `eq.${id}` });
+  for (const it of items) {
+    await pgPost('delivery_note_items', {
+      id: nextId(), dn_id: id,
+      description: it.description, quantity: it.quantity,
+      remarks: it.remarks ?? null,
+      workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+    });
+  }
+}
+
+export async function deleteDeliveryNote(id: number) {
+  if (!_cfg) throw new Error('Not connected');
+  await pgDeleteWhere('delivery_note_items', { dn_id: `eq.${id}` });
+  await pgDelete('delivery_notes', id);
+}
+
+// ── Purchase Order CRUD ───────────────────────────────────────────────────────
+
+export async function createPurchaseOrder(
+  po: {
+    po_number: string; supplier_id: number | null;
+    date: string; delivery_date?: string | null;
+    payment_terms?: string | null; delivery_terms?: string | null;
+    notes?: string | null; include_stamp?: boolean; letterhead?: boolean;
+  },
+  items: LineItemDraft[],
+) {
+  if (!_cfg) throw new Error('Not connected');
+  const t = calcLineTotals(items, 0);
+  const poId = nextId();
+  await pgPost('purchase_orders', {
+    id: poId, po_number: po.po_number,
+    supplier_id: po.supplier_id ?? null,
+    date: po.date, delivery_date: po.delivery_date ?? null,
+    payment_terms: po.payment_terms ?? null,
+    delivery_terms: po.delivery_terms ?? null,
+    notes: po.notes ?? null,
+    subtotal: t.subtotal, vat_amount: t.vat_amount, total: t.total,
+    include_stamp: po.include_stamp ? 1 : 0,
+    letterhead: po.letterhead !== false ? 1 : 0,
+    status: 'draft',
+    workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+  });
+  for (const it of items) {
+    await pgPost('purchase_order_items', {
+      id: nextId(), po_id: poId,
+      description: it.description, quantity: it.quantity,
+      unit_price: it.unit_price, vat_applicable: it.vat_applicable ? 1 : 0,
+      vat_amount: itemVatAmount(it), total: itemTotal(it),
+      workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+    });
+  }
+  return poId;
+}
+
+export async function updatePurchaseOrder(
+  id: number,
+  po: {
+    po_number: string; supplier_id: number | null;
+    date: string; delivery_date?: string | null;
+    payment_terms?: string | null; delivery_terms?: string | null;
+    notes?: string | null; include_stamp?: boolean; letterhead?: boolean;
+  },
+  items: LineItemDraft[],
+) {
+  if (!_cfg) throw new Error('Not connected');
+  const t = calcLineTotals(items, 0);
+  await pgPatch('purchase_orders', id, {
+    po_number: po.po_number, supplier_id: po.supplier_id ?? null,
+    date: po.date, delivery_date: po.delivery_date ?? null,
+    payment_terms: po.payment_terms ?? null, delivery_terms: po.delivery_terms ?? null,
+    notes: po.notes ?? null,
+    subtotal: t.subtotal, vat_amount: t.vat_amount, total: t.total,
+    include_stamp: po.include_stamp ? 1 : 0, letterhead: po.letterhead !== false ? 1 : 0,
+    updated_at: isoNow(),
+  });
+  await pgDeleteWhere('purchase_order_items', { po_id: `eq.${id}` });
+  for (const it of items) {
+    await pgPost('purchase_order_items', {
+      id: nextId(), po_id: id,
+      description: it.description, quantity: it.quantity,
+      unit_price: it.unit_price, vat_applicable: it.vat_applicable ? 1 : 0,
+      vat_amount: itemVatAmount(it), total: itemTotal(it),
+      workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+    });
+  }
+}
+
+export async function deletePurchaseOrder(id: number) {
+  if (!_cfg) throw new Error('Not connected');
+  await pgDeleteWhere('purchase_order_items', { po_id: `eq.${id}` });
+  await pgDelete('purchase_orders', id);
+}
+
+// ── Supplier Bill CRUD ────────────────────────────────────────────────────────
+
+export async function createSupplierBill(
+  bill: {
+    bill_number: string; supplier_id: number | null;
+    date: string; due_date?: string | null;
+    trn?: string | null; lpo_no?: string | null; notes?: string | null;
+  },
+  items: LineItemDraft[],
+) {
+  if (!_cfg) throw new Error('Not connected');
+  const t = calcLineTotals(items, 0);
+  const billId = nextId();
+  await pgPost('supplier_bills', {
+    id: billId, bill_number: bill.bill_number,
+    supplier_id: bill.supplier_id ?? null,
+    date: bill.date, due_date: bill.due_date ?? null,
+    trn: bill.trn ?? null, lpo_no: bill.lpo_no ?? null, notes: bill.notes ?? null,
+    subtotal: t.subtotal, vat_amount: t.vat_amount, total: t.total,
+    amount_paid: 0, balance_due: t.total, status: 'unpaid',
+    workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+  });
+  for (const it of items) {
+    await pgPost('supplier_bill_items', {
+      id: nextId(), bill_id: billId,
+      description: it.description, quantity: it.quantity,
+      unit_price: it.unit_price, vat_applicable: it.vat_applicable ? 1 : 0,
+      vat_amount: itemVatAmount(it), total: itemTotal(it),
+      workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+    });
+  }
+  return billId;
+}
+
+export async function updateSupplierBill(
+  id: number,
+  bill: {
+    bill_number: string; supplier_id: number | null;
+    date: string; due_date?: string | null;
+    trn?: string | null; lpo_no?: string | null; notes?: string | null;
+    amount_paid?: number;
+  },
+  items: LineItemDraft[],
+) {
+  if (!_cfg) throw new Error('Not connected');
+  const t = calcLineTotals(items, 0);
+  const amountPaid = bill.amount_paid ?? 0;
+  const balanceDue = Math.max(0, t.total - amountPaid);
+  const status = balanceDue <= 0 ? 'paid' : amountPaid > 0 ? 'partial' : 'unpaid';
+  await pgPatch('supplier_bills', id, {
+    bill_number: bill.bill_number, supplier_id: bill.supplier_id ?? null,
+    date: bill.date, due_date: bill.due_date ?? null,
+    trn: bill.trn ?? null, lpo_no: bill.lpo_no ?? null, notes: bill.notes ?? null,
+    subtotal: t.subtotal, vat_amount: t.vat_amount, total: t.total,
+    balance_due: balanceDue, status, updated_at: isoNow(),
+  });
+  await pgDeleteWhere('supplier_bill_items', { bill_id: `eq.${id}` });
+  for (const it of items) {
+    await pgPost('supplier_bill_items', {
+      id: nextId(), bill_id: id,
+      description: it.description, quantity: it.quantity,
+      unit_price: it.unit_price, vat_applicable: it.vat_applicable ? 1 : 0,
+      vat_amount: itemVatAmount(it), total: itemTotal(it),
+      workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+    });
+  }
+}
+
+export async function deleteSupplierBill(id: number) {
+  if (!_cfg) throw new Error('Not connected');
+  await pgDeleteWhere('supplier_bill_items', { bill_id: `eq.${id}` });
+  await pgDelete('supplier_bills', id);
+}
+
+// ── Customer Payment CRUD ─────────────────────────────────────────────────────
+
+export async function createPayment(p: {
+  customer_id: number | null; date: string; amount: number;
+  method?: string; reference?: string | null; notes?: string | null;
+  invoice_id?: number | null;
+}) {
+  if (!_cfg) throw new Error('Not connected');
+  const payId = nextId();
+  // Auto-generate a sequential payment number
+  const rows = await pg<any>('payments', { select: 'payment_number', order: 'id.desc', limit: '1' });
+  let pNum = 'PMT-0001';
+  if (rows.length && rows[0].payment_number) {
+    const m = rows[0].payment_number.match(/(\d+)$/);
+    if (m) pNum = `PMT-${String(parseInt(m[1]) + 1).padStart(4, '0')}`;
+  }
+  // Update invoice amount_paid / balance_due / status in Supabase
+  if (p.invoice_id) {
+    const inv = await getInvoice(p.invoice_id);
+    if (inv) {
+      const newPaid = (inv.amount_paid ?? 0) + p.amount;
+      const newBal = Math.max(0, (inv.total ?? 0) - newPaid);
+      const newStatus = newBal <= 0 ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
+      await pgPatch('invoices', p.invoice_id, {
+        amount_paid: newPaid, balance_due: newBal, status: newStatus, updated_at: isoNow(),
+      });
+    }
+  }
+  return pgPost('payments', {
+    id: payId, payment_number: pNum,
+    payment_direction: 'received',
+    customer_id: p.customer_id ?? null,
+    invoice_id: p.invoice_id ?? null,
+    date: p.date, amount: p.amount,
+    method: p.method ?? 'cash',
+    reference: p.reference ?? null,
+    notes: p.notes ?? null,
+    workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+  });
+}
+
+export async function deletePayment(id: number) {
+  return pgDelete('payments', id);
+}
+
+// ── Supplier Payment CRUD ─────────────────────────────────────────────────────
+
+export async function createSupplierPayment(p: {
+  supplier_id: number | null; date: string; amount: number;
+  method?: string; reference?: string | null; notes?: string | null;
+  bill_id?: number | null;
+}) {
+  if (!_cfg) throw new Error('Not connected');
+  const payId = nextId();
+  const rows = await pg<any>('supplier_payments', { select: 'payment_number', order: 'id.desc', limit: '1' });
+  let pNum = 'SPMT-0001';
+  if (rows.length && rows[0].payment_number) {
+    const m = rows[0].payment_number.match(/(\d+)$/);
+    if (m) pNum = `SPMT-${String(parseInt(m[1]) + 1).padStart(4, '0')}`;
+  }
+  // Update linked bill if provided
+  if (p.bill_id) {
+    const bill = await getSupplierBill(p.bill_id);
+    if (bill) {
+      const newPaid = (bill.amount_paid ?? 0) + p.amount;
+      const newBal = Math.max(0, (bill.total ?? 0) - newPaid);
+      const newStatus = newBal <= 0 ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
+      await pgPatch('supplier_bills', p.bill_id, {
+        amount_paid: newPaid, balance_due: newBal, status: newStatus, updated_at: isoNow(),
+      });
+    }
+  }
+  return pgPost('supplier_payments', {
+    id: payId, payment_number: pNum,
+    supplier_id: p.supplier_id ?? null,
+    date: p.date, amount: p.amount,
+    method: p.method ?? 'cash',
+    reference: p.reference ?? null,
+    notes: p.notes ?? null,
+    workspace_id: _cfg.workspaceId, sync_uuid: genUUID(), updated_at: isoNow(),
+  });
+}
+
+export async function deleteSupplierPayment(id: number) {
+  return pgDelete('supplier_payments', id);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -425,4 +948,32 @@ export function fmtDate(s: string | null | undefined) {
       day: '2-digit', month: 'short', year: 'numeric',
     });
   } catch { return s.slice(0, 10); }
+}
+
+export function amountInWords(amount: number): string {
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+    'Seventeen', 'Eighteen', 'Nineteen'];
+  const tensW = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  function b1000(n: number): string {
+    if (n === 0) return '';
+    if (n < 20) return ones[n];
+    if (n < 100) return tensW[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '');
+    return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + b1000(n % 100) : '');
+  }
+
+  const integer = Math.floor(Math.abs(amount));
+  const fils = Math.round((Math.abs(amount) - integer) * 100);
+  let words: string;
+  if (integer === 0) words = 'Zero';
+  else if (integer < 1000) words = b1000(integer);
+  else if (integer < 1_000_000) {
+    const [h, l] = [Math.floor(integer / 1000), integer % 1000];
+    words = b1000(h) + ' Thousand' + (l ? ' ' + b1000(l) : '');
+  } else {
+    const [h, l] = [Math.floor(integer / 1_000_000), integer % 1_000_000];
+    words = b1000(h) + ' Million' + (l ? ' ' + (l < 1000 ? b1000(l) : b1000(Math.floor(l/1000)) + ' Thousand' + (l%1000 ? ' ' + b1000(l%1000) : '')) : '');
+  }
+  return fils ? `AED ${words} and ${b1000(fils)} Fils Only` : `AED ${words} Only`;
 }

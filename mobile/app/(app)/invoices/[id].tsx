@@ -8,7 +8,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { getInvoice, getInvoiceItems, getCustomer, getCompany, deleteInvoice, fmtCurrency, fmtDate } from '@/lib/api';
+import {
+  getInvoice, getInvoiceItems, getCustomer, getCompany,
+  deleteInvoice, fmtCurrency, fmtDate, amountInWords,
+} from '@/lib/api';
 import { C, STATUS_COLOR, STATUS_BG } from '@/lib/theme';
 
 export default function InvoiceDetailScreen() {
@@ -62,7 +65,7 @@ export default function InvoiceDetailScreen() {
 
   const shareViaWhatsApp = async () => {
     const text =
-      `*${company?.name ?? 'FinPilot'} — Invoice*\n` +
+      `*${company?.name ?? 'FinPilot'} — TAX INVOICE*\n` +
       `Invoice #: ${invoice.invoice_number}\n` +
       `Date: ${fmtDate(invoice.date)}\n` +
       `Customer: ${customer?.name ?? '—'}\n` +
@@ -88,7 +91,6 @@ export default function InvoiceDetailScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      {/* Back bar */}
       <View style={s.navbar}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
           <Ionicons name="chevron-back" size={22} color={C.text} />
@@ -107,18 +109,14 @@ export default function InvoiceDetailScreen() {
           style={{ padding: 4 }}
           onPress={() => Alert.alert(
             'Delete Invoice',
-            `Delete invoice ${invoice.invoice_number}? This cannot be undone.`,
+            `Delete ${invoice.invoice_number}? This cannot be undone.`,
             [
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Delete', style: 'destructive',
                 onPress: async () => {
-                  try {
-                    await deleteInvoice(invoice.id);
-                    router.back();
-                  } catch (e: any) {
-                    Alert.alert('Error', e.message);
-                  }
+                  try { await deleteInvoice(invoice.id); router.back(); }
+                  catch (e: any) { Alert.alert('Error', e.message); }
                 },
               },
             ],
@@ -129,7 +127,6 @@ export default function InvoiceDetailScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Share buttons */}
         <View style={s.actionRow}>
           <TouchableOpacity style={s.actionBtn} onPress={shareAsPDF} disabled={sharing}>
             <Ionicons name="document-text-outline" size={18} color={C.brand} />
@@ -141,17 +138,17 @@ export default function InvoiceDetailScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Customer & dates */}
         <View style={s.card}>
           <Row label="Customer" value={customer?.name ?? '—'} />
-          {customer?.phone && <Row label="Phone" value={customer.phone} />}
-          {customer?.trn && <Row label="TRN" value={customer.trn} />}
+          {customer?.phone ? <Row label="Phone" value={customer.phone} /> : null}
+          {customer?.trn ? <Row label="TRN" value={customer.trn} /> : null}
           <Row label="Invoice Date" value={fmtDate(invoice.date)} />
-          {invoice.due_date && <Row label="Due Date" value={fmtDate(invoice.due_date)} />}
-          {invoice.lpo_no && <Row label="LPO No." value={invoice.lpo_no} />}
+          {invoice.due_date ? <Row label="Due Date" value={fmtDate(invoice.due_date)} /> : null}
+          {invoice.lpo_no ? <Row label="LPO No." value={invoice.lpo_no} /> : null}
+          {invoice.do_no ? <Row label="DO No." value={invoice.do_no} /> : null}
+          {invoice.is_cash ? <Row label="Type" value="Cash Invoice" /> : null}
         </View>
 
-        {/* Line items */}
         <View style={s.card}>
           <Text style={s.sectionTitle}>Items</Text>
           {items.map((item, idx) => (
@@ -167,7 +164,6 @@ export default function InvoiceDetailScreen() {
             </View>
           ))}
 
-          {/* Totals */}
           <View style={s.divider} />
           <TotalRow label="Subtotal" value={fmtCurrency(invoice.subtotal)} />
           {(invoice.vat_amount ?? 0) > 0 && <TotalRow label="VAT (5%)" value={fmtCurrency(invoice.vat_amount)} />}
@@ -214,74 +210,138 @@ function TotalRow({ label, value, bold, color }: any) {
   );
 }
 
+// ── Desktop-matching TAX INVOICE HTML PDF ────────────────────────────────────
 function buildInvoiceHTML(inv: any, items: any[], cust: any, comp: any): string {
-  const fmtC = (n: number | null) => `AED ${(n ?? 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
-  const fmtD = (s: string | null) => s ? new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+  const PRIMARY = '#1E3A5F';
+  const ACCENT = '#2563EB';
+  const LIGHT = '#F8FAFC';
+  const MED = '#94A3B8';
+  const DARK = '#0F172A';
 
-  const rows = items.map(i => `
-    <tr>
-      <td>${i.description ?? ''}</td>
-      <td style="text-align:right">${i.quantity ?? 0}</td>
-      <td style="text-align:right">${fmtC(i.unit_price)}</td>
-      <td style="text-align:right">${i.vat_applicable ? '5%' : '0%'}</td>
-      <td style="text-align:right">${fmtC(i.total)}</td>
+  const fmtC = (n: number | null) => `AED ${(n ?? 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+  const fmtD = (s: string | null) => s
+    ? new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '';
+
+  const rows = items.map((it, i) => `
+    <tr style="background:${i % 2 === 0 ? '#fff' : LIGHT}">
+      <td style="padding:7px 8px;font-size:11px;color:${DARK};text-align:center">${i + 1}</td>
+      <td style="padding:7px 8px;font-size:11px;color:${DARK}">${it.description ?? ''}</td>
+      <td style="padding:7px 8px;font-size:11px;color:${DARK};text-align:right">${(it.quantity ?? 0).toFixed(2)}</td>
+      <td style="padding:7px 8px;font-size:11px;color:${DARK};text-align:right">${fmtC(it.unit_price)}</td>
+      <td style="padding:7px 8px;font-size:11px;color:${DARK};text-align:right">${it.vat_applicable ? fmtC(it.vat_amount ?? 0) : 'Exempt'}</td>
+      <td style="padding:7px 8px;font-size:11px;color:${DARK};text-align:right;font-weight:600">${fmtC(it.total)}</td>
     </tr>`).join('');
 
+  const companyBlock = comp ? `
+    <div style="font-size:17px;font-weight:700;color:${PRIMARY}">${comp.name ?? ''}</div>
+    ${comp.trn ? `<div style="font-size:9px;color:${MED};margin-top:2px">TRN: ${comp.trn}</div>` : ''}
+    ${comp.phone ? `<div style="font-size:9px;color:#475569;margin-top:1px">Tel: ${comp.phone}</div>` : ''}
+    ${comp.address ? `<div style="font-size:9px;color:#475569">${comp.address.replace(/\n/g, ', ')}</div>` : ''}
+  ` : '';
+
+  const customerBlock = cust ? `
+    <div style="font-size:7px;font-weight:700;color:${MED};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">BILL TO</div>
+    <div style="font-size:11px;font-weight:700;color:${DARK}">${cust.name ?? ''}</div>
+    ${cust.attn ? `<div style="font-size:9px;color:#475569">Attn: ${cust.attn}</div>` : ''}
+    ${cust.trn ? `<div style="font-size:9px;color:#475569">TRN: ${cust.trn}</div>` : ''}
+    ${cust.phone ? `<div style="font-size:9px;color:#475569">Tel: ${cust.phone}</div>` : ''}
+    ${cust.address ? `<div style="font-size:9px;color:#475569">${cust.address.replace(/\n/g, ', ')}</div>` : ''}
+    ${cust.po_box ? `<div style="font-size:9px;color:#475569">PO Box: ${cust.po_box}</div>` : ''}
+  ` : '<div style="font-size:11px;color:#94a3b8">—</div>';
+
+  const refBlock = [
+    inv.lpo_no ? `<b>LPO No.:</b> ${inv.lpo_no}` : '',
+    inv.do_no ? `<b>DO No.:</b> ${inv.do_no}` : '',
+  ].filter(Boolean).join('&nbsp;&nbsp;&nbsp;');
+
+  const stampBlock = inv.include_stamp ? `
+    <div style="margin-top:30px;display:flex;align-items:flex-end;gap:40px">
+      <div style="flex:1">
+        <div style="font-size:9px;color:${MED};margin-bottom:4px;font-weight:600">COMPANY STAMP</div>
+        <div style="border:1px solid #e2e8f0;border-radius:4px;height:60px;width:120px"></div>
+      </div>
+      ${inv.require_customer_signature ? `
+      <div style="flex:1">
+        <div style="font-size:9px;color:${MED};margin-bottom:4px;font-weight:600">CUSTOMER SIGNATURE</div>
+        <div style="border-bottom:2px solid ${DARK};width:150px"></div>
+      </div>` : ''}
+    </div>
+  ` : (inv.require_customer_signature ? `
+    <div style="margin-top:30px">
+      <div style="font-size:9px;color:${MED};margin-bottom:4px;font-weight:600">CUSTOMER SIGNATURE</div>
+      <div style="border-bottom:2px solid ${DARK};width:200px"></div>
+    </div>
+  ` : '');
+
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
-    body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;margin:0;padding:24px}
-    .hdr{display:flex;justify-content:space-between;margin-bottom:24px}
-    .co{font-size:22px;font-weight:700;color:#6366f1}.inv{font-size:18px;font-weight:700;text-align:right}
-    .lbl{font-size:10px;color:#64748b;text-transform:uppercase;margin-bottom:2px}
-    .val{font-size:13px;font-weight:500}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:16px 0}
-    table{width:100%;border-collapse:collapse;margin:16px 0}
-    th{background:#6366f1;color:#fff;padding:8px;font-size:11px;text-align:left}
-    td{padding:8px;border-bottom:1px solid #e2e8f0;font-size:12px}
-    .tot{float:right;width:220px;margin-top:8px}
-    .tr{display:flex;justify-content:space-between;padding:4px 0;font-size:12px}
-    .grand{border-top:2px solid #6366f1;margin-top:4px;padding-top:8px;font-weight:700;font-size:15px}
-    .sbadge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase}
-    .unpaid{background:#fee2e2;color:#991b1b}.paid{background:#d1fae5;color:#065f46}.partial{background:#fef3c7;color:#92400e}
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:${DARK};padding:20px;background:#fff}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid ${ACCENT}}
+    .doc-title{font-size:22px;font-weight:700;color:${ACCENT};text-align:right}
+    .doc-num{font-size:10px;color:${DARK};text-align:right;margin-top:3px}
+    .info-grid{display:flex;justify-content:space-between;margin-bottom:14px;gap:20px}
+    .info-box{flex:1}
+    table{width:100%;border-collapse:collapse;margin:14px 0}
+    thead tr{background:${PRIMARY}}
+    th{padding:8px;font-size:10px;color:#fff;text-align:left;font-weight:600}
+    th:not(:first-child){text-align:right}
+    tbody tr:last-child td{border-bottom:none}
+    td{border-bottom:1px solid #e2e8f0}
+    .totals{display:flex;justify-content:flex-end;margin-top:6px}
+    .totals-inner{min-width:220px}
+    .t-row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px}
+    .t-grand{border-top:2px solid ${ACCENT};margin-top:4px;padding-top:6px;font-weight:700;font-size:14px;color:${DARK}}
+    .words{background:${LIGHT};border-left:3px solid ${ACCENT};padding:8px 12px;font-size:10px;font-style:italic;color:${PRIMARY};margin:14px 0;clear:both}
+    .ref-row{font-size:10px;color:#475569;margin-bottom:14px}
+    .notes{font-size:10px;color:#475569;margin-top:14px;padding-top:10px;border-top:1px dashed #e2e8f0}
   </style></head><body>
-  <div class="hdr">
-    <div><div class="co">${comp?.name ?? 'FinPilot'}</div>
-      ${comp?.trn ? `<div class="lbl" style="margin-top:4px">TRN: ${comp.trn}</div>` : ''}
-      ${comp?.phone ? `<div style="color:#475569;margin-top:2px">${comp.phone}</div>` : ''}
-      ${comp?.address ? `<div style="color:#475569">${comp.address}</div>` : ''}
-    </div>
-    <div style="text-align:right">
-      <div class="inv">INVOICE</div>
-      <div style="font-size:16px;color:#6366f1;margin:4px 0">#${inv.invoice_number}</div>
-      <span class="sbadge ${inv.status ?? ''}">${(inv.status ?? '').toUpperCase()}</span>
+  <div class="header">
+    <div>${companyBlock}</div>
+    <div>
+      <div class="doc-title">TAX INVOICE</div>
+      <div class="doc-num"><b>No:</b> ${inv.invoice_number}</div>
+      <div class="doc-num"><b>Date:</b> ${fmtD(inv.date)}</div>
+      ${inv.due_date ? `<div class="doc-num"><b>Due:</b> ${fmtD(inv.due_date)}</div>` : ''}
+      ${inv.is_cash ? `<div class="doc-num" style="color:${ACCENT};font-weight:700">CASH INVOICE</div>` : ''}
     </div>
   </div>
-  <div class="grid">
-    <div><div class="lbl">Bill To</div>
-      <div class="val">${cust?.name ?? '—'}</div>
-      ${cust?.address ? `<div style="color:#475569">${cust.address}</div>` : ''}
-      ${cust?.trn ? `<div style="color:#475569">TRN: ${cust.trn}</div>` : ''}
-      ${cust?.phone ? `<div style="color:#475569">${cust.phone}</div>` : ''}
-    </div>
-    <div style="text-align:right">
-      <div class="lbl">Invoice Date</div><div class="val">${fmtD(inv.date)}</div>
-      ${inv.due_date ? `<div class="lbl" style="margin-top:8px">Due Date</div><div class="val">${fmtD(inv.due_date)}</div>` : ''}
+
+  <div class="info-grid">
+    <div class="info-box">${customerBlock}</div>
+    ${refBlock ? `<div class="info-box" style="text-align:right;font-size:10px;color:#475569">${refBlock}</div>` : ''}
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:30px;text-align:center">#</th>
+        <th>Description</th>
+        <th style="width:60px">Qty</th>
+        <th style="width:90px">Unit Price</th>
+        <th style="width:80px">VAT</th>
+        <th style="width:90px">Amount</th>
+      </tr>
+    </thead>
+    <tbody>${rows || `<tr><td colspan="6" style="text-align:center;padding:16px;color:${MED}">No items</td></tr>`}</tbody>
+  </table>
+
+  <div class="totals">
+    <div class="totals-inner">
+      <div class="t-row"><span style="color:${MED}">Subtotal</span><span>${fmtC(inv.subtotal)}</span></div>
+      ${(inv.vat_amount ?? 0) > 0 ? `<div class="t-row"><span style="color:${MED}">VAT (5%)</span><span>${fmtC(inv.vat_amount)}</span></div>` : ''}
+      ${(inv.discount ?? 0) > 0 ? `<div class="t-row"><span style="color:${MED}">Discount</span><span>− ${fmtC(inv.discount)}</span></div>` : ''}
+      <div class="t-row t-grand"><span>TOTAL</span><span>${fmtC(inv.total)}</span></div>
+      ${(inv.amount_paid ?? 0) > 0 ? `
+        <div class="t-row" style="color:#059669"><span>Amount Paid</span><span>${fmtC(inv.amount_paid)}</span></div>
+        <div class="t-row" style="color:#DC2626;font-weight:700"><span>Balance Due</span><span>${fmtC(inv.balance_due)}</span></div>` : ''}
     </div>
   </div>
-  <table><thead><tr><th>Description</th><th style="text-align:right">Qty</th>
-    <th style="text-align:right">Unit Price</th><th style="text-align:right">VAT</th>
-    <th style="text-align:right">Total</th></tr></thead>
-  <tbody>${rows || '<tr><td colspan="5" style="text-align:center;color:#94a3b8">No items</td></tr>'}</tbody></table>
-  <div class="tot">
-    <div class="tr"><span>Subtotal</span><span>${fmtC(inv.subtotal)}</span></div>
-    ${(inv.vat_amount ?? 0) > 0 ? `<div class="tr"><span>VAT (5%)</span><span>${fmtC(inv.vat_amount)}</span></div>` : ''}
-    ${(inv.discount ?? 0) > 0 ? `<div class="tr"><span>Discount</span><span>− ${fmtC(inv.discount)}</span></div>` : ''}
-    <div class="tr grand"><span>Total</span><span>${fmtC(inv.total)}</span></div>
-    ${(inv.amount_paid ?? 0) > 0 ? `
-      <div class="tr" style="color:#065f46"><span>Amount Paid</span><span>${fmtC(inv.amount_paid)}</span></div>
-      <div class="tr" style="color:#991b1b;font-weight:700"><span>Balance Due</span><span>${fmtC(inv.balance_due)}</span></div>` : ''}
-  </div>
-  ${inv.notes ? `<div style="margin-top:60px;clear:both"><div class="lbl">Notes</div><p style="color:#475569">${inv.notes}</p></div>` : ''}
-  <div style="margin-top:40px;text-align:center;font-size:10px;color:#94a3b8;clear:both">Generated by FinPilot Mobile · ${new Date().toLocaleDateString()}</div>
+
+  <div class="words">${amountInWords(inv.total)}</div>
+
+  ${inv.notes ? `<div class="notes"><b>Notes / Terms:</b> ${inv.notes}</div>` : ''}
+  ${stampBlock}
   </body></html>`;
 }
 
