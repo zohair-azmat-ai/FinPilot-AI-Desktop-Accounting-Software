@@ -77,17 +77,31 @@ class SupabaseClient:
         self._s = requests.Session()
         self._s.headers.update({
             "apikey": anon_key,
-            "Authorization": f"Bearer {anon_key}",
             "Content-Type": "application/json",
         })
+        # Old JWT anon keys (eyJ...) are valid Bearer tokens.
+        # New publishable keys (sb_publishable_...) work ONLY as apikey header —
+        # PostgREST rejects them as Bearer tokens because they aren't JWTs.
+        if anon_key.startswith("eyJ"):
+            self._s.headers["Authorization"] = f"Bearer {anon_key}"
 
     def test_connection(self) -> None:
-        """Raises on auth failure; 404 is fine (table may not exist yet)."""
-        r = self._s.get(f"{self.url}/rest/v1/", timeout=10)
+        """Raises on auth failure. 404 is acceptable — table may not exist in schema yet."""
+        # Test against an actual table endpoint, not /rest/v1/ root.
+        # Root endpoint may 401 for new publishable keys even when credentials are valid.
+        r = self._s.get(
+            f"{self.url}/rest/v1/companies",
+            params={"select": "sync_uuid", "limit": "1"},
+            timeout=10,
+        )
         if r.status_code == 401:
-            raise ConnectionError("Invalid API key — check your Supabase anon key.")
-        if r.status_code not in (200, 404):
-            raise ConnectionError(f"Cannot reach Supabase ({r.status_code}).")
+            raise ConnectionError(
+                "Authentication failed — check your Supabase URL and API key."
+            )
+        if r.status_code not in (200, 206, 404, 400):
+            raise ConnectionError(
+                f"Cannot reach Supabase ({r.status_code}): {r.text[:200]}"
+            )
 
     def upsert(self, table: str, rows: list[dict]) -> None:
         if not rows:
