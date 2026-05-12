@@ -160,6 +160,13 @@ class SyncEngine(threading.Thread):
         try:
             client = SupabaseClient(creds["url"], creds["anon_key"], creds["workspace_id"])
             _status["state"] = "syncing"
+            # Pull first so mobile deletes are reflected before we push back
+            con = sqlite3.connect(self.db_path)
+            con.row_factory = sqlite3.Row
+            try:
+                self._pull_mobile_rows(con, client)
+            finally:
+                con.close()
             self._push_all(client)
             _status.update(state="synced", last_sync=datetime.now(timezone.utc).isoformat(), error=None)
         except Exception as e:
@@ -203,6 +210,91 @@ class SyncEngine(threading.Thread):
 
         client.upsert(table, rows)
 
+    def _pull_mobile_rows(self, con: sqlite3.Connection, client: "SupabaseClient") -> None:
+        """Merge Supabase → local SQLite: insert mobile-created, update mobile-edited,
+        delete mobile-deleted rows.  Must run BEFORE _push_all so deleted rows are not
+        re-pushed.  Only touches rows that already have a sync_uuid (i.e. were synced
+        at least once); new local rows (sync_uuid IS NULL) are left to the push step.
+        Guard: skips deletions for a table if Supabase returned 0 rows — this prevents
+        a network failure from wiping local data.
+        """
+        for table in SYNC_TABLES:
+            try:
+                cur = con.cursor()
+                cur.execute(f"PRAGMA table_info({table})")
+                col_infos = cur.fetchall()
+                if not col_infos:
+                    continue
+                local_cols = {r[1] for r in col_infos}
+                if "sync_uuid" not in local_cols:
+                    continue
+
+                # Local rows already synced at least once
+                cur.execute(
+                    f"SELECT id, sync_uuid, updated_at FROM {table} WHERE sync_uuid IS NOT NULL"
+                )
+                local_synced = {
+                    r[1]: {"id": r[0], "updated_at": r[2] or ""}
+                    for r in cur.fetchall()
+                }
+
+                # Fetch this workspace's rows from Supabase
+                try:
+                    cloud_rows = client.fetch_all(table)
+                except Exception as e:
+                    log.warning("Pull fetch [%s]: %s", table, e)
+                    continue
+
+                cloud_by_uuid = {
+                    r["sync_uuid"]: r for r in cloud_rows if r.get("sync_uuid")
+                }
+
+                # Deletion diff — only run when Supabase has rows (non-empty guard)
+                if cloud_by_uuid:
+                    for sync_uuid, local in list(local_synced.items()):
+                        if sync_uuid not in cloud_by_uuid:
+                            con.execute(
+                                f"DELETE FROM {table} WHERE id = ?", (local["id"],)
+                            )
+                            log.debug("Pull del [%s] uuid=%s", table, sync_uuid)
+
+                # Insert new / update stale rows from cloud
+                for sync_uuid, cloud_row in cloud_by_uuid.items():
+                    filtered = {
+                        k: v for k, v in cloud_row.items()
+                        if k in local_cols and k != "workspace_id"
+                    }
+                    if not filtered:
+                        continue
+                    if sync_uuid not in local_synced:
+                        cols = list(filtered.keys())
+                        try:
+                            con.execute(
+                                f"INSERT OR IGNORE INTO {table} ({','.join(cols)}) "
+                                f"VALUES ({','.join('?' * len(cols))})",
+                                [filtered[c] for c in cols],
+                            )
+                        except Exception as e:
+                            log.warning("Pull ins [%s]: %s", table, e)
+                    else:
+                        cloud_ts = cloud_row.get("updated_at") or ""
+                        local_ts = local_synced[sync_uuid]["updated_at"]
+                        if cloud_ts > local_ts:
+                            sets = {k: v for k, v in filtered.items() if k != "id"}
+                            if sets:
+                                set_clause = ", ".join(f"{k}=?" for k in sets)
+                                try:
+                                    con.execute(
+                                        f"UPDATE {table} SET {set_clause} WHERE id=?",
+                                        list(sets.values()) + [local_synced[sync_uuid]["id"]],
+                                    )
+                                except Exception as e:
+                                    log.warning("Pull upd [%s]: %s", table, e)
+            except Exception as e:
+                log.warning("Pull [%s]: %s", table, e)
+                continue
+        con.commit()
+
     def push_now(self) -> dict:
         creds = _read_creds()
         if not creds:
@@ -210,6 +302,12 @@ class SyncEngine(threading.Thread):
         try:
             client = SupabaseClient(creds["url"], creds["anon_key"], creds["workspace_id"])
             _status["state"] = "syncing"
+            con = sqlite3.connect(self.db_path)
+            con.row_factory = sqlite3.Row
+            try:
+                self._pull_mobile_rows(con, client)
+            finally:
+                con.close()
             self._push_all(client)
             _status.update(state="synced", last_sync=datetime.now(timezone.utc).isoformat(), error=None)
             return {"ok": True}
