@@ -3,10 +3,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getLicenseStatus } from "@/lib/api";
-import { KeyRound, AlertTriangle, ShieldCheck } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 interface LicenseStatus {
-  status: "licensed" | "trial" | "expired" | "invalid";
+  status: "licensed" | "trial" | "expired" | "invalid" | "developer_unlimited";
   days_left: number | null;
 }
 
@@ -24,7 +24,10 @@ export default function LicenseGate({ children }: { children: React.ReactNode })
       const r = await getLicenseStatus();
       const s: LicenseStatus = r.data;
       setStatus(s);
-      if (s.status === "expired" || s.status === "invalid") {
+
+      if (s.status === "developer_unlimited") {
+        // Developer machine — bypass everything silently
+      } else if (s.status === "expired" || s.status === "invalid") {
         router.replace("/activate");
       } else if (s.status === "trial" && s.days_left !== null && s.days_left <= TRIAL_WARNING_DAYS) {
         setBanner(true);
@@ -38,7 +41,6 @@ export default function LicenseGate({ children }: { children: React.ReactNode })
 
   useEffect(() => { check(); }, [check]);
 
-  // Don't gate the activate page itself
   if (pathname === "/activate") return <>{children}</>;
 
   if (!checked) return null;
@@ -56,11 +58,6 @@ export default function LicenseGate({ children }: { children: React.ReactNode })
             Activate Now
           </button>
           <button onClick={() => setBanner(false)} className="ml-2 opacity-60 hover:opacity-100">&times;</button>
-        </div>
-      )}
-      {status?.status === "licensed" && pathname === "/activate" && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-2 rounded-lg text-xs">
-          <ShieldCheck size={13} /> Licensed
         </div>
       )}
       {children}

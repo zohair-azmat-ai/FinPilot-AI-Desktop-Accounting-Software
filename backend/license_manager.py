@@ -9,6 +9,12 @@ _SECRET = b"FinPilotAI-UAE-2026-SecretKey-Zentro"
 _DAT    = os.path.join(os.environ.get("APPDATA", ""), "FinPilot AI", "license.dat")
 _TRIAL_DAYS = 7
 
+# Developer machine allowlist — these hardware IDs bypass all licensing.
+# The ID is the first 16 hex chars of SHA-256(MachineGuid), uppercase.
+_DEVELOPER_HW_IDS: set[str] = {
+    "90DD5DDFD1D86787",  # Zohair dev machine
+}
+
 
 # ── Hardware fingerprint ──────────────────────────────────────────────────────
 
@@ -99,8 +105,13 @@ def _trial_days_left(start: str) -> int:
 
 def get_status() -> dict:
     """Return current license status. Always call this on startup."""
-    payload = _ensure_trial()
     hw = get_hw_id()
+
+    # Developer bypass — unlimited access, no trial, no expiry.
+    if hw in _DEVELOPER_HW_IDS:
+        return {"status": "developer_unlimited", "hw_id": hw, "days_left": None}
+
+    payload = _ensure_trial()
 
     if payload.get("type") == "licensed":
         key = payload.get("key", "")
@@ -125,4 +136,4 @@ def activate(key: str) -> dict:
 
 def is_active() -> bool:
     s = get_status()
-    return s["status"] in ("licensed", "trial")
+    return s["status"] in ("licensed", "trial", "developer_unlimited")

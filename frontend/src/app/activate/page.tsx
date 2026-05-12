@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { getLicenseStatus, getLicenseHwid, activateLicense } from "@/lib/api";
-import { KeyRound, ShieldCheck, AlertTriangle, Copy, CheckCircle } from "lucide-react";
+import { KeyRound, ShieldCheck, AlertTriangle, Copy, CheckCircle, Code2 } from "lucide-react";
 
 interface LicenseStatus {
-  status: "licensed" | "trial" | "expired" | "invalid";
+  status: "licensed" | "trial" | "expired" | "invalid" | "developer_unlimited";
   hw_id: string;
   days_left: number | null;
   key?: string;
@@ -61,14 +61,43 @@ export default function ActivatePage() {
     });
   };
 
-  const statusColor = {
+  // Developer machine — show a minimal info panel, no activation form
+  if (!loading && status?.status === "developer_unlimited") {
+    return (
+      <div className="min-h-screen bg-bg-primary flex items-center justify-center p-6">
+        <div className="w-full max-w-md space-y-5">
+          <div className="text-center space-y-1">
+            <div className="w-14 h-14 rounded-2xl bg-brand-indigo/10 flex items-center justify-center mx-auto mb-3">
+              <Code2 size={28} className="text-brand-indigo" />
+            </div>
+            <h1 className="text-2xl font-bold text-text-primary">Developer Build</h1>
+            <p className="text-text-muted text-sm">Unlimited access — no activation required</p>
+          </div>
+          <div className="card space-y-3">
+            <div className="flex items-center gap-2 text-emerald-400">
+              <ShieldCheck size={16} />
+              <span className="font-semibold text-sm">Developer Unlimited</span>
+            </div>
+            <p className="text-text-secondary text-xs">
+              This machine is registered as a developer device. All features are permanently unlocked with no expiry.
+            </p>
+            <div className="bg-bg-border/50 rounded px-3 py-2 font-mono text-xs text-text-muted">
+              Machine ID: {hwid}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const statusColor: Record<string, string> = {
     licensed: "text-emerald-400",
     trial: "text-amber-400",
     expired: "text-red-400",
     invalid: "text-red-400",
   };
 
-  const statusLabel = {
+  const statusLabel: Record<string, string> = {
     licensed: "Licensed",
     trial: "Trial Mode",
     expired: "Trial Expired",
@@ -92,8 +121,8 @@ export default function ActivatePage() {
           <div className="card space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-text-muted text-sm">Current Status</span>
-              <span className={`font-semibold text-sm ${statusColor[status.status]}`}>
-                {statusLabel[status.status]}
+              <span className={`font-semibold text-sm ${statusColor[status.status] ?? ""}`}>
+                {statusLabel[status.status] ?? status.status}
               </span>
             </div>
             {status.status === "trial" && status.days_left !== null && (
