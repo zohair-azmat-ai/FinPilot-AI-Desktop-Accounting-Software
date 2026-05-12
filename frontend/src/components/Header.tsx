@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Bell, ChevronDown, Bot } from "lucide-react";
+import { Bell, ChevronDown, Bot } from "lucide-react";
 import { processAICommand } from "@/lib/api";
+import SyncStatus from "@/components/SyncStatus";
 import toast from "react-hot-toast";
 
 export default function Header({ title }: { title: string }) {
@@ -52,6 +53,7 @@ export default function Header({ title }: { title: string }) {
       </form>
 
       <div className="flex items-center gap-3 ml-auto">
+        <SyncStatus />
         <button className="w-8 h-8 rounded-lg bg-bg-card border border-bg-border flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors">
           <Bell size={15} />
         </button>

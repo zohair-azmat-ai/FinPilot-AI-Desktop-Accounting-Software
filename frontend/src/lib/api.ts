@@ -168,6 +168,15 @@ export const deleteSupplierBill = (id: number) => api.delete(`/api/supplier-bill
 export const downloadSupplierBillPDF = (id: number) => `${API_URL}/api/supplier-bills/${id}/pdf`;
 export const getSupplierLedger = (supplierId: number) => api.get(`/api/supplier-bills/ledger/${supplierId}`);
 
+// Cloud Sync
+export const getCloudStatus = () => api.get("/api/cloud/status");
+export const cloudConnect = (data: { url: string; anon_key: string; workspace_id: string }) =>
+  api.post("/api/cloud/connect", data);
+export const cloudDisconnect = () => api.post("/api/cloud/disconnect");
+export const cloudSyncNow = () => api.post("/api/cloud/sync/now");
+export const cloudRestore = () => api.post("/api/cloud/restore");
+export const getCloudSchema = () => api.get("/api/cloud/schema");
+
 // Supplier Payments
 export const getSupplierPayments = (params?: Record<string, unknown>) => api.get("/api/supplier-payments/", { params });
 export const createSupplierPayment = (data: unknown) => api.post("/api/supplier-payments/", data);

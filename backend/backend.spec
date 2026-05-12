@@ -50,16 +50,21 @@ a = Analysis(
         'reportlab.pdfgen.canvas',
         # PIL / Pillow — required by reportlab.lib.utils at import time
         'PIL', 'PIL.Image', 'PIL.ImageDraw', 'PIL.ImageFont',
+        # requests (cloud sync)
+        'requests', 'requests.adapters', 'requests.auth', 'requests.cookies',
+        'requests.exceptions', 'requests.models', 'requests.sessions',
+        'urllib3', 'urllib3.util', 'urllib3.util.retry', 'urllib3.connectionpool',
+        'charset_normalizer', 'idna', 'certifi',
         # Backend application modules
         'main', 'models', 'schemas', 'database', 'pdf_generator', 'ai_parser',
-        'license_manager',
+        'license_manager', 'sync_engine',
         # Route modules
         'routes.company', 'routes.customers', 'routes.suppliers', 'routes.items',
         'routes.quotations', 'routes.invoices', 'routes.payments', 'routes.ledger',
         'routes.reports', 'routes.ai_command', 'routes.bank_accounts',
         'routes.bank_transactions', 'routes.cheques', 'routes.expenses',
         'routes.purchase_orders', 'routes.delivery_notes', 'routes.license',
-        'routes.supplier_bills', 'routes.supplier_payments',
+        'routes.supplier_bills', 'routes.supplier_payments', 'routes.cloud',
     ],
     hookspath=[],
     runtime_hooks=[],

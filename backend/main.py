@@ -7,8 +7,10 @@ from datetime import datetime
 from database import engine, DB_PATH
 import models
 import license_manager
+import sync_engine
 from routes import company, customers, suppliers, items, quotations, invoices, payments, ledger, reports, ai_command, bank_accounts, bank_transactions, cheques, expenses, delivery_notes, purchase_orders, supplier_bills, supplier_payments
 from routes import license as license_router
+from routes import cloud as cloud_router
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -60,6 +62,19 @@ def _run_migrations():
         ("supplier_bills",      "amount_paid",                "REAL DEFAULT 0.0"),
         ("supplier_bills",      "balance_due",                "REAL DEFAULT 0.0"),
         ("supplier_bills",      "status",                     "TEXT DEFAULT 'unpaid'"),
+        # Cloud sync columns — added to all tables
+        *[col for tbl in [
+            "companies", "bank_accounts", "customers", "suppliers", "items",
+            "quotations", "quotation_items", "invoices", "invoice_items",
+            "payments", "payment_allocations", "ledger_entries",
+            "bank_transactions", "cheques", "delivery_notes", "delivery_note_items",
+            "purchase_orders", "purchase_order_items",
+            "supplier_bills", "supplier_bill_items",
+            "supplier_payments", "supplier_payment_allocations", "expenses",
+        ] for col in [
+            (tbl, "sync_uuid",   "TEXT"),
+            (tbl, "updated_at",  "TEXT"),
+        ]],
     ]
     with engine.connect() as conn:
         for table, column, col_def in migrations:
@@ -93,6 +108,29 @@ def _run_migrations():
 
 _run_migrations()
 
+
+def _backfill_sync_uuids():
+    """One-time: assign sync_uuid + updated_at to all existing rows that lack them."""
+    import uuid as _uuid
+    from sync_engine import SYNC_TABLES
+    _sa = __import__("sqlalchemy")
+    with engine.connect() as conn:
+        for table in SYNC_TABLES:
+            try:
+                rows = conn.execute(_sa.text(f"SELECT id FROM {table} WHERE sync_uuid IS NULL")).fetchall()
+                for (row_id,) in rows:
+                    conn.execute(_sa.text(
+                        f"UPDATE {table} SET sync_uuid = :u, updated_at = :t WHERE id = :id"
+                    ), {"u": str(_uuid.uuid4()), "t": datetime.utcnow().isoformat(), "id": row_id})
+                if rows:
+                    conn.commit()
+            except Exception:
+                pass
+
+
+_backfill_sync_uuids()
+sync_engine.start(DB_PATH)
+
 app = FastAPI(title="FinPilot AI", version="1.0.0", description="UAE Accounting System")
 
 app.add_middleware(
@@ -111,6 +149,7 @@ async def license_gate(request: Request, call_next):
     path = request.url.path
     # Always allow: license endpoints, root, health, OPTIONS preflight
     if (path.startswith("/api/license") or
+            path.startswith("/api/cloud") or
             path in _LICENSE_FREE or
             request.method == "OPTIONS"):
         return await call_next(request)
@@ -140,6 +179,7 @@ app.include_router(delivery_notes.router)
 app.include_router(purchase_orders.router)
 app.include_router(supplier_bills.router)
 app.include_router(supplier_payments.router)
+app.include_router(cloud_router.router)
 
 
 @app.get("/")
