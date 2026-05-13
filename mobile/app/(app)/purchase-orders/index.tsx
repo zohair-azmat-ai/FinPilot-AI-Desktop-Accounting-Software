@@ -48,7 +48,7 @@ export default function PurchaseOrdersScreen() {
         <FlatList data={filtered} keyExtractor={p => String(p.id)}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.brand} />}
           renderItem={({ item }) => (
-            <TouchableOpacity style={s.card} onPress={() => router.push(`/(app)/purchase-orders/${item.id}`)}>
+            <TouchableOpacity style={s.card} onPress={() => router.push(`/(app)/purchase-orders/${item.id}?num=${encodeURIComponent(item.po_number ?? '')}`)}>
               <View style={s.cardTop}>
                 <View style={{ flex: 1 }}>
                   <Text style={s.num}>{item.po_number}</Text>

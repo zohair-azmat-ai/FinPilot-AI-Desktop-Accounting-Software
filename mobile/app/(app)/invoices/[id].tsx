@@ -7,14 +7,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  getInvoice, getInvoiceItems, getCustomer, getCompany,
+  getInvoice, getInvoiceByNumber, getInvoiceItems, getCustomer, getCompany,
   deleteInvoice, fmtCurrency, fmtDate,
 } from '@/lib/api';
-import { downloadAndSharePDF } from '@/lib/pdf';
+import { viewPDF, downloadAndSharePDF } from '@/lib/pdf';
 import { C, STATUS_COLOR, STATUS_BG } from '@/lib/theme';
 
 export default function InvoiceDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, num } = useLocalSearchParams<{ id: string; num?: string }>();
   const router = useRouter();
   const [invoice, setInvoice] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -26,8 +26,19 @@ export default function InvoiceDetailScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const inv = await getInvoice(Number(id));
+        let inv: any = null;
+        const numeric = Number(id);
+        if (!isNaN(numeric) && numeric > 0) {
+          inv = await getInvoice(numeric);
+        }
+        if (!inv && num) {
+          inv = await getInvoiceByNumber(num);
+        }
+        if (!inv && id && isNaN(Number(id))) {
+          inv = await getInvoiceByNumber(id);
+        }
         if (!inv) return;
+
         const [its, cust, comp] = await Promise.all([
           getInvoiceItems(inv.id),
           inv.customer_id ? getCustomer(inv.customer_id) : Promise.resolve(null),
@@ -43,15 +54,22 @@ export default function InvoiceDetailScreen() {
         setLoading(false);
       }
     })();
-  }, [id]);
+  }, [id, num]);
 
-  const shareAsPDF = async () => {
+  const pdfPath = invoice
+    ? `/api/invoices/${encodeURIComponent(invoice.invoice_number)}/pdf`
+    : null;
+
+  const handleViewPDF = async () => {
+    if (!pdfPath) return;
+    await viewPDF(pdfPath);
+  };
+
+  const handleSharePDF = async () => {
+    if (!pdfPath) return;
     setSharing(true);
     try {
-      await downloadAndSharePDF(
-        `/api/invoices/${id}/pdf`,
-        `Invoice_${invoice.invoice_number}.pdf`,
-      );
+      await downloadAndSharePDF(pdfPath, `Invoice_${invoice.invoice_number}.pdf`);
     } finally {
       setSharing(false);
     }
@@ -76,7 +94,14 @@ export default function InvoiceDetailScreen() {
   );
   if (!invoice) return (
     <SafeAreaView style={s.safe}>
-      <Text style={s.err}>Invoice not found.</Text>
+      <View style={{ padding: 24, alignItems: 'center', marginTop: 40 }}>
+        <Ionicons name="alert-circle-outline" size={44} color={C.err} />
+        <Text style={s.err}>Invoice not found.</Text>
+        <Text style={s.errSub}>ID: {id}{num ? `  ·  ${num}` : ''}</Text>
+        <TouchableOpacity onPress={() => router.back()} style={s.backFallback}>
+          <Text style={{ color: C.brand, fontWeight: '600' }}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 
@@ -122,9 +147,13 @@ export default function InvoiceDetailScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={s.actionRow}>
-          <TouchableOpacity style={s.actionBtn} onPress={shareAsPDF} disabled={sharing}>
+          <TouchableOpacity style={s.actionBtn} onPress={handleViewPDF}>
+            <Ionicons name="eye-outline" size={18} color={C.brand} />
+            <Text style={s.actionText}>View PDF</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.actionBtn} onPress={handleSharePDF} disabled={sharing}>
             <Ionicons name="document-text-outline" size={18} color={C.brand} />
-            <Text style={s.actionText}>{sharing ? 'Generating…' : 'Share PDF'}</Text>
+            <Text style={s.actionText}>{sharing ? 'Fetching…' : 'Share PDF'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[s.actionBtn, { borderColor: '#25D366' }]} onPress={shareViaWhatsApp}>
             <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
@@ -157,7 +186,6 @@ export default function InvoiceDetailScreen() {
               <Text style={s.itemTotal}>{fmtCurrency(item.total)}</Text>
             </View>
           ))}
-
           <View style={s.divider} />
           <TotalRow label="Subtotal" value={fmtCurrency(invoice.subtotal)} />
           {(invoice.vat_amount ?? 0) > 0 && <TotalRow label="VAT (5%)" value={fmtCurrency(invoice.vat_amount)} />}
@@ -214,13 +242,13 @@ const s = StyleSheet.create({
   navTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: C.text },
   badge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   badgeText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
-  actionRow: { flexDirection: 'row', gap: 12, marginHorizontal: 16, marginBottom: 12 },
+  actionRow: { flexDirection: 'row', gap: 8, marginHorizontal: 16, marginBottom: 12 },
   actionBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 12, borderRadius: 12,
+    gap: 6, paddingVertical: 11, borderRadius: 12,
     backgroundColor: C.card, borderWidth: 1.5, borderColor: C.brand,
   },
-  actionText: { fontSize: 14, fontWeight: '600', color: C.brand },
+  actionText: { fontSize: 12, fontWeight: '600', color: C.brand },
   card: {
     backgroundColor: C.card, marginHorizontal: 16, marginBottom: 12,
     borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 16,
@@ -238,5 +266,7 @@ const s = StyleSheet.create({
   totalLabel: { fontSize: 13, color: C.sub },
   totalValue: { fontSize: 13, color: C.text },
   notes: { fontSize: 13, color: C.sub, lineHeight: 20 },
-  err: { color: C.err, textAlign: 'center', marginTop: 40, fontSize: 15 },
+  err: { color: C.err, textAlign: 'center', marginTop: 12, fontSize: 15, fontWeight: '600' },
+  errSub: { color: C.muted, textAlign: 'center', marginTop: 6, fontSize: 12 },
+  backFallback: { marginTop: 20, paddingVertical: 10, paddingHorizontal: 24, borderRadius: 10, borderWidth: 1, borderColor: C.brand },
 });

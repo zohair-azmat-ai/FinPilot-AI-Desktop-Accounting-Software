@@ -3,12 +3,12 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getPurchaseOrder, getPurchaseOrderItems, getSupplier, deletePurchaseOrder, fmtCurrency, fmtDate } from '@/lib/api';
-import { downloadAndSharePDF } from '@/lib/pdf';
+import { getPurchaseOrder, getPurchaseOrderByNumber, getPurchaseOrderItems, getSupplier, deletePurchaseOrder, fmtCurrency, fmtDate } from '@/lib/api';
+import { viewPDF, downloadAndSharePDF } from '@/lib/pdf';
 import { C } from '@/lib/theme';
 
 export default function PurchaseOrderDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, num } = useLocalSearchParams<{ id: string; num?: string }>();
   const router = useRouter();
   const [po, setPo] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -19,7 +19,11 @@ export default function PurchaseOrderDetailScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const p = await getPurchaseOrder(Number(id));
+        let p: any = null;
+        const numeric = Number(id);
+        if (!isNaN(numeric) && numeric > 0) p = await getPurchaseOrder(numeric);
+        if (!p && num) p = await getPurchaseOrderByNumber(num);
+        if (!p && id && isNaN(Number(id))) p = await getPurchaseOrderByNumber(id);
         if (!p) return;
         const [its, supp] = await Promise.all([
           getPurchaseOrderItems(p.id),
@@ -29,22 +33,23 @@ export default function PurchaseOrderDetailScreen() {
       } catch (e: any) { Alert.alert('Error', e.message); }
       finally { setLoading(false); }
     })();
-  }, [id]);
+  }, [id, num]);
 
-  const shareAsPDF = async () => {
-    setSharing(true);
-    try {
-      await downloadAndSharePDF(
-        `/api/purchase-orders/${id}/pdf`,
-        `PO_${po.po_number}.pdf`,
-      );
-    } finally {
-      setSharing(false);
-    }
-  };
+  const pdfPath = po ? `/api/purchase-orders/${encodeURIComponent(po.po_number)}/pdf` : null;
 
   if (loading) return <SafeAreaView style={[s.safe, { alignItems: 'center', justifyContent: 'center' }]}><ActivityIndicator size="large" color={C.brand} /></SafeAreaView>;
-  if (!po) return <SafeAreaView style={s.safe}><Text style={s.err}>Purchase order not found.</Text></SafeAreaView>;
+  if (!po) return (
+    <SafeAreaView style={s.safe}>
+      <View style={{ padding: 24, alignItems: 'center', marginTop: 40 }}>
+        <Ionicons name="alert-circle-outline" size={44} color={C.err} />
+        <Text style={s.err}>Purchase order not found.</Text>
+        <Text style={s.errSub}>ID: {id}{num ? `  ·  ${num}` : ''}</Text>
+        <TouchableOpacity onPress={() => router.back()} style={s.backFallback}>
+          <Text style={{ color: C.brand, fontWeight: '600' }}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
 
   return (
     <SafeAreaView style={s.safe}>
@@ -66,7 +71,16 @@ export default function PurchaseOrderDetailScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={s.actionRow}>
-          <TouchableOpacity style={s.actionBtn} onPress={shareAsPDF} disabled={sharing}>
+          <TouchableOpacity style={s.actionBtn} onPress={() => pdfPath && viewPDF(pdfPath)}>
+            <Ionicons name="eye-outline" size={18} color={C.brand} />
+            <Text style={s.actionText}>View PDF</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.actionBtn} onPress={async () => {
+            if (!pdfPath) return;
+            setSharing(true);
+            try { await downloadAndSharePDF(pdfPath, `PO_${po.po_number}.pdf`); }
+            finally { setSharing(false); }
+          }} disabled={sharing}>
             <Ionicons name="document-text-outline" size={18} color={C.brand} />
             <Text style={s.actionText}>{sharing ? 'Fetching…' : 'Share PDF'}</Text>
           </TouchableOpacity>
@@ -115,9 +129,9 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   navbar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 12, gap: 10 },
   navTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: C.text },
-  actionRow: { flexDirection: 'row', gap: 12, marginHorizontal: 16, marginBottom: 12 },
-  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12, backgroundColor: C.card, borderWidth: 1.5, borderColor: C.brand },
-  actionText: { fontSize: 14, fontWeight: '600', color: C.brand },
+  actionRow: { flexDirection: 'row', gap: 8, marginHorizontal: 16, marginBottom: 12 },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 12, backgroundColor: C.card, borderWidth: 1.5, borderColor: C.brand },
+  actionText: { fontSize: 12, fontWeight: '600', color: C.brand },
   card: { backgroundColor: C.card, marginHorizontal: 16, marginBottom: 12, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 16 },
   sectionTitle: { fontSize: 13, fontWeight: '600', color: C.sub, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: C.border },
@@ -132,5 +146,7 @@ const s = StyleSheet.create({
   totalLabel: { fontSize: 13, color: C.sub },
   totalValue: { fontSize: 13, color: C.text },
   notes: { fontSize: 13, color: C.sub, lineHeight: 20 },
-  err: { color: C.err, textAlign: 'center', marginTop: 40, fontSize: 15 },
+  err: { color: C.err, textAlign: 'center', marginTop: 12, fontSize: 15, fontWeight: '600' },
+  errSub: { color: C.muted, textAlign: 'center', marginTop: 6, fontSize: 12 },
+  backFallback: { marginTop: 20, paddingVertical: 10, paddingHorizontal: 24, borderRadius: 10, borderWidth: 1, borderColor: C.brand },
 });

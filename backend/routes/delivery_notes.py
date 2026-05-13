@@ -133,10 +133,16 @@ def delete_delivery_note(dn_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{dn_id}/pdf")
-def download_delivery_note_pdf(dn_id: int, db: Session = Depends(get_db)):
-    dn = db.query(models.DeliveryNote).filter(models.DeliveryNote.id == dn_id).first()
+def download_delivery_note_pdf(dn_id: str, db: Session = Depends(get_db)):
+    dn = None
+    try:
+        dn = db.query(models.DeliveryNote).filter(models.DeliveryNote.id == int(dn_id)).first()
+    except (ValueError, TypeError):
+        pass
     if not dn:
-        raise HTTPException(status_code=404, detail="Delivery note not found")
+        dn = db.query(models.DeliveryNote).filter(models.DeliveryNote.dn_number == dn_id).first()
+    if not dn:
+        raise HTTPException(status_code=404, detail=f"Delivery note not found: {dn_id}")
 
     company = db.query(models.Company).first()
     comp_dict = {}

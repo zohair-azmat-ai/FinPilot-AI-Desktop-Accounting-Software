@@ -112,6 +112,10 @@ export async function getInvoice(id: number) {
   const d = await pg<any>('invoices', { id: `eq.${id}`, limit: '1' });
   return d[0] ?? null;
 }
+export async function getInvoiceByNumber(num: string) {
+  const d = await pg<any>('invoices', { invoice_number: `eq.${num}`, limit: '1' });
+  return d[0] ?? null;
+}
 export async function getInvoiceItems(invoiceId: number) {
   return pg<any>('invoice_items', { invoice_id: `eq.${invoiceId}` });
 }
@@ -134,6 +138,10 @@ export async function getQuotations() {
 }
 export async function getQuotation(id: number) {
   const d = await pg<any>('quotations', { id: `eq.${id}`, limit: '1' });
+  return d[0] ?? null;
+}
+export async function getQuotationByNumber(num: string) {
+  const d = await pg<any>('quotations', { quotation_number: `eq.${num}`, limit: '1' });
   return d[0] ?? null;
 }
 export async function getQuotationItems(quotationId: number) {
@@ -165,6 +173,10 @@ export async function getDeliveryNote(id: number) {
   const d = await pg<any>('delivery_notes', { id: `eq.${id}`, limit: '1' });
   return d[0] ?? null;
 }
+export async function getDeliveryNoteByNumber(num: string) {
+  const d = await pg<any>('delivery_notes', { dn_number: `eq.${num}`, limit: '1' });
+  return d[0] ?? null;
+}
 export async function getDeliveryNoteItems(dnId: number) {
   return pg<any>('delivery_note_items', { dn_id: `eq.${dnId}` });
 }
@@ -192,6 +204,10 @@ export async function getPurchaseOrders() {
 }
 export async function getPurchaseOrder(id: number) {
   const d = await pg<any>('purchase_orders', { id: `eq.${id}`, limit: '1' });
+  return d[0] ?? null;
+}
+export async function getPurchaseOrderByNumber(num: string) {
+  const d = await pg<any>('purchase_orders', { po_number: `eq.${num}`, limit: '1' });
   return d[0] ?? null;
 }
 export async function getPurchaseOrderItems(poId: number) {

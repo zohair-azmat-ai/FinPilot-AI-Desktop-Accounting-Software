@@ -268,10 +268,16 @@ def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{invoice_id}/pdf")
-def download_invoice_pdf(invoice_id: int, db: Session = Depends(get_db)):
-    inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
+def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
+    inv = None
+    try:
+        inv = db.query(models.Invoice).filter(models.Invoice.id == int(invoice_id)).first()
+    except (ValueError, TypeError):
+        pass
     if not inv:
-        raise HTTPException(status_code=404, detail="Invoice not found")
+        inv = db.query(models.Invoice).filter(models.Invoice.invoice_number == invoice_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail=f"Invoice not found: {invoice_id}")
 
     company = db.query(models.Company).first()
     comp_dict = {}

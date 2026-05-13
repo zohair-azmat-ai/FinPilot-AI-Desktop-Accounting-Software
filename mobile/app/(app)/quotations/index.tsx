@@ -66,7 +66,7 @@ export default function QuotationsScreen() {
           keyExtractor={q => String(q.id)}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.brand} />}
           renderItem={({ item }) => (
-            <TouchableOpacity style={s.card} onPress={() => router.push(`/(app)/quotations/${item.id}`)}>
+            <TouchableOpacity style={s.card} onPress={() => router.push(`/(app)/quotations/${item.id}?num=${encodeURIComponent(item.quotation_number ?? '')}`)}>
               <View style={s.cardTop}>
                 <View style={{ flex: 1 }}>
                   <Text style={s.num}>{item.quotation_number}</Text>

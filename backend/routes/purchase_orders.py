@@ -157,10 +157,16 @@ def delete_po(po_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{po_id}/pdf")
-def download_po_pdf(po_id: int, db: Session = Depends(get_db)):
-    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id).first()
+def download_po_pdf(po_id: str, db: Session = Depends(get_db)):
+    po = None
+    try:
+        po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == int(po_id)).first()
+    except (ValueError, TypeError):
+        pass
     if not po:
-        raise HTTPException(status_code=404, detail="Purchase order not found")
+        po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.po_number == po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail=f"Purchase order not found: {po_id}")
 
     company = db.query(models.Company).first()
     comp_dict = {}

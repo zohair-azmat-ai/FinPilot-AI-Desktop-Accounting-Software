@@ -238,10 +238,16 @@ def delete_quotation(quotation_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{quotation_id}/pdf")
-def download_quotation_pdf(quotation_id: int, db: Session = Depends(get_db)):
-    q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id).first()
+def download_quotation_pdf(quotation_id: str, db: Session = Depends(get_db)):
+    q = None
+    try:
+        q = db.query(models.Quotation).filter(models.Quotation.id == int(quotation_id)).first()
+    except (ValueError, TypeError):
+        pass
     if not q:
-        raise HTTPException(status_code=404, detail="Quotation not found")
+        q = db.query(models.Quotation).filter(models.Quotation.quotation_number == quotation_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail=f"Quotation not found: {quotation_id}")
 
     company = db.query(models.Company).first()
     comp_dict = {}

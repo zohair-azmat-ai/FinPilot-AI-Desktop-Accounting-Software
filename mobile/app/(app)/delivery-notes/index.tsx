@@ -48,7 +48,7 @@ export default function DeliveryNotesScreen() {
         <FlatList data={filtered} keyExtractor={n => String(n.id)}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.brand} />}
           renderItem={({ item }) => (
-            <TouchableOpacity style={s.card} onPress={() => router.push(`/(app)/delivery-notes/${item.id}`)}>
+            <TouchableOpacity style={s.card} onPress={() => router.push(`/(app)/delivery-notes/${item.id}?num=${encodeURIComponent(item.dn_number ?? '')}`)}>
               <View style={s.cardRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={s.num}>{item.dn_number}</Text>

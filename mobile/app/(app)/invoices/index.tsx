@@ -91,7 +91,7 @@ export default function InvoicesScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={s.card}
-              onPress={() => router.push(`/(app)/invoices/${item.id}`)}
+              onPress={() => router.push(`/(app)/invoices/${item.id}?num=${encodeURIComponent(item.invoice_number ?? '')}`)}
             >
               <View style={s.cardTop}>
                 <View style={{ flex: 1 }}>
