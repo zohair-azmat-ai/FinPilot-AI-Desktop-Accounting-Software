@@ -25,13 +25,18 @@ export default function SettingsScreen() {
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
+  const HF_DEFAULT = 'https://zohairazmat-finpilot-ai-backend.hf.space';
+
   useEffect(() => {
     loadWorkspace().then(cfg => {
-      if (!cfg) return;
+      if (!cfg) {
+        setBackendUrl(HF_DEFAULT);
+        return;
+      }
       setUrl(cfg.url);
       setKey(cfg.anonKey);
       setWsId(cfg.workspaceId);
-      setBackendUrl(cfg.backendUrl ?? '');
+      setBackendUrl(cfg.backendUrl ?? HF_DEFAULT);
     });
   }, []);
 
