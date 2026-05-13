@@ -16,7 +16,7 @@ def _next_quotation_number(db: Session) -> str:
     company = db.query(models.Company).first()
     prefix = (company.quotation_prefix or "QUO-") if company else "QUO-"
 
-    rows = db.query(models.Quotation.quotation_number).all()
+    rows = db.query(models.Quotation.quotation_number).filter(models.Quotation.deleted_at.is_(None)).all()
     existing = set()
     for (q_no,) in rows:
         try:

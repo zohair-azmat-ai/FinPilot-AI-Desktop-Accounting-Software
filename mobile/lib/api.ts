@@ -154,12 +154,18 @@ export async function getQuotationItems(quotationId: number) {
 }
 export async function getNextQuotationNumber(): Promise<string> {
   try {
-    const rows = await pg<any>('quotations', { select: 'quotation_number', order: 'id.desc', limit: '1' });
-    if (rows.length && rows[0].quotation_number) {
-      const m = rows[0].quotation_number.match(/(\d+)$/);
-      if (m) {
-        const next = String(parseInt(m[1]) + 1).padStart(m[1].length, '0');
-        return rows[0].quotation_number.replace(/\d+$/, next);
+    const rows = await pg<any>('quotations', { select: 'quotation_number', deleted_at: 'is.null' });
+    if (rows.length) {
+      const prefix = rows[0].quotation_number.replace(/\d+$/, '');
+      const nums = new Set<number>();
+      for (const r of rows) {
+        const m = r.quotation_number.match(/(\d+)$/);
+        if (m) nums.add(parseInt(m[1]));
+      }
+      if (nums.size > 0) {
+        let candidate = Math.min(...nums);
+        while (nums.has(candidate)) candidate++;
+        return `${prefix}${String(candidate).padStart(4, '0')}`;
       }
     }
   } catch {}
@@ -188,12 +194,18 @@ export async function getDeliveryNoteItems(dnId: number) {
 }
 export async function getNextDNNumber(): Promise<string> {
   try {
-    const rows = await pg<any>('delivery_notes', { select: 'dn_number', order: 'id.desc', limit: '1' });
-    if (rows.length && rows[0].dn_number) {
-      const m = rows[0].dn_number.match(/(\d+)$/);
-      if (m) {
-        const next = String(parseInt(m[1]) + 1).padStart(m[1].length, '0');
-        return rows[0].dn_number.replace(/\d+$/, next);
+    const rows = await pg<any>('delivery_notes', { select: 'dn_number', deleted_at: 'is.null' });
+    if (rows.length) {
+      const prefix = rows[0].dn_number.replace(/\d+$/, '');
+      const nums = new Set<number>();
+      for (const r of rows) {
+        const m = r.dn_number.match(/(\d+)$/);
+        if (m) nums.add(parseInt(m[1]));
+      }
+      if (nums.size > 0) {
+        let candidate = Math.min(...nums);
+        while (nums.has(candidate)) candidate++;
+        return `${prefix}${String(candidate).padStart(4, '0')}`;
       }
     }
   } catch {}
@@ -222,12 +234,18 @@ export async function getPurchaseOrderItems(poId: number) {
 }
 export async function getNextPONumber(): Promise<string> {
   try {
-    const rows = await pg<any>('purchase_orders', { select: 'po_number', order: 'id.desc', limit: '1' });
-    if (rows.length && rows[0].po_number) {
-      const m = rows[0].po_number.match(/(\d+)$/);
-      if (m) {
-        const next = String(parseInt(m[1]) + 1).padStart(m[1].length, '0');
-        return rows[0].po_number.replace(/\d+$/, next);
+    const rows = await pg<any>('purchase_orders', { select: 'po_number', deleted_at: 'is.null' });
+    if (rows.length) {
+      const prefix = rows[0].po_number.replace(/\d+$/, '');
+      const nums = new Set<number>();
+      for (const r of rows) {
+        const m = r.po_number.match(/(\d+)$/);
+        if (m) nums.add(parseInt(m[1]));
+      }
+      if (nums.size > 0) {
+        let candidate = Math.min(...nums);
+        while (nums.has(candidate)) candidate++;
+        return `${prefix}${String(candidate).padStart(4, '0')}`;
       }
     }
   } catch {}
@@ -497,12 +515,18 @@ export async function deleteCustomer(id: number) {
 
 export async function getNextInvoiceNumber(): Promise<string> {
   try {
-    const rows = await pg<any>('invoices', { select: 'invoice_number', order: 'id.desc', limit: '1' });
-    if (rows.length && rows[0].invoice_number) {
-      const m = rows[0].invoice_number.match(/(\d+)$/);
-      if (m) {
-        const next = String(parseInt(m[1]) + 1).padStart(m[1].length, '0');
-        return rows[0].invoice_number.replace(/\d+$/, next);
+    const rows = await pg<any>('invoices', { select: 'invoice_number', deleted_at: 'is.null' });
+    if (rows.length) {
+      const prefix = rows[0].invoice_number.replace(/\d+$/, '');
+      const nums = new Set<number>();
+      for (const r of rows) {
+        const m = r.invoice_number.match(/(\d+)$/);
+        if (m) nums.add(parseInt(m[1]));
+      }
+      if (nums.size > 0) {
+        let candidate = Math.min(...nums);
+        while (nums.has(candidate)) candidate++;
+        return `${prefix}${String(candidate).padStart(4, '0')}`;
       }
     }
   } catch {}

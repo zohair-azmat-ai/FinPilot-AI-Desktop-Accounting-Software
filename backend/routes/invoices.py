@@ -17,7 +17,7 @@ def _next_invoice_number(db: Session) -> tuple:
     company = db.query(models.Company).first()
     prefix = (company.invoice_prefix or "") if company else ""
 
-    rows = db.query(models.Invoice.invoice_number).all()
+    rows = db.query(models.Invoice.invoice_number).filter(models.Invoice.deleted_at.is_(None)).all()
     existing = set()
     for (inv_no,) in rows:
         try:

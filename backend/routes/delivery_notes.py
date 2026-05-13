@@ -16,7 +16,7 @@ def _next_dn_number(db: Session) -> str:
     company = db.query(models.Company).first()
     prefix = (company.dn_prefix or "DN-") if company else "DN-"
 
-    rows = db.query(models.DeliveryNote.dn_number).all()
+    rows = db.query(models.DeliveryNote.dn_number).filter(models.DeliveryNote.deleted_at.is_(None)).all()
     existing = set()
     for (dn_no,) in rows:
         try:

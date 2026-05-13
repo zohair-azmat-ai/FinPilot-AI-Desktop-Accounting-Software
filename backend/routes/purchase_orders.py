@@ -12,27 +12,37 @@ router = APIRouter(prefix="/api/purchase-orders", tags=["purchase-orders"])
 
 
 def _next_po_number(db: Session) -> str:
+    """Fills the lowest gap first (active POs only); if no gap, uses max+1."""
     company = db.query(models.Company).first()
-    if company and (company.po_current_number or 0) > 0:
-        prefix = company.po_prefix or "PO-"
-        return f"{prefix}{company.po_current_number:04d}"
-    last = db.query(models.PurchaseOrder).order_by(models.PurchaseOrder.id.desc()).first()
-    prefix = (company.po_prefix if company else None) or "PO-"
-    if not last:
-        return f"{prefix}0001"
-    try:
-        num = int(last.po_number.split("-")[-1]) + 1
-    except Exception:
-        num = 1
-    return f"{prefix}{num:04d}"
+    prefix = (company.po_prefix or "PO-") if company else "PO-"
+
+    rows = db.query(models.PurchaseOrder.po_number).filter(models.PurchaseOrder.deleted_at.is_(None)).all()
+    existing = set()
+    for (po_no,) in rows:
+        try:
+            existing.add(int(po_no.split("-")[-1]))
+        except Exception:
+            pass
+
+    if not existing:
+        counter = (company.po_current_number or 0) if company else 0
+        next_num = counter if counter > 0 else 1
+    else:
+        candidate = min(existing)
+        while candidate in existing:
+            candidate += 1
+        next_num = candidate
+
+    if company and next_num != (company.po_current_number or 0):
+        company.po_current_number = next_num
+        db.add(company)
+        db.commit()
+
+    return f"{prefix}{next_num:04d}"
 
 
 def _increment_po_counter(db: Session) -> None:
-    company = db.query(models.Company).first()
-    if company and (company.po_current_number or 0) > 0:
-        company.po_current_number += 1
-        db.add(company)
-        db.commit()
+    pass
 
 
 def _calc_items(items_payload, vat_rate: float = 5.0):
