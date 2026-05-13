@@ -6,6 +6,7 @@ from datetime import datetime
 from database import get_db
 import models, schemas
 from pdf_generator import generate_invoice_pdf
+from supabase_pdf import fetch_invoice_for_pdf
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
@@ -276,54 +277,62 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
         pass
     if not inv:
         inv = db.query(models.Invoice).filter(models.Invoice.invoice_number == invoice_id).first()
-    if not inv:
-        raise HTTPException(status_code=404, detail=f"Invoice not found: {invoice_id}")
 
-    company = db.query(models.Company).first()
-    comp_dict = {}
-    if company:
-        comp_dict = {
-            "name": company.name, "trn": company.trn,
-            "address": company.address, "phone": company.phone,
-            "email": company.email
+    if inv:
+        company = db.query(models.Company).first()
+        comp_dict = {}
+        if company:
+            comp_dict = {
+                "name": company.name, "trn": company.trn,
+                "address": company.address, "phone": company.phone,
+                "email": company.email,
+            }
+        customer = inv.customer
+        cust_dict = {}
+        if customer:
+            cust_dict = {
+                "name": customer.name, "trn": customer.trn,
+                "attn": customer.attn, "phone": customer.phone,
+                "address": customer.address,
+                "po_box": customer.po_box or "",
+            }
+        invoice_data = {
+            "invoice_number": inv.invoice_number,
+            "date": inv.date.strftime("%d %b %Y"),
+            "customer": cust_dict,
+            "items": [
+                {
+                    "description": it.description,
+                    "quantity": it.quantity,
+                    "unit_price": it.unit_price,
+                    "vat_applicable": it.vat_applicable,
+                    "vat_amount": it.vat_amount,
+                    "total": it.total,
+                } for it in inv.items
+            ],
+            "subtotal": inv.subtotal,
+            "vat_amount": inv.vat_amount,
+            "discount": inv.discount,
+            "total": inv.total,
+            "notes": inv.notes,
+            "letterhead": inv.letterhead,
+            "lpo_no": inv.lpo_no or "",
+            "do_no": inv.do_no or "",
+            "is_cash": inv.is_cash,
+            "include_stamp": inv.include_stamp,
+            "require_customer_signature": inv.require_customer_signature,
         }
-
-    customer = inv.customer
-    cust_dict = {}
-    if customer:
-        cust_dict = {
-            "name": customer.name, "trn": customer.trn,
-            "attn": customer.attn, "phone": customer.phone,
-            "address": customer.address,
-            "po_box": customer.po_box or "",
-        }
-
-    invoice_data = {
-        "invoice_number": inv.invoice_number,
-        "date": inv.date.strftime("%d %b %Y"),
-        "customer": cust_dict,
-        "items": [
-            {
-                "description": it.description,
-                "quantity": it.quantity,
-                "unit_price": it.unit_price,
-                "vat_applicable": it.vat_applicable,
-                "vat_amount": it.vat_amount,
-                "total": it.total
-            } for it in inv.items
-        ],
-        "subtotal": inv.subtotal,
-        "vat_amount": inv.vat_amount,
-        "discount": inv.discount,
-        "total": inv.total,
-        "notes": inv.notes,
-        "letterhead": inv.letterhead,
-        "lpo_no": inv.lpo_no or "",
-        "do_no": inv.do_no or "",
-        "is_cash": inv.is_cash,
-        "include_stamp": inv.include_stamp,
-        "require_customer_signature": inv.require_customer_signature,
-    }
+        doc_number = inv.invoice_number
+    else:
+        # Fallback: fetch from Supabase (mobile-created, not yet synced locally)
+        invoice_data, comp_dict = fetch_invoice_for_pdf(invoice_id)
+        if not invoice_data:
+            raise HTTPException(status_code=404, detail=f"Invoice not found: {invoice_id}")
+        doc_number = invoice_data["invoice_number"]
 
     filepath = generate_invoice_pdf(invoice_data, comp_dict)
-    return FileResponse(filepath, media_type="application/pdf", filename=f"Invoice_{inv.invoice_number}.pdf")
+    return FileResponse(
+        filepath,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="Invoice_{doc_number}.pdf"'},
+    )

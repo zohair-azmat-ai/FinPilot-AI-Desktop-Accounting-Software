@@ -6,6 +6,7 @@ from datetime import datetime
 from database import get_db
 import models, schemas
 from pdf_generator import generate_quotation_pdf
+from supabase_pdf import fetch_quotation_for_pdf
 
 router = APIRouter(prefix="/api/quotations", tags=["quotations"])
 
@@ -246,35 +247,43 @@ def download_quotation_pdf(quotation_id: str, db: Session = Depends(get_db)):
         pass
     if not q:
         q = db.query(models.Quotation).filter(models.Quotation.quotation_number == quotation_id).first()
-    if not q:
-        raise HTTPException(status_code=404, detail=f"Quotation not found: {quotation_id}")
 
-    company = db.query(models.Company).first()
-    comp_dict = {}
-    if company:
-        comp_dict = {"name": company.name, "trn": company.trn, "address": company.address, "phone": company.phone, "email": company.email}
-
-    customer = q.customer
-    cust_dict = {}
-    if customer:
-        cust_dict = {"name": customer.name, "trn": customer.trn, "attn": customer.attn, "phone": customer.phone, "address": customer.address}
-
-    q_data = {
-        "quotation_number": q.quotation_number,
-        "date": q.date.strftime("%d %b %Y"),
-        "valid_until": q.valid_until.strftime("%d %b %Y") if q.valid_until else "",
-        "customer": cust_dict,
-        "items": [{"description": it.description, "quantity": it.quantity, "unit_price": it.unit_price, "vat_applicable": it.vat_applicable, "vat_amount": it.vat_amount, "total": it.total} for it in q.items],
-        "subtotal": q.subtotal,
-        "vat_amount": q.vat_amount,
-        "discount": q.discount,
-        "total": q.total,
-        "notes": q.notes,
-        "payment_terms": q.payment_terms or "",
-        "delivery": q.delivery or "",
-        "include_stamp": q.include_stamp,
-        "letterhead": q.letterhead,
-    }
+    if q:
+        company = db.query(models.Company).first()
+        comp_dict = {}
+        if company:
+            comp_dict = {"name": company.name, "trn": company.trn, "address": company.address, "phone": company.phone, "email": company.email}
+        customer = q.customer
+        cust_dict = {}
+        if customer:
+            cust_dict = {"name": customer.name, "trn": customer.trn, "attn": customer.attn, "phone": customer.phone, "address": customer.address}
+        q_data = {
+            "quotation_number": q.quotation_number,
+            "date": q.date.strftime("%d %b %Y"),
+            "valid_until": q.valid_until.strftime("%d %b %Y") if q.valid_until else "",
+            "customer": cust_dict,
+            "items": [{"description": it.description, "quantity": it.quantity, "unit_price": it.unit_price, "vat_applicable": it.vat_applicable, "vat_amount": it.vat_amount, "total": it.total} for it in q.items],
+            "subtotal": q.subtotal,
+            "vat_amount": q.vat_amount,
+            "discount": q.discount,
+            "total": q.total,
+            "notes": q.notes,
+            "payment_terms": q.payment_terms or "",
+            "delivery": q.delivery or "",
+            "include_stamp": q.include_stamp,
+            "letterhead": q.letterhead,
+        }
+        doc_number = q.quotation_number
+    else:
+        # Fallback: fetch from Supabase (mobile-created, not yet synced locally)
+        q_data, comp_dict = fetch_quotation_for_pdf(quotation_id)
+        if not q_data:
+            raise HTTPException(status_code=404, detail=f"Quotation not found: {quotation_id}")
+        doc_number = q_data["quotation_number"]
 
     filepath = generate_quotation_pdf(q_data, comp_dict)
-    return FileResponse(filepath, media_type="application/pdf", filename=f"Quotation_{q.quotation_number}.pdf")
+    return FileResponse(
+        filepath,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="Quotation_{doc_number}.pdf"'},
+    )

@@ -6,6 +6,7 @@ from datetime import datetime
 from database import get_db
 import models, schemas
 from pdf_generator import generate_delivery_note_pdf
+from supabase_pdf import fetch_delivery_note_for_pdf
 
 router = APIRouter(prefix="/api/delivery-notes", tags=["delivery-notes"])
 
@@ -141,40 +142,46 @@ def download_delivery_note_pdf(dn_id: str, db: Session = Depends(get_db)):
         pass
     if not dn:
         dn = db.query(models.DeliveryNote).filter(models.DeliveryNote.dn_number == dn_id).first()
-    if not dn:
-        raise HTTPException(status_code=404, detail=f"Delivery note not found: {dn_id}")
 
-    company = db.query(models.Company).first()
-    comp_dict = {}
-    show_stamp = False
-    if company:
-        comp_dict = {
-            "name": company.name, "trn": company.trn,
-            "address": company.address, "phone": company.phone,
-            "email": company.email,
+    if dn:
+        company = db.query(models.Company).first()
+        comp_dict = {}
+        show_stamp = False
+        if company:
+            comp_dict = {
+                "name": company.name, "trn": company.trn,
+                "address": company.address, "phone": company.phone,
+                "email": company.email,
+            }
+            show_stamp = bool(company.show_dn_stamp)
+        dn_data = {
+            "dn_number": dn.dn_number,
+            "date": dn.date.strftime("%d %b %Y") if dn.date else "",
+            "customer": {
+                "name": dn.customer.name if dn.customer else "",
+                "address": dn.customer.address if dn.customer else "",
+                "phone": dn.customer.phone if dn.customer else "",
+                "trn": dn.customer.trn if dn.customer else "",
+            } if dn.customer_id else {},
+            "remarks": dn.remarks or "",
+            "letterhead": dn.letterhead,
+            "show_stamp": show_stamp,
+            "items": [
+                {"sno": i + 1, "description": it.description, "quantity": it.quantity, "remarks": it.remarks or ""}
+                for i, it in enumerate(dn.items)
+            ],
         }
-        show_stamp = bool(company.show_dn_stamp)
-
-    dn_data = {
-        "dn_number": dn.dn_number,
-        "date": dn.date.strftime("%d %b %Y") if dn.date else "",
-        "customer": {
-            "name": dn.customer.name if dn.customer else "",
-            "address": dn.customer.address if dn.customer else "",
-            "phone": dn.customer.phone if dn.customer else "",
-            "trn": dn.customer.trn if dn.customer else "",
-        } if dn.customer_id else {},
-        "remarks": dn.remarks or "",
-        "letterhead": dn.letterhead,
-        "show_stamp": show_stamp,
-        "items": [
-            {"sno": i + 1, "description": it.description, "quantity": it.quantity, "remarks": it.remarks or ""}
-            for i, it in enumerate(dn.items)
-        ],
-    }
+        doc_number = dn.dn_number
+    else:
+        # Fallback: fetch from Supabase (mobile-created, not yet synced locally)
+        dn_data, comp_dict = fetch_delivery_note_for_pdf(dn_id)
+        if not dn_data:
+            raise HTTPException(status_code=404, detail=f"Delivery note not found: {dn_id}")
+        doc_number = dn_data["dn_number"]
 
     filepath = generate_delivery_note_pdf(dn_data, comp_dict)
     return FileResponse(
-        filepath, media_type="application/pdf",
-        filename=f"DeliveryNote_{dn.dn_number}.pdf"
+        filepath,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="DeliveryNote_{doc_number}.pdf"'},
     )

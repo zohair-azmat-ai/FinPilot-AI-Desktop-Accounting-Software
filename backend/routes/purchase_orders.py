@@ -6,6 +6,7 @@ from datetime import datetime
 from database import get_db
 import models, schemas
 from pdf_generator import generate_po_pdf
+from supabase_pdf import fetch_po_for_pdf
 
 router = APIRouter(prefix="/api/purchase-orders", tags=["purchase-orders"])
 
@@ -165,56 +166,59 @@ def download_po_pdf(po_id: str, db: Session = Depends(get_db)):
         pass
     if not po:
         po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.po_number == po_id).first()
-    if not po:
-        raise HTTPException(status_code=404, detail=f"Purchase order not found: {po_id}")
 
-    company = db.query(models.Company).first()
-    comp_dict = {}
-    if company:
-        comp_dict = {
-            "name": company.name or "",
-            "trn":  company.trn  or "",
-            "address": company.address or "",
-            "phone": company.phone or "",
-            "email": company.email or "",
-        }
-
-    supplier = po.supplier
-    sup_dict = {}
-    if supplier:
-        sup_dict = {
-            "name":    supplier.name    or "",
-            "trn":     supplier.trn     or "",
-            "phone":   supplier.phone   or "",
-            "address": supplier.address or "",
-        }
-
-    po_data = {
-        "po_number":     po.po_number,
-        "date":          po.date.strftime("%d %b %Y") if po.date else "",
-        "delivery_date": po.delivery_date.strftime("%d %b %Y") if po.delivery_date else "",
-        "payment_terms": po.payment_terms or "",
-        "delivery_terms": po.delivery_terms or "",
-        "notes":         po.notes or "",
-        "subtotal":      po.subtotal,
-        "vat_amount":    po.vat_amount,
-        "total":         po.total,
-        "include_stamp": po.include_stamp,
-        "letterhead":    po.letterhead,
-        "supplier":      sup_dict,
-        "items": [
-            {
-                "description":   it.description,
-                "quantity":      it.quantity,
-                "unit_price":    it.unit_price,
-                "vat_applicable": it.vat_applicable,
-                "vat_amount":    it.vat_amount,
-                "total":         it.total,
+    if po:
+        company = db.query(models.Company).first()
+        comp_dict = {}
+        if company:
+            comp_dict = {
+                "name": company.name or "", "trn": company.trn or "",
+                "address": company.address or "", "phone": company.phone or "",
+                "email": company.email or "",
             }
-            for it in po.items
-        ],
-    }
+        supplier = po.supplier
+        sup_dict = {}
+        if supplier:
+            sup_dict = {
+                "name": supplier.name or "", "trn": supplier.trn or "",
+                "phone": supplier.phone or "", "address": supplier.address or "",
+            }
+        po_data = {
+            "po_number": po.po_number,
+            "date": po.date.strftime("%d %b %Y") if po.date else "",
+            "delivery_date": po.delivery_date.strftime("%d %b %Y") if po.delivery_date else "",
+            "payment_terms": po.payment_terms or "",
+            "delivery_terms": po.delivery_terms or "",
+            "notes": po.notes or "",
+            "subtotal": po.subtotal,
+            "vat_amount": po.vat_amount,
+            "total": po.total,
+            "include_stamp": po.include_stamp,
+            "letterhead": po.letterhead,
+            "supplier": sup_dict,
+            "items": [
+                {
+                    "description": it.description,
+                    "quantity": it.quantity,
+                    "unit_price": it.unit_price,
+                    "vat_applicable": it.vat_applicable,
+                    "vat_amount": it.vat_amount,
+                    "total": it.total,
+                }
+                for it in po.items
+            ],
+        }
+        doc_number = po.po_number
+    else:
+        # Fallback: fetch from Supabase (mobile-created, not yet synced locally)
+        po_data, comp_dict = fetch_po_for_pdf(po_id)
+        if not po_data:
+            raise HTTPException(status_code=404, detail=f"Purchase order not found: {po_id}")
+        doc_number = po_data["po_number"]
 
     filepath = generate_po_pdf(po_data, comp_dict)
-    return FileResponse(filepath, media_type="application/pdf",
-                        filename=f"PO_{po.po_number}.pdf")
+    return FileResponse(
+        filepath,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="PO_{doc_number}.pdf"'},
+    )
