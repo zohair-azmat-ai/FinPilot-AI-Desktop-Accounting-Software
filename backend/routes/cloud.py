@@ -37,6 +37,12 @@ def restore():
     return sync_engine.restore_from_cloud(DB_PATH)
 
 
+@router.get("/restore-from-supabase")
+def restore_from_supabase():
+    """Non-destructive UPSERT restore from Supabase. Never deletes local data."""
+    return sync_engine.restore_from_cloud(DB_PATH)
+
+
 @router.get("/sync/log")
 def sync_log():
     """Return the per-table pull log from the last sync run."""

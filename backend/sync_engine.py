@@ -312,19 +312,10 @@ class SyncEngine(threading.Thread):
                         if sb_id is not None:
                             id_map[table][sb_id] = local_id
 
-                # Deletion diff — guard: skip if Supabase returned nothing (network safety)
-                if cloud_by_uuid:
-                    for sync_uuid, local in list(local_synced.items()):
-                        if sync_uuid not in cloud_by_uuid:
-                            try:
-                                con.execute(
-                                    f"DELETE FROM {table} WHERE id = ?", (local["id"],)
-                                )
-                                deleted += 1
-                                log.debug("Pull del [%s] id=%s", table, local["id"])
-                            except Exception as e:
-                                log.warning("Pull del [%s] id=%s: %s", table, local["id"], e)
-                                errors += 1
+                # NOTE: No deletion — pull is UPSERT-only.
+                # Local rows that are absent from Supabase were either created
+                # on desktop and not yet pushed, or belong to a different workspace.
+                # Deletion is intentionally skipped to prevent data loss.
 
                 fk_remaps = _FK_REMAP.get(table, [])
 
@@ -423,11 +414,20 @@ class SyncEngine(threading.Thread):
                 log.info("Sync pull [%s]: %s", tbl, s)
         return sync_log
 
+    def _backup_db(self) -> str:
+        import shutil
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        bak = self.db_path + f".backup_{ts}"
+        shutil.copy2(self.db_path, bak)
+        log.info("DB backup created: %s", bak)
+        return bak
+
     def push_now(self) -> dict:
         creds = _read_creds()
         if not creds:
             return {"ok": False, "error": "Not connected to cloud."}
         try:
+            bak = self._backup_db()
             client = SupabaseClient(creds["url"], creds["anon_key"], creds["workspace_id"])
             _status["state"] = "syncing"
             con = sqlite3.connect(self.db_path)
@@ -443,70 +443,31 @@ class SyncEngine(threading.Thread):
                 last_pull_log=pull_log,
                 error=None,
             )
-            return {"ok": True, "pull_log": pull_log}
+            return {"ok": True, "backup_path": bak, "pull_log": pull_log}
         except Exception as e:
             _status.update(state="error", error=str(e)[:300])
             return {"ok": False, "error": str(e)[:300]}
 
     def restore_from_cloud(self) -> dict:
-        import shutil
+        """Non-destructive UPSERT restore: inserts missing rows, updates stale rows,
+        never deletes local data. Safe to run at any time."""
         creds = _read_creds()
         if not creds:
             return {"ok": False, "error": "Not connected to cloud."}
 
-        ts = datetime.now().strftime("%Y%m%d%H%M%S")
-        bak = self.db_path + f".cloud_bak_{ts}"
-        shutil.copy2(self.db_path, bak)
+        bak = self._backup_db()
 
         try:
             client = SupabaseClient(creds["url"], creds["anon_key"], creds["workspace_id"])
             con = sqlite3.connect(self.db_path)
+            con.row_factory = sqlite3.Row
             try:
-                con.execute("PRAGMA foreign_keys = OFF")
-                con.commit()
-                for table in reversed(SYNC_TABLES):
-                    self._clear_table(con, table)
-                con.commit()
-                for table in SYNC_TABLES:
-                    self._restore_table(con, client, table)
-                con.commit()
-                con.execute("PRAGMA foreign_keys = ON")
-                con.commit()
+                pull_log = self._pull_mobile_rows(con, client)
             finally:
                 con.close()
-            return {"ok": True, "backup_path": bak}
+            return {"ok": True, "backup_path": bak, "pull_log": pull_log}
         except Exception as e:
-            import shutil as _s
-            _s.copy2(bak, self.db_path)
             return {"ok": False, "error": str(e)[:300]}
-
-    def _clear_table(self, con: sqlite3.Connection, table: str) -> None:
-        cur = con.cursor()
-        cur.execute(f"PRAGMA table_info({table})")
-        if cur.fetchall():
-            con.execute(f"DELETE FROM {table}")
-
-    def _restore_table(self, con: sqlite3.Connection, client: SupabaseClient, table: str) -> None:
-        cur = con.cursor()
-        cur.execute(f"PRAGMA table_info({table})")
-        local_cols = {r[1] for r in cur.fetchall()}
-        if "sync_uuid" not in local_cols:
-            return
-        remote_rows = client.fetch_all(table)
-        for row in remote_rows:
-            row.pop("workspace_id", None)
-            filtered = {k: v for k, v in row.items() if k in local_cols}
-            if not filtered:
-                continue
-            col_names = ",".join(filtered.keys())
-            placeholders = ",".join("?" * len(filtered))
-            try:
-                con.execute(
-                    f"INSERT OR IGNORE INTO {table} ({col_names}) VALUES ({placeholders})",
-                    list(filtered.values()),
-                )
-            except Exception:
-                pass
 
 
 # ── Schema SQL generator ──────────────────────────────────────────────────────
