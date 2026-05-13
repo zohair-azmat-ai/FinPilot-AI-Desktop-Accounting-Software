@@ -83,23 +83,47 @@ def create_quotation(data: schemas.QuotationCreate, db: Session = Depends(get_db
     processed_items, subtotal, vat_total = _calculate_items(data.items, vat_rate)
     total = round(subtotal + vat_total - (data.discount or 0), 2)
 
-    quotation = models.Quotation(
-        quotation_number=_next_quotation_number(db),
-        customer_id=data.customer_id,
-        date=data.date or datetime.utcnow(),
-        valid_until=data.valid_until,
-        discount=data.discount or 0,
-        notes=data.notes or "",
-        payment_terms=data.payment_terms or "",
-        delivery=data.delivery or "",
-        include_stamp=data.include_stamp or False,
-        letterhead=data.letterhead if data.letterhead is not None else True,
-        subtotal=subtotal,
-        vat_amount=vat_total,
-        total=total,
-        status="draft"
-    )
-    db.add(quotation)
+    q_number = _next_quotation_number(db)
+    existing_deleted = db.query(models.Quotation).filter(
+        models.Quotation.quotation_number == q_number,
+        models.Quotation.deleted_at.isnot(None)
+    ).first()
+
+    if existing_deleted:
+        quotation = existing_deleted
+        quotation.deleted_at = None
+        quotation.customer_id = data.customer_id
+        quotation.date = data.date or datetime.utcnow()
+        quotation.valid_until = data.valid_until
+        quotation.discount = data.discount or 0
+        quotation.notes = data.notes or ""
+        quotation.payment_terms = data.payment_terms or ""
+        quotation.delivery = data.delivery or ""
+        quotation.include_stamp = data.include_stamp or False
+        quotation.letterhead = data.letterhead if data.letterhead is not None else True
+        quotation.subtotal = subtotal
+        quotation.vat_amount = vat_total
+        quotation.total = total
+        quotation.status = "draft"
+        db.query(models.QuotationItem).filter(models.QuotationItem.quotation_id == quotation.id).delete()
+    else:
+        quotation = models.Quotation(
+            quotation_number=q_number,
+            customer_id=data.customer_id,
+            date=data.date or datetime.utcnow(),
+            valid_until=data.valid_until,
+            discount=data.discount or 0,
+            notes=data.notes or "",
+            payment_terms=data.payment_terms or "",
+            delivery=data.delivery or "",
+            include_stamp=data.include_stamp or False,
+            letterhead=data.letterhead if data.letterhead is not None else True,
+            subtotal=subtotal,
+            vat_amount=vat_total,
+            total=total,
+            status="draft"
+        )
+        db.add(quotation)
     db.flush()
 
     for item in processed_items:

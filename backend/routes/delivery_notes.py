@@ -69,15 +69,31 @@ def get_delivery_note(dn_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=schemas.DeliveryNoteOut)
 def create_delivery_note(payload: schemas.DeliveryNoteCreate, db: Session = Depends(get_db)):
-    dn = models.DeliveryNote(
-        dn_number=_next_dn_number(db),
-        customer_id=payload.customer_id,
-        date=payload.date or datetime.utcnow(),
-        remarks=payload.remarks or "",
-        letterhead=payload.letterhead if payload.letterhead is not None else True,
-        status="draft",
-    )
-    db.add(dn)
+    dn_number = _next_dn_number(db)
+    existing_deleted = db.query(models.DeliveryNote).filter(
+        models.DeliveryNote.dn_number == dn_number,
+        models.DeliveryNote.deleted_at.isnot(None)
+    ).first()
+
+    if existing_deleted:
+        dn = existing_deleted
+        dn.deleted_at = None
+        dn.customer_id = payload.customer_id
+        dn.date = payload.date or datetime.utcnow()
+        dn.remarks = payload.remarks or ""
+        dn.letterhead = payload.letterhead if payload.letterhead is not None else True
+        dn.status = "draft"
+        db.query(models.DeliveryNoteItem).filter(models.DeliveryNoteItem.dn_id == dn.id).delete()
+    else:
+        dn = models.DeliveryNote(
+            dn_number=dn_number,
+            customer_id=payload.customer_id,
+            date=payload.date or datetime.utcnow(),
+            remarks=payload.remarks or "",
+            letterhead=payload.letterhead if payload.letterhead is not None else True,
+            status="draft",
+        )
+        db.add(dn)
     db.flush()
 
     for item in payload.items:

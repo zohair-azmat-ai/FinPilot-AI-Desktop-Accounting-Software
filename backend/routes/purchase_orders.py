@@ -86,22 +86,45 @@ def create_po(payload: schemas.PurchaseOrderCreate, db: Session = Depends(get_db
 
     subtotal, vat_amount, total, built_items = _calc_items(payload.items, vat_rate)
 
-    po = models.PurchaseOrder(
-        po_number=_next_po_number(db),
-        supplier_id=payload.supplier_id,
-        date=payload.date or datetime.utcnow(),
-        delivery_date=payload.delivery_date,
-        payment_terms=payload.payment_terms or "",
-        delivery_terms=payload.delivery_terms or "",
-        notes=payload.notes or "",
-        subtotal=subtotal,
-        vat_amount=vat_amount,
-        total=total,
-        include_stamp=payload.include_stamp or False,
-        letterhead=payload.letterhead if payload.letterhead is not None else True,
-        status="draft",
-    )
-    db.add(po)
+    po_number = _next_po_number(db)
+    existing_deleted = db.query(models.PurchaseOrder).filter(
+        models.PurchaseOrder.po_number == po_number,
+        models.PurchaseOrder.deleted_at.isnot(None)
+    ).first()
+
+    if existing_deleted:
+        po = existing_deleted
+        po.deleted_at = None
+        po.supplier_id = payload.supplier_id
+        po.date = payload.date or datetime.utcnow()
+        po.delivery_date = payload.delivery_date
+        po.payment_terms = payload.payment_terms or ""
+        po.delivery_terms = payload.delivery_terms or ""
+        po.notes = payload.notes or ""
+        po.subtotal = subtotal
+        po.vat_amount = vat_amount
+        po.total = total
+        po.include_stamp = payload.include_stamp or False
+        po.letterhead = payload.letterhead if payload.letterhead is not None else True
+        po.status = "draft"
+        db.query(models.PurchaseOrderItem).filter(models.PurchaseOrderItem.po_id == po.id).delete()
+    else:
+        po = models.PurchaseOrder(
+            po_number=po_number,
+            supplier_id=payload.supplier_id,
+            date=payload.date or datetime.utcnow(),
+            delivery_date=payload.delivery_date,
+            payment_terms=payload.payment_terms or "",
+            delivery_terms=payload.delivery_terms or "",
+            notes=payload.notes or "",
+            subtotal=subtotal,
+            vat_amount=vat_amount,
+            total=total,
+            include_stamp=payload.include_stamp or False,
+            letterhead=payload.letterhead if payload.letterhead is not None else True,
+            status="draft",
+        )
+        db.add(po)
     db.flush()
 
     for it in built_items:

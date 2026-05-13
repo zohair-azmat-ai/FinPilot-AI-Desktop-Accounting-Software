@@ -132,28 +132,56 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
     balance_due = total
 
     inv_number, _use_series = _next_invoice_number(db)
-    invoice = models.Invoice(
-        invoice_number=inv_number,
-        customer_id=data.customer_id,
-        date=data.date or datetime.utcnow(),
-        due_date=data.due_date,
-        discount=data.discount or 0,
-        notes=data.notes or "",
-        letterhead=data.letterhead if data.letterhead is not None else True,
-        lpo_no=data.lpo_no or "",
-        do_no=data.do_no or "",
-        quotation_id=data.quotation_id,
-        is_cash=data.is_cash or False,
-        include_stamp=data.include_stamp or False,
-        require_customer_signature=data.require_customer_signature or False,
-        subtotal=subtotal,
-        vat_amount=vat_total,
-        total=total,
-        amount_paid=0.0,
-        balance_due=balance_due,
-        status="unpaid"
-    )
-    db.add(invoice)
+    existing_deleted = db.query(models.Invoice).filter(
+        models.Invoice.invoice_number == inv_number,
+        models.Invoice.deleted_at.isnot(None)
+    ).first()
+
+    if existing_deleted:
+        invoice = existing_deleted
+        invoice.deleted_at = None
+        invoice.customer_id = data.customer_id
+        invoice.date = data.date or datetime.utcnow()
+        invoice.due_date = data.due_date
+        invoice.discount = data.discount or 0
+        invoice.notes = data.notes or ""
+        invoice.letterhead = data.letterhead if data.letterhead is not None else True
+        invoice.lpo_no = data.lpo_no or ""
+        invoice.do_no = data.do_no or ""
+        invoice.quotation_id = data.quotation_id
+        invoice.is_cash = data.is_cash or False
+        invoice.include_stamp = data.include_stamp or False
+        invoice.require_customer_signature = data.require_customer_signature or False
+        invoice.subtotal = subtotal
+        invoice.vat_amount = vat_total
+        invoice.total = total
+        invoice.amount_paid = 0.0
+        invoice.balance_due = balance_due
+        invoice.status = "unpaid"
+        db.query(models.InvoiceItem).filter(models.InvoiceItem.invoice_id == invoice.id).delete()
+    else:
+        invoice = models.Invoice(
+            invoice_number=inv_number,
+            customer_id=data.customer_id,
+            date=data.date or datetime.utcnow(),
+            due_date=data.due_date,
+            discount=data.discount or 0,
+            notes=data.notes or "",
+            letterhead=data.letterhead if data.letterhead is not None else True,
+            lpo_no=data.lpo_no or "",
+            do_no=data.do_no or "",
+            quotation_id=data.quotation_id,
+            is_cash=data.is_cash or False,
+            include_stamp=data.include_stamp or False,
+            require_customer_signature=data.require_customer_signature or False,
+            subtotal=subtotal,
+            vat_amount=vat_total,
+            total=total,
+            amount_paid=0.0,
+            balance_due=balance_due,
+            status="unpaid"
+        )
+        db.add(invoice)
     db.flush()
 
     for item in processed_items:
