@@ -14,17 +14,21 @@ export default function LoginScreen() {
   const [url, setUrl] = useState('');
   const [key, setKey] = useState('');
   const [wsId, setWsId] = useState('');
+  const [backendUrl, setBackendUrl] = useState('');
   const [loading, setLoading] = useState(false);
 
   const connect = async () => {
     if (!url.trim() || !key.trim() || !wsId.trim()) {
-      Alert.alert('Missing fields', 'Please fill in all three fields.');
+      Alert.alert('Missing fields', 'Please fill in the Supabase fields.');
       return;
     }
     setLoading(true);
     try {
       await testConnection(url.trim(), key.trim(), wsId.trim());
-      const cfg = { url: url.trim(), anonKey: key.trim(), workspaceId: wsId.trim() };
+      const cfg = {
+        url: url.trim(), anonKey: key.trim(), workspaceId: wsId.trim(),
+        backendUrl: backendUrl.trim() || undefined,
+      };
       await saveWorkspace(cfg);
       setApiConfig(cfg);
       router.replace('/(app)/dashboard');
@@ -50,7 +54,7 @@ export default function LoginScreen() {
           <Text style={s.logoSub}>UAE Accounting — Mobile Companion</Text>
         </View>
 
-        {/* Form */}
+        {/* Supabase */}
         <View style={s.card}>
           <Text style={s.cardTitle}>Connect Workspace</Text>
 
@@ -100,8 +104,31 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Desktop backend — for PDF generation */}
+        <View style={s.card}>
+          <Text style={s.cardTitle}>Desktop Backend (PDF)</Text>
+          <Text style={s.cardHint}>
+            Required for PDF generation. Enter your desktop machine's IP while on the same Wi-Fi network.
+          </Text>
+          <Text style={s.label}>Desktop Backend URL</Text>
+          <TextInput
+            style={s.input}
+            placeholder="http://192.168.1.5:8001"
+            placeholderTextColor={C.muted}
+            value={backendUrl}
+            onChangeText={setBackendUrl}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+          />
+          <Text style={s.fieldHint}>
+            Find your IP: open FinPilot desktop → Settings → About, or run{' '}
+            <Text style={{ fontFamily: 'monospace' }}>ipconfig</Text> on the desktop machine.
+          </Text>
+        </View>
+
         <Text style={s.hint}>
-          Use the same credentials from your FinPilot desktop app's Cloud Backup settings.
+          Use the same Supabase credentials from your FinPilot desktop Cloud Backup settings.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -123,13 +150,15 @@ const s = StyleSheet.create({
     backgroundColor: C.card, borderRadius: 16,
     borderWidth: 1, borderColor: C.border, padding: 20, marginBottom: 16,
   },
-  cardTitle: { fontSize: 16, fontWeight: '600', color: C.text, marginBottom: 20 },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: C.text, marginBottom: 8 },
+  cardHint: { fontSize: 12, color: C.sub, marginBottom: 16, lineHeight: 17 },
   label: { fontSize: 12, color: C.sub, marginBottom: 6, fontWeight: '500' },
   input: {
     backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
     color: C.text, fontSize: 14, marginBottom: 16,
   },
+  fieldHint: { fontSize: 11, color: C.muted, lineHeight: 16, marginTop: -10 },
   btn: {
     backgroundColor: C.brand, borderRadius: 12, paddingVertical: 14,
     alignItems: 'center', marginTop: 4,

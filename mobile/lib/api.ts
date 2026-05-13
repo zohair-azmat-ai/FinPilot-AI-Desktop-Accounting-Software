@@ -3,12 +3,15 @@
  * Handles both old JWT anon keys (eyJ…) and new publishable keys (sb_publishable_…).
  */
 
-interface Config { url: string; anonKey: string; workspaceId: string; }
+interface Config { url: string; anonKey: string; workspaceId: string; backendUrl?: string; }
 
 let _cfg: Config | null = null;
 
 export function setApiConfig(cfg: Config) { _cfg = cfg; }
 export function getApiConfig() { return _cfg; }
+export function getBackendUrl(): string | null {
+  return _cfg?.backendUrl?.replace(/\/$/, '') ?? null;
+}
 
 function headers(anonKey: string): Record<string, string> {
   const h: Record<string, string> = {

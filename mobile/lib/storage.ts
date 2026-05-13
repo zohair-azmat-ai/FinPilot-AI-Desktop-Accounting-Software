@@ -6,6 +6,7 @@ export interface WorkspaceConfig {
   url: string;
   anonKey: string;
   workspaceId: string;
+  backendUrl?: string;
 }
 
 export async function saveWorkspace(cfg: WorkspaceConfig): Promise<void> {
