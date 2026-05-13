@@ -74,6 +74,15 @@ def _run_migrations():
         ("supplier_bills",      "amount_paid",                "REAL DEFAULT 0.0"),
         ("supplier_bills",      "balance_due",                "REAL DEFAULT 0.0"),
         ("supplier_bills",      "status",                     "TEXT DEFAULT 'unpaid'"),
+        # Soft-delete column — added to parent entity tables
+        ("invoices",        "deleted_at", "TEXT DEFAULT NULL"),
+        ("quotations",      "deleted_at", "TEXT DEFAULT NULL"),
+        ("delivery_notes",  "deleted_at", "TEXT DEFAULT NULL"),
+        ("purchase_orders", "deleted_at", "TEXT DEFAULT NULL"),
+        ("customers",       "deleted_at", "TEXT DEFAULT NULL"),
+        ("suppliers",       "deleted_at", "TEXT DEFAULT NULL"),
+        ("payments",        "deleted_at", "TEXT DEFAULT NULL"),
+        ("supplier_bills",  "deleted_at", "TEXT DEFAULT NULL"),
         # Cloud sync columns — added to all tables
         *[col for tbl in [
             "companies", "bank_accounts", "customers", "suppliers", "items",

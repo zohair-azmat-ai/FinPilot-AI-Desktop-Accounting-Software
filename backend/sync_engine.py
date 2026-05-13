@@ -222,7 +222,10 @@ class SyncEngine(threading.Thread):
         con.row_factory = sqlite3.Row
         try:
             for table in SYNC_TABLES:
-                self._push_table(con, client, table)
+                try:
+                    self._push_table(con, client, table)
+                except Exception as e:
+                    log.warning("Push [%s] skipped: %s", table, e)
         finally:
             con.close()
 
@@ -252,7 +255,27 @@ class SyncEngine(threading.Thread):
         for row in rows:
             row["workspace_id"] = client.workspace_id
 
-        client.upsert(table, rows)
+        try:
+            client.upsert(table, rows)
+        except IOError as e:
+            err_str = str(e)
+            # Supabase rejects columns that don't exist in its schema yet (e.g. deleted_at
+            # before the migration SQL is run). Strip the offending column and retry once.
+            if "HTTP 400" in err_str and ("does not exist" in err_str or "42703" in err_str):
+                import re as _re
+                bad_cols: set = set()
+                for m in _re.finditer(r'"([^"]+)" of relation', err_str):
+                    bad_cols.add(m.group(1))
+                if not bad_cols:
+                    bad_cols = {"deleted_at"}  # safe fallback
+                rows_clean = [{k: v for k, v in r.items() if k not in bad_cols} for r in rows]
+                log.warning(
+                    "Push [%s]: Supabase missing column(s) %s — retrying without. "
+                    "Run migration SQL to add these columns permanently.", table, bad_cols
+                )
+                client.upsert(table, rows_clean)
+            else:
+                raise
 
     def _pull_mobile_rows(self, con: sqlite3.Connection, client: "SupabaseClient") -> dict:
         """Merge Supabase → local SQLite.
@@ -334,6 +357,12 @@ class SyncEngine(threading.Thread):
                 # Deletion is intentionally skipped to prevent data loss.
 
                 fk_remaps = _FK_REMAP.get(table, [])
+                # Document-number columns that carry a UNIQUE constraint in SQLite.
+                # Used for conflict resolution when two devices create the same number.
+                _DOC_NUM_COLS = (
+                    "invoice_number", "quotation_number", "dn_number",
+                    "po_number", "bill_number", "payment_number", "expense_number",
+                )
 
                 for sync_uuid, cloud_row in cloud_by_uuid.items():
                     filtered = {
@@ -345,13 +374,17 @@ class SyncEngine(threading.Thread):
 
                     sb_id = cloud_row.get("id")
 
-                    # Remap FK columns so child rows link to local parent ids, not Supabase ids
+                    # Remap FK columns so child rows link to local parent ids, not Supabase ids.
+                    # Track which cols were remapped so we can force-update them on existing rows
+                    # regardless of the timestamp comparison (fixes orphaned items).
+                    remapped_fks: dict = {}
                     for fk_col, parent_table in fk_remaps:
                         if fk_col in filtered and filtered[fk_col] is not None:
                             sb_parent_id = filtered[fk_col]
                             local_parent_id = id_map.get(parent_table, {}).get(sb_parent_id)
                             if local_parent_id is not None and local_parent_id != sb_parent_id:
                                 filtered[fk_col] = local_parent_id
+                                remapped_fks[fk_col] = local_parent_id
 
                     if sync_uuid not in local_synced:
                         # Skip cloud rows that were already deleted — no point inserting
@@ -390,25 +423,83 @@ class SyncEngine(threading.Thread):
                                          filtered.get("dn_number") or
                                          filtered.get("po_number") or "")
                             else:
-                                # IGNORE triggered (unique constraint on doc number?)
-                                # Try to find it and still track the id
+                                # INSERT OR IGNORE fired — determine why.
                                 existing = con.execute(
                                     f"SELECT id FROM {table} WHERE sync_uuid = ?", (sync_uuid,)
                                 ).fetchone()
                                 if existing:
+                                    # Same sync_uuid already in local — just track the id.
                                     local_id = existing[0]
                                     if sb_id is not None:
                                         id_map[table][sb_id] = local_id
-                                log.warning("Pull ins [%s] IGNORED sync_uuid=%s (unique constraint?)", table, sync_uuid)
-                                errors += 1
+                                    log.info("Pull ins [%s] duplicate sync_uuid=%s → local=%s", table, sync_uuid, local_id)
+                                else:
+                                    # Genuine conflict: a DIFFERENT local row holds the same
+                                    # unique field value (e.g. both desktop and mobile created
+                                    # invoice "8864" before syncing). Resolve by appending "-M"
+                                    # so the mobile version is imported without overwriting the
+                                    # desktop version.
+                                    resolved = False
+                                    for num_col in _DOC_NUM_COLS:
+                                        if num_col in new_row and new_row[num_col]:
+                                            original_num = new_row[num_col]
+                                            new_row[num_col] = f"{original_num}-M"
+                                            try:
+                                                cur3 = con.cursor()
+                                                cur3.execute(
+                                                    f"INSERT OR IGNORE INTO {table} "
+                                                    f"({','.join(new_row.keys())}) "
+                                                    f"VALUES ({','.join('?' * len(new_row))})",
+                                                    list(new_row.values()),
+                                                )
+                                                if cur3.rowcount > 0:
+                                                    local_id = cur3.lastrowid
+                                                    if sb_id is not None:
+                                                        id_map[table][sb_id] = local_id
+                                                    inserted += 1
+                                                    log.warning(
+                                                        "Pull ins [%s] NUMBER CONFLICT resolved: "
+                                                        "%s → %s-M (sb_id=%s local=%s)",
+                                                        table, original_num, original_num, sb_id, local_id,
+                                                    )
+                                                    resolved = True
+                                                else:
+                                                    log.warning(
+                                                        "Pull ins [%s] CONFLICT: %s-M also taken, skipping",
+                                                        table, original_num,
+                                                    )
+                                                    errors += 1
+                                            except Exception as retry_e:
+                                                log.warning("Pull ins [%s] conflict retry: %s", table, retry_e)
+                                                errors += 1
+                                            break
+                                    if not resolved:
+                                        log.warning(
+                                            "Pull ins [%s] IGNORED sync_uuid=%s (unique constraint, unresolved)",
+                                            table, sync_uuid,
+                                        )
+                                        errors += 1
                         except Exception as e:
                             log.warning("Pull ins [%s] sync_uuid=%s: %s", table, sync_uuid, e)
                             errors += 1
                     else:
-                        # Existing row — update if cloud version is newer
+                        # Existing row — always fix remapped FK columns (heals orphaned child rows
+                        # from a prior failed sync), then do a full data update if cloud is newer.
                         local_id = local_synced[sync_uuid]["id"]
                         if sb_id is not None:
                             id_map[table][sb_id] = local_id
+
+                        if remapped_fks:
+                            try:
+                                set_clause = ", ".join(f"{k}=?" for k in remapped_fks)
+                                con.execute(
+                                    f"UPDATE {table} SET {set_clause} WHERE id=?",
+                                    list(remapped_fks.values()) + [local_id],
+                                )
+                                log.info("Pull fk-fix [%s] id=%s: %s", table, local_id, remapped_fks)
+                            except Exception as e:
+                                log.warning("Pull fk-fix [%s] id=%s: %s", table, local_id, e)
+
                         cloud_ts = cloud_row.get("updated_at") or ""
                         local_ts = local_synced[sync_uuid]["updated_at"]
                         if cloud_ts > local_ts:
