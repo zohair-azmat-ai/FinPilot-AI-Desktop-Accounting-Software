@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from database import get_db
 import models, schemas
 from pdf_generator import generate_invoice_pdf
@@ -101,9 +101,12 @@ def _update_ledger(db: Session, invoice: models.Invoice):
         e.balance = running
 
 
+_active = lambda: models.Invoice.deleted_at.is_(None)
+
+
 @router.get("/", response_model=List[schemas.InvoiceOut])
 def list_invoices(status: Optional[str] = None, customer_id: Optional[int] = None, db: Session = Depends(get_db)):
-    q = db.query(models.Invoice)
+    q = db.query(models.Invoice).filter(_active())
     if status:
         q = q.filter(models.Invoice.status == status)
     if customer_id:
@@ -113,7 +116,7 @@ def list_invoices(status: Optional[str] = None, customer_id: Optional[int] = Non
 
 @router.get("/{invoice_id}", response_model=schemas.InvoiceOut)
 def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
-    inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
+    inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id, _active()).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
     return inv
@@ -233,37 +236,13 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
 
 @router.delete("/{invoice_id}")
 def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
-    inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
+    inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id, _active()).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # 1. Remove payment allocations pointing at this invoice
-    db.query(models.PaymentAllocation).filter(
-        models.PaymentAllocation.invoice_id == invoice_id
-    ).delete(synchronize_session=False)
-
-    # 2. Nullify the legacy invoice_id on Payments (don't delete the payment itself)
-    db.query(models.Payment).filter(
-        models.Payment.invoice_id == invoice_id
-    ).update({"invoice_id": None}, synchronize_session=False)
-
-    # 3. Nullify invoice_id on BankTransactions
-    db.query(models.BankTransaction).filter(
-        models.BankTransaction.invoice_id == invoice_id
-    ).update({"invoice_id": None}, synchronize_session=False)
-
-    # 4. Delete ledger entries for this invoice
-    db.query(models.LedgerEntry).filter(
-        models.LedgerEntry.invoice_id == invoice_id
-    ).delete(synchronize_session=False)
-
-    # 5. Delete invoice items explicitly (cascade handles this too, but be explicit)
-    db.query(models.InvoiceItem).filter(
-        models.InvoiceItem.invoice_id == invoice_id
-    ).delete(synchronize_session=False)
-
-    # 6. Delete the invoice
-    db.delete(inv)
+    now = datetime.now(timezone.utc).isoformat()
+    inv.deleted_at = now
+    inv.updated_at = now if hasattr(inv, "updated_at") else None
     db.commit()
     return {"ok": True, "deleted_id": invoice_id}
 

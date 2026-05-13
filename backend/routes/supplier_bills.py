@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from database import get_db
 import models, schemas
 from pdf_generator import generate_supplier_bill_pdf
@@ -52,9 +52,12 @@ def _calc_items(items_data, vat_rate=5.0):
     return processed, round(subtotal, 2), round(vat_total, 2)
 
 
+_active = lambda: models.SupplierBill.deleted_at.is_(None)
+
+
 @router.get("/", response_model=List[schemas.SupplierBillOut])
 def list_supplier_bills(supplier_id: Optional[int] = None, db: Session = Depends(get_db)):
-    q = db.query(models.SupplierBill)
+    q = db.query(models.SupplierBill).filter(_active())
     if supplier_id:
         q = q.filter(models.SupplierBill.supplier_id == supplier_id)
     return q.order_by(models.SupplierBill.id.desc()).all()
@@ -62,7 +65,7 @@ def list_supplier_bills(supplier_id: Optional[int] = None, db: Session = Depends
 
 @router.get("/{bill_id}", response_model=schemas.SupplierBillOut)
 def get_supplier_bill(bill_id: int, db: Session = Depends(get_db)):
-    bill = db.query(models.SupplierBill).filter(models.SupplierBill.id == bill_id).first()
+    bill = db.query(models.SupplierBill).filter(models.SupplierBill.id == bill_id, _active()).first()
     if not bill:
         raise HTTPException(status_code=404, detail="Supplier bill not found")
     return bill
@@ -157,13 +160,10 @@ def update_supplier_bill(bill_id: int, data: schemas.SupplierBillCreate, db: Ses
 
 @router.delete("/{bill_id}")
 def delete_supplier_bill(bill_id: int, db: Session = Depends(get_db)):
-    bill = db.query(models.SupplierBill).filter(models.SupplierBill.id == bill_id).first()
+    bill = db.query(models.SupplierBill).filter(models.SupplierBill.id == bill_id, _active()).first()
     if not bill:
         raise HTTPException(status_code=404, detail="Supplier bill not found")
-    db.query(models.SupplierPaymentAllocation).filter(
-        models.SupplierPaymentAllocation.bill_id == bill_id
-    ).delete(synchronize_session=False)
-    db.delete(bill)
+    bill.deleted_at = datetime.now(timezone.utc).isoformat()
     db.commit()
     return {"ok": True}
 

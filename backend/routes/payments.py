@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from database import get_db
 import models, schemas
 from pdf_generator import generate_payment_voucher_pdf, generate_receipt_voucher_pdf
@@ -57,6 +57,9 @@ def _recalc_bank_balances(db: Session, bank_account_id: int):
     _recalc_balances(db, bank_account_id)
 
 
+_active = lambda: models.Payment.deleted_at.is_(None)
+
+
 @router.get("/", response_model=List[schemas.PaymentOut])
 def list_payments(
     customer_id: Optional[int] = None,
@@ -64,7 +67,7 @@ def list_payments(
     payment_direction: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    q = db.query(models.Payment)
+    q = db.query(models.Payment).filter(_active())
     if customer_id:
         q = q.filter(models.Payment.customer_id == customer_id)
     if supplier_id:
@@ -76,7 +79,7 @@ def list_payments(
 
 @router.get("/{payment_id}", response_model=schemas.PaymentOut)
 def get_payment(payment_id: int, db: Session = Depends(get_db)):
-    p = db.query(models.Payment).filter(models.Payment.id == payment_id).first()
+    p = db.query(models.Payment).filter(models.Payment.id == payment_id, _active()).first()
     if not p:
         raise HTTPException(status_code=404, detail="Payment not found")
     return p
@@ -200,7 +203,7 @@ def create_payment(data: schemas.PaymentCreate, db: Session = Depends(get_db)):
 
 @router.delete("/{payment_id}")
 def delete_payment(payment_id: int, db: Session = Depends(get_db)):
-    p = db.query(models.Payment).filter(models.Payment.id == payment_id).first()
+    p = db.query(models.Payment).filter(models.Payment.id == payment_id, _active()).first()
     if not p:
         raise HTTPException(status_code=404, detail="Payment not found")
 
@@ -223,11 +226,8 @@ def delete_payment(payment_id: int, db: Session = Depends(get_db)):
     payment_number = p.payment_number
     payment_direction = p.payment_direction
 
+    # Remove ledger entries and auto-created bank transaction (financial reversal)
     db.query(models.LedgerEntry).filter(models.LedgerEntry.payment_id == payment_id).delete()
-    db.delete(p)
-    db.flush()
-
-    # Remove auto-created bank transaction for this payment
     if bank_account_id:
         expected_desc = f"{'Receipt' if payment_direction == 'received' else 'Payment'} - {payment_number}"
         orphan_txn = db.query(models.BankTransaction).filter(
@@ -236,7 +236,7 @@ def delete_payment(payment_id: int, db: Session = Depends(get_db)):
         ).first()
         if orphan_txn:
             db.delete(orphan_txn)
-            db.flush()
+    db.flush()
 
     if customer_id:
         _recalc_ledger_for_customer(db, customer_id)
@@ -246,6 +246,8 @@ def delete_payment(payment_id: int, db: Session = Depends(get_db)):
         from routes.bank_transactions import _recalc_balances
         _recalc_balances(db, bank_account_id)
 
+    # Soft-delete: keep row in DB so sync can propagate the deletion to other devices
+    p.deleted_at = datetime.now(timezone.utc).isoformat()
     db.commit()
     return {"ok": True}
 

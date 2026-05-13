@@ -354,6 +354,11 @@ class SyncEngine(threading.Thread):
                                 filtered[fk_col] = local_parent_id
 
                     if sync_uuid not in local_synced:
+                        # Skip cloud rows that were already deleted — no point inserting
+                        # a record only to soft-delete it immediately.
+                        if cloud_row.get("deleted_at"):
+                            continue
+
                         # New row from cloud — strip 'id' to avoid PK conflicts;
                         # SQLite auto-assigns a safe local id via rowid.
                         # Also coerce None to column defaults for non-nullable columns so

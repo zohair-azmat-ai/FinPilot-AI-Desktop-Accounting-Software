@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 from database import get_db
 import models, schemas
 from pdf_generator import generate_quotation_pdf
@@ -59,14 +59,17 @@ def _calculate_items(items_data, vat_rate=5.0):
     return processed, round(subtotal, 2), round(vat_total, 2)
 
 
+_active = lambda: models.Quotation.deleted_at.is_(None)
+
+
 @router.get("/", response_model=List[schemas.QuotationOut])
 def list_quotations(db: Session = Depends(get_db)):
-    return db.query(models.Quotation).order_by(models.Quotation.id.desc()).all()
+    return db.query(models.Quotation).filter(_active()).order_by(models.Quotation.id.desc()).all()
 
 
 @router.get("/{quotation_id}", response_model=schemas.QuotationOut)
 def get_quotation(quotation_id: int, db: Session = Depends(get_db)):
-    q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id).first()
+    q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id, _active()).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
     return q
@@ -230,10 +233,11 @@ def update_quotation(quotation_id: int, data: schemas.QuotationCreate, db: Sessi
 
 @router.delete("/{quotation_id}")
 def delete_quotation(quotation_id: int, db: Session = Depends(get_db)):
-    q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id).first()
+    q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id, _active()).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
-    db.delete(q)
+    now = datetime.now(timezone.utc).isoformat()
+    q.deleted_at = now
     db.commit()
     return {"ok": True}
 

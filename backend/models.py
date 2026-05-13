@@ -40,6 +40,7 @@ class Customer(Base):
     po_box = Column(String, nullable=True, default="")
     opening_balance = Column(Float, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow)
+    deleted_at = Column(String, nullable=True, default=None)
 
     invoices = relationship("Invoice", back_populates="customer")
     payments = relationship("Payment", back_populates="customer")
@@ -57,6 +58,7 @@ class Supplier(Base):
     address = Column(Text, default="")
     opening_balance = Column(Float, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow)
+    deleted_at = Column(String, nullable=True, default=None)
 
     payments = relationship("Payment", back_populates="supplier")
     bills = relationship("SupplierBill", back_populates="supplier", cascade="all, delete-orphan")
@@ -93,6 +95,8 @@ class Quotation(Base):
     letterhead = Column(Boolean, default=True)
     converted_to_invoice = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    deleted_at = Column(String, nullable=True, default=None)
 
     customer = relationship("Customer")
     items = relationship("QuotationItem", back_populates="quotation", cascade="all, delete-orphan")
@@ -138,6 +142,8 @@ class Invoice(Base):
     require_customer_signature = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    deleted_at = Column(String, nullable=True, default=None)
+
     customer = relationship("Customer", back_populates="invoices")
     items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
     payments = relationship("Payment", back_populates="invoice")
@@ -176,6 +182,8 @@ class Payment(Base):
     reference = Column(String, default="")
     notes = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    deleted_at = Column(String, nullable=True, default=None)
 
     customer = relationship("Customer", back_populates="payments")
     supplier = relationship("Supplier", back_populates="payments")
@@ -291,6 +299,8 @@ class DeliveryNote(Base):
     letterhead = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    deleted_at = Column(String, nullable=True, default=None)
+
     customer = relationship("Customer")
     items = relationship("DeliveryNoteItem", back_populates="delivery_note", cascade="all, delete-orphan")
 
@@ -323,6 +333,8 @@ class PurchaseOrder(Base):
     letterhead = Column(Boolean, default=True)
     status = Column(String, default="draft")  # draft, sent, received
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    deleted_at = Column(String, nullable=True, default=None)
 
     supplier = relationship("Supplier")
     items = relationship("PurchaseOrderItem", back_populates="po", cascade="all, delete-orphan")
@@ -359,6 +371,8 @@ class SupplierBill(Base):
     balance_due = Column(Float, default=0.0)
     status = Column(String, default="unpaid")  # unpaid, partial, paid
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    deleted_at = Column(String, nullable=True, default=None)
 
     supplier = relationship("Supplier", back_populates="bills")
     items = relationship("SupplierBillItem", back_populates="bill", cascade="all, delete-orphan")

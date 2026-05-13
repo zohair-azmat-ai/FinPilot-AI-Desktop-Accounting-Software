@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from database import get_db
 import models, schemas
 from pdf_generator import generate_po_pdf
@@ -50,9 +50,12 @@ def _calc_items(items_payload, vat_rate: float = 5.0):
     return round(subtotal, 2), round(vat_total, 2), round(subtotal + vat_total, 2), built
 
 
+_active = lambda: models.PurchaseOrder.deleted_at.is_(None)
+
+
 @router.get("/", response_model=List[schemas.PurchaseOrderOut])
 def list_pos(supplier_id: Optional[int] = None, db: Session = Depends(get_db)):
-    q = db.query(models.PurchaseOrder)
+    q = db.query(models.PurchaseOrder).filter(_active())
     if supplier_id:
         q = q.filter(models.PurchaseOrder.supplier_id == supplier_id)
     return q.order_by(models.PurchaseOrder.id.desc()).all()
@@ -60,7 +63,7 @@ def list_pos(supplier_id: Optional[int] = None, db: Session = Depends(get_db)):
 
 @router.get("/{po_id}", response_model=schemas.PurchaseOrderOut)
 def get_po(po_id: int, db: Session = Depends(get_db)):
-    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id).first()
+    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id, _active()).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
     return po
@@ -149,10 +152,10 @@ def update_po(po_id: int, payload: schemas.PurchaseOrderUpdate, db: Session = De
 
 @router.delete("/{po_id}")
 def delete_po(po_id: int, db: Session = Depends(get_db)):
-    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id).first()
+    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id, _active()).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    db.delete(po)
+    po.deleted_at = datetime.now(timezone.utc).isoformat()
     db.commit()
     return {"ok": True}
 

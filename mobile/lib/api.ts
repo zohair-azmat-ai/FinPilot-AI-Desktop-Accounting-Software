@@ -78,6 +78,7 @@ export async function getCustomers() {
     select: 'id,name,phone,email,trn,address,po_box,opening_balance',
     order: 'name.asc',
     limit: '500',
+    deleted_at: 'is.null',
   });
 }
 export async function getCustomer(id: number) {
@@ -91,6 +92,7 @@ export async function getSuppliers() {
     select: 'id,name,phone,email,trn,address,opening_balance',
     order: 'name.asc',
     limit: '500',
+    deleted_at: 'is.null',
   });
 }
 export async function getSupplier(id: number) {
@@ -104,6 +106,7 @@ export async function getInvoices(status?: string) {
     select: 'id,invoice_number,date,due_date,total,amount_paid,balance_due,status,customer_id',
     order: 'date.desc',
     limit: '500',
+    deleted_at: 'is.null',
   };
   if (status && status !== 'all') params.status = `eq.${status}`;
   return pg<any>('invoices', params);
@@ -125,6 +128,7 @@ export async function getInvoicesByCustomer(customerId: number) {
     select: 'id,invoice_number,date,total,balance_due,status',
     order: 'date.desc',
     limit: '200',
+    deleted_at: 'is.null',
   });
 }
 
@@ -134,6 +138,7 @@ export async function getQuotations() {
     select: 'id,quotation_number,date,valid_until,total,status,customer_id,converted_to_invoice',
     order: 'date.desc',
     limit: '500',
+    deleted_at: 'is.null',
   });
 }
 export async function getQuotation(id: number) {
@@ -167,6 +172,7 @@ export async function getDeliveryNotes() {
     select: 'id,dn_number,date,status,customer_id',
     order: 'date.desc',
     limit: '500',
+    deleted_at: 'is.null',
   });
 }
 export async function getDeliveryNote(id: number) {
@@ -200,6 +206,7 @@ export async function getPurchaseOrders() {
     select: 'id,po_number,date,total,status,supplier_id',
     order: 'date.desc',
     limit: '500',
+    deleted_at: 'is.null',
   });
 }
 export async function getPurchaseOrder(id: number) {
@@ -233,6 +240,7 @@ export async function getSupplierBills(supplierId?: number) {
     select: 'id,bill_number,date,due_date,total,amount_paid,balance_due,status,supplier_id',
     order: 'date.desc',
     limit: '500',
+    deleted_at: 'is.null',
   };
   if (supplierId) params.supplier_id = `eq.${supplierId}`;
   return pg<any>('supplier_bills', params);
@@ -275,6 +283,7 @@ export async function getPayments(customerId?: number) {
     select: 'id,payment_number,date,amount,method,payment_direction,customer_id,supplier_id,reference',
     order: 'date.desc',
     limit: '500',
+    deleted_at: 'is.null',
   };
   if (customerId) params.customer_id = `eq.${customerId}`;
   return pg<any>('payments', params);
@@ -296,8 +305,9 @@ export async function getDashboard() {
     pg<any>('invoices', {
       select: 'id,sync_uuid,invoice_number,total,amount_paid,balance_due,status,date,customer_id',
       order: 'id.desc',
+      deleted_at: 'is.null',
     }),
-    pg<any>('supplier_bills', { select: 'total,balance_due,status' }),
+    pg<any>('supplier_bills', { select: 'total,balance_due,status', deleted_at: 'is.null' }),
   ]);
 
   const mm = new Date().toISOString().slice(0, 7);
@@ -318,8 +328,8 @@ export async function getDashboard() {
 // ── Reports ───────────────────────────────────────────────────────────────────
 export async function getReports() {
   const [invoices, payments, expenses] = await Promise.all([
-    pg<any>('invoices', { select: 'total,amount_paid,date,status' }),
-    pg<any>('payments', { select: 'amount,date', payment_direction: 'eq.received' }),
+    pg<any>('invoices', { select: 'total,amount_paid,date,status', deleted_at: 'is.null' }),
+    pg<any>('payments', { select: 'amount,date', payment_direction: 'eq.received', deleted_at: 'is.null' }),
     pg<any>('expenses', { select: 'amount,date,category' }),
   ]);
 
@@ -395,6 +405,12 @@ async function pgDelete(table: string, id: number): Promise<void> {
     try { const e = await res.json(); msg = e.message || e.details || msg; } catch {}
     throw new Error(msg);
   }
+}
+
+// Soft-delete: set deleted_at + updated_at so the row is filtered from all UIs
+// but still syncs to other devices so they can hide it too.
+async function pgSoftDelete(table: string, id: number): Promise<void> {
+  return pgPatch(table, id, { deleted_at: isoNow(), updated_at: isoNow() });
 }
 
 async function pgDeleteWhere(table: string, extra: Record<string, string>): Promise<void> {
@@ -474,7 +490,7 @@ export async function updateCustomer(id: number, d: {
 }
 
 export async function deleteCustomer(id: number) {
-  return pgDelete('customers', id);
+  return pgSoftDelete('customers', id);
 }
 
 // ── Invoice CRUD ──────────────────────────────────────────────────────────────
@@ -580,9 +596,7 @@ export async function updateInvoice(
 }
 
 export async function deleteInvoice(id: number) {
-  if (!_cfg) throw new Error('Not connected');
-  await pgDeleteWhere('invoice_items', { invoice_id: `eq.${id}` });
-  await pgDelete('invoices', id);
+  return pgSoftDelete('invoices', id);
 }
 
 // ── Quotation CRUD ────────────────────────────────────────────────────────────
@@ -662,9 +676,7 @@ export async function updateQuotation(
 }
 
 export async function deleteQuotation(id: number) {
-  if (!_cfg) throw new Error('Not connected');
-  await pgDeleteWhere('quotation_items', { quotation_id: `eq.${id}` });
-  await pgDelete('quotations', id);
+  return pgSoftDelete('quotations', id);
 }
 
 // ── Delivery Note CRUD ────────────────────────────────────────────────────────
@@ -727,9 +739,7 @@ export async function updateDeliveryNote(
 }
 
 export async function deleteDeliveryNote(id: number) {
-  if (!_cfg) throw new Error('Not connected');
-  await pgDeleteWhere('delivery_note_items', { dn_id: `eq.${id}` });
-  await pgDelete('delivery_notes', id);
+  return pgSoftDelete('delivery_notes', id);
 }
 
 // ── Purchase Order CRUD ───────────────────────────────────────────────────────
@@ -805,9 +815,7 @@ export async function updatePurchaseOrder(
 }
 
 export async function deletePurchaseOrder(id: number) {
-  if (!_cfg) throw new Error('Not connected');
-  await pgDeleteWhere('purchase_order_items', { po_id: `eq.${id}` });
-  await pgDelete('purchase_orders', id);
+  return pgSoftDelete('purchase_orders', id);
 }
 
 // ── Supplier Bill CRUD ────────────────────────────────────────────────────────
@@ -879,9 +887,7 @@ export async function updateSupplierBill(
 }
 
 export async function deleteSupplierBill(id: number) {
-  if (!_cfg) throw new Error('Not connected');
-  await pgDeleteWhere('supplier_bill_items', { bill_id: `eq.${id}` });
-  await pgDelete('supplier_bills', id);
+  return pgSoftDelete('supplier_bills', id);
 }
 
 // ── Customer Payment CRUD ─────────────────────────────────────────────────────
@@ -926,7 +932,7 @@ export async function createPayment(p: {
 }
 
 export async function deletePayment(id: number) {
-  return pgDelete('payments', id);
+  return pgSoftDelete('payments', id);
 }
 
 // ── Supplier Payment CRUD ─────────────────────────────────────────────────────

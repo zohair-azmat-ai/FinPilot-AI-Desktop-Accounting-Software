@@ -2,10 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List
+from datetime import datetime, timezone
 from database import get_db
 import models, schemas
 
 router = APIRouter(prefix="/api/suppliers", tags=["suppliers"])
+
+_active = lambda: models.Supplier.deleted_at.is_(None)
 
 
 def _current_balance(supplier: models.Supplier, db: Session) -> float:
@@ -19,7 +22,7 @@ def _current_balance(supplier: models.Supplier, db: Session) -> float:
 
 @router.get("/", response_model=List[schemas.SupplierWithBalance])
 def list_suppliers(db: Session = Depends(get_db)):
-    suppliers = db.query(models.Supplier).order_by(models.Supplier.name).all()
+    suppliers = db.query(models.Supplier).filter(_active()).order_by(models.Supplier.name).all()
     result = []
     for s in suppliers:
         d = {c.name: getattr(s, c.name) for c in s.__table__.columns}
@@ -30,7 +33,7 @@ def list_suppliers(db: Session = Depends(get_db)):
 
 @router.get("/{supplier_id}", response_model=schemas.SupplierWithBalance)
 def get_supplier(supplier_id: int, db: Session = Depends(get_db)):
-    s = db.query(models.Supplier).filter(models.Supplier.id == supplier_id).first()
+    s = db.query(models.Supplier).filter(models.Supplier.id == supplier_id, _active()).first()
     if not s:
         raise HTTPException(status_code=404, detail="Supplier not found")
     d = {c.name: getattr(s, c.name) for c in s.__table__.columns}
@@ -49,7 +52,7 @@ def create_supplier(data: schemas.SupplierCreate, db: Session = Depends(get_db))
 
 @router.put("/{supplier_id}", response_model=schemas.Supplier)
 def update_supplier(supplier_id: int, data: schemas.SupplierCreate, db: Session = Depends(get_db)):
-    s = db.query(models.Supplier).filter(models.Supplier.id == supplier_id).first()
+    s = db.query(models.Supplier).filter(models.Supplier.id == supplier_id, _active()).first()
     if not s:
         raise HTTPException(status_code=404, detail="Supplier not found")
     for key, value in data.model_dump().items():
@@ -61,9 +64,9 @@ def update_supplier(supplier_id: int, data: schemas.SupplierCreate, db: Session 
 
 @router.delete("/{supplier_id}")
 def delete_supplier(supplier_id: int, db: Session = Depends(get_db)):
-    s = db.query(models.Supplier).filter(models.Supplier.id == supplier_id).first()
+    s = db.query(models.Supplier).filter(models.Supplier.id == supplier_id, _active()).first()
     if not s:
         raise HTTPException(status_code=404, detail="Supplier not found")
-    db.delete(s)
+    s.deleted_at = datetime.now(timezone.utc).isoformat()
     db.commit()
     return {"ok": True}

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from database import get_db
 import models, schemas
 from pdf_generator import generate_delivery_note_pdf
@@ -45,12 +45,15 @@ def _increment_dn_counter(db: Session) -> None:
     pass
 
 
+_active = lambda: models.DeliveryNote.deleted_at.is_(None)
+
+
 @router.get("/", response_model=List[schemas.DeliveryNoteOut])
 def list_delivery_notes(
     customer_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    q = db.query(models.DeliveryNote)
+    q = db.query(models.DeliveryNote).filter(_active())
     if customer_id:
         q = q.filter(models.DeliveryNote.customer_id == customer_id)
     return q.order_by(models.DeliveryNote.id.desc()).all()
@@ -58,7 +61,7 @@ def list_delivery_notes(
 
 @router.get("/{dn_id}", response_model=schemas.DeliveryNoteOut)
 def get_delivery_note(dn_id: int, db: Session = Depends(get_db)):
-    dn = db.query(models.DeliveryNote).filter(models.DeliveryNote.id == dn_id).first()
+    dn = db.query(models.DeliveryNote).filter(models.DeliveryNote.id == dn_id, _active()).first()
     if not dn:
         raise HTTPException(status_code=404, detail="Delivery note not found")
     return dn
@@ -125,12 +128,12 @@ def update_delivery_note(dn_id: int, payload: schemas.DeliveryNoteUpdate, db: Se
 
 @router.delete("/{dn_id}")
 def delete_delivery_note(dn_id: int, db: Session = Depends(get_db)):
-    dn = db.query(models.DeliveryNote).filter(models.DeliveryNote.id == dn_id).first()
+    dn = db.query(models.DeliveryNote).filter(models.DeliveryNote.id == dn_id, _active()).first()
     if not dn:
         raise HTTPException(status_code=404, detail="Delivery note not found")
-    db.delete(dn)
+    dn.deleted_at = datetime.now(timezone.utc).isoformat()
     db.commit()
-    return {"message": "Delivery note deleted"}
+    return {"ok": True}
 
 
 @router.get("/{dn_id}/pdf")
