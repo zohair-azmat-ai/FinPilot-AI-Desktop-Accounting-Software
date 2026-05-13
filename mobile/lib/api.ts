@@ -293,7 +293,10 @@ export async function getLedgerEntries(customerId: number) {
 export async function getDashboard() {
   const [company, invoices, bills] = await Promise.all([
     pg<any>('companies', { limit: '1' }),
-    pg<any>('invoices', { select: 'total,amount_paid,balance_due,status,date,customer_id' }),
+    pg<any>('invoices', {
+      select: 'id,sync_uuid,invoice_number,total,amount_paid,balance_due,status,date,customer_id',
+      order: 'id.desc',
+    }),
     pg<any>('supplier_bills', { select: 'total,balance_due,status' }),
   ]);
 

@@ -75,11 +75,13 @@ export default function DashboardScreen() {
                 <Text style={s.seeAll}>See all</Text>
               </TouchableOpacity>
             </View>
-            {data.recentInvoices.map((inv: any) => (
+            {data.recentInvoices.map((inv: any, idx: number) => (
               <TouchableOpacity
-                key={inv.id}
+                key={inv.sync_uuid || String(inv.id) || inv.invoice_number || String(idx)}
                 style={s.invRow}
-                onPress={() => router.push(`/(app)/invoices/${inv.id}`)}
+                onPress={() => router.push(
+                  `/(app)/invoices/${encodeURIComponent(inv.invoice_number || inv.id)}?num=${encodeURIComponent(inv.invoice_number ?? '')}`
+                )}
               >
                 <View style={{ flex: 1 }}>
                   <Text style={s.invNum}>{inv.invoice_number}</Text>

@@ -37,6 +37,13 @@ def restore():
     return sync_engine.restore_from_cloud(DB_PATH)
 
 
+@router.get("/sync/log")
+def sync_log():
+    """Return the per-table pull log from the last sync run."""
+    status = sync_engine.get_status()
+    return {"pull_log": status.get("last_pull_log") or {}}
+
+
 @router.get("/schema")
 def schema():
     return {"sql": sync_engine.get_schema_sql(DB_PATH)}

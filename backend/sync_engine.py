@@ -25,9 +25,49 @@ SYNC_TABLES = [
     "expenses",
 ]
 
+# FK column → parent table for each child table.
+# Used during pull to remap Supabase parent ids to local SQLite ids.
+_FK_REMAP: dict = {
+    "quotation_items":              [("quotation_id",    "quotations")],
+    "invoice_items":                [("invoice_id",      "invoices")],
+    "payment_allocations":          [("payment_id",      "payments"),
+                                     ("invoice_id",      "invoices")],
+    "ledger_entries":               [("customer_id",     "customers"),
+                                     ("supplier_id",     "suppliers"),
+                                     ("invoice_id",      "invoices"),
+                                     ("payment_id",      "payments")],
+    "bank_transactions":            [("bank_account_id", "bank_accounts"),
+                                     ("customer_id",     "customers"),
+                                     ("supplier_id",     "suppliers"),
+                                     ("invoice_id",      "invoices"),
+                                     ("cheque_id",       "cheques")],
+    "cheques":                      [("bank_account_id", "bank_accounts"),
+                                     ("customer_id",     "customers"),
+                                     ("supplier_id",     "suppliers")],
+    "delivery_note_items":          [("dn_id",           "delivery_notes")],
+    "purchase_order_items":         [("po_id",           "purchase_orders")],
+    "supplier_bill_items":          [("bill_id",         "supplier_bills")],
+    "supplier_payment_allocations": [("payment_id",      "supplier_payments"),
+                                     ("bill_id",         "supplier_bills")],
+    "expenses":                     [("bank_account_id", "bank_accounts"),
+                                     ("supplier_id",     "suppliers")],
+    "payments":                     [("customer_id",     "customers"),
+                                     ("supplier_id",     "suppliers"),
+                                     ("bank_account_id", "bank_accounts"),
+                                     ("invoice_id",      "invoices")],
+    "supplier_bills":               [("supplier_id",     "suppliers")],
+    "supplier_payments":            [("supplier_id",     "suppliers")],
+    "invoices":                     [("customer_id",     "customers"),
+                                     ("quotation_id",    "quotations")],
+    "quotations":                   [("customer_id",     "customers")],
+    "delivery_notes":               [("customer_id",     "customers")],
+    "purchase_orders":              [("supplier_id",     "suppliers")],
+}
+
 _status: dict = {
     "state": "offline",
     "last_sync": None,
+    "last_pull_log": None,
     "error": None,
     "connected": False,
     "workspace_id": None,
@@ -160,15 +200,19 @@ class SyncEngine(threading.Thread):
         try:
             client = SupabaseClient(creds["url"], creds["anon_key"], creds["workspace_id"])
             _status["state"] = "syncing"
-            # Pull first so mobile deletes are reflected before we push back
             con = sqlite3.connect(self.db_path)
             con.row_factory = sqlite3.Row
             try:
-                self._pull_mobile_rows(con, client)
+                pull_log = self._pull_mobile_rows(con, client)
             finally:
                 con.close()
             self._push_all(client)
-            _status.update(state="synced", last_sync=datetime.now(timezone.utc).isoformat(), error=None)
+            _status.update(
+                state="synced",
+                last_sync=datetime.now(timezone.utc).isoformat(),
+                last_pull_log=pull_log,
+                error=None,
+            )
         except Exception as e:
             _status.update(state="error", error=str(e)[:300])
             log.warning("Sync tick error: %s", e)
@@ -210,15 +254,23 @@ class SyncEngine(threading.Thread):
 
         client.upsert(table, rows)
 
-    def _pull_mobile_rows(self, con: sqlite3.Connection, client: "SupabaseClient") -> None:
-        """Merge Supabase → local SQLite: insert mobile-created, update mobile-edited,
-        delete mobile-deleted rows.  Must run BEFORE _push_all so deleted rows are not
-        re-pushed.  Only touches rows that already have a sync_uuid (i.e. were synced
-        at least once); new local rows (sync_uuid IS NULL) are left to the push step.
-        Guard: skips deletions for a table if Supabase returned 0 rows — this prevents
-        a network failure from wiping local data.
+    def _pull_mobile_rows(self, con: sqlite3.Connection, client: "SupabaseClient") -> dict:
+        """Merge Supabase → local SQLite.
+
+        Key behaviours:
+        - Strips 'id' from new rows and lets SQLite auto-assign to avoid PK conflicts
+          when Supabase id (possibly a large timestamp from mobile) collides with a
+          desktop-created row's id.
+        - Builds id_map {table: {supabase_id: local_id}} as parent tables are processed
+          so child-table FK columns are remapped to correct local ids before insert.
+        - Returns a per-table sync log {table: {pulled,inserted,updated,deleted,errors}}.
         """
+        id_map: dict = {}      # {table: {supabase_id: local_id}}
+        sync_log: dict = {}
+
         for table in SYNC_TABLES:
+            pulled = inserted = updated = deleted = errors = 0
+            id_map.setdefault(table, {})
             try:
                 cur = con.cursor()
                 cur.execute(f"PRAGMA table_info({table})")
@@ -229,7 +281,7 @@ class SyncEngine(threading.Thread):
                 if "sync_uuid" not in local_cols:
                     continue
 
-                # Local rows already synced at least once
+                # Local rows that have been synced at least once
                 cur.execute(
                     f"SELECT id, sync_uuid, updated_at FROM {table} WHERE sync_uuid IS NOT NULL"
                 )
@@ -238,27 +290,44 @@ class SyncEngine(threading.Thread):
                     for r in cur.fetchall()
                 }
 
-                # Fetch this workspace's rows from Supabase
+                # Fetch from Supabase
                 try:
                     cloud_rows = client.fetch_all(table)
+                    pulled = len(cloud_rows)
                 except Exception as e:
                     log.warning("Pull fetch [%s]: %s", table, e)
+                    sync_log[table] = {"pulled": 0, "inserted": 0, "updated": 0, "deleted": 0, "errors": 1}
                     continue
 
                 cloud_by_uuid = {
                     r["sync_uuid"]: r for r in cloud_rows if r.get("sync_uuid")
                 }
 
-                # Deletion diff — only run when Supabase has rows (non-empty guard)
+                # Pre-populate id_map for rows already in local (desktop-origin).
+                # Their Supabase 'id' was pushed from desktop so it equals local 'id'.
+                for sync_uuid, cloud_row in cloud_by_uuid.items():
+                    if sync_uuid in local_synced:
+                        sb_id = cloud_row.get("id")
+                        local_id = local_synced[sync_uuid]["id"]
+                        if sb_id is not None:
+                            id_map[table][sb_id] = local_id
+
+                # Deletion diff — guard: skip if Supabase returned nothing (network safety)
                 if cloud_by_uuid:
                     for sync_uuid, local in list(local_synced.items()):
                         if sync_uuid not in cloud_by_uuid:
-                            con.execute(
-                                f"DELETE FROM {table} WHERE id = ?", (local["id"],)
-                            )
-                            log.debug("Pull del [%s] uuid=%s", table, sync_uuid)
+                            try:
+                                con.execute(
+                                    f"DELETE FROM {table} WHERE id = ?", (local["id"],)
+                                )
+                                deleted += 1
+                                log.debug("Pull del [%s] id=%s", table, local["id"])
+                            except Exception as e:
+                                log.warning("Pull del [%s] id=%s: %s", table, local["id"], e)
+                                errors += 1
 
-                # Insert new / update stale rows from cloud
+                fk_remaps = _FK_REMAP.get(table, [])
+
                 for sync_uuid, cloud_row in cloud_by_uuid.items():
                     filtered = {
                         k: v for k, v in cloud_row.items()
@@ -266,17 +335,62 @@ class SyncEngine(threading.Thread):
                     }
                     if not filtered:
                         continue
+
+                    sb_id = cloud_row.get("id")
+
+                    # Remap FK columns so child rows link to local parent ids, not Supabase ids
+                    for fk_col, parent_table in fk_remaps:
+                        if fk_col in filtered and filtered[fk_col] is not None:
+                            sb_parent_id = filtered[fk_col]
+                            local_parent_id = id_map.get(parent_table, {}).get(sb_parent_id)
+                            if local_parent_id is not None and local_parent_id != sb_parent_id:
+                                filtered[fk_col] = local_parent_id
+
                     if sync_uuid not in local_synced:
-                        cols = list(filtered.keys())
+                        # New row from cloud — strip 'id' to avoid PK conflicts;
+                        # SQLite auto-assigns a safe local id via rowid.
+                        new_row = {k: v for k, v in filtered.items() if k != "id"}
+                        cols = list(new_row.keys())
+                        if not cols:
+                            continue
                         try:
-                            con.execute(
+                            cur2 = con.cursor()
+                            cur2.execute(
                                 f"INSERT OR IGNORE INTO {table} ({','.join(cols)}) "
                                 f"VALUES ({','.join('?' * len(cols))})",
-                                [filtered[c] for c in cols],
+                                [new_row[c] for c in cols],
                             )
+                            if cur2.rowcount > 0:
+                                local_id = cur2.lastrowid
+                                if sb_id is not None:
+                                    id_map[table][sb_id] = local_id
+                                inserted += 1
+                                log.info("Pull ins [%s] sb=%s → local=%s num=%s",
+                                         table, sb_id, local_id,
+                                         filtered.get("invoice_number") or
+                                         filtered.get("quotation_number") or
+                                         filtered.get("dn_number") or
+                                         filtered.get("po_number") or "")
+                            else:
+                                # IGNORE triggered (unique constraint on doc number?)
+                                # Try to find it and still track the id
+                                existing = con.execute(
+                                    f"SELECT id FROM {table} WHERE sync_uuid = ?", (sync_uuid,)
+                                ).fetchone()
+                                if existing:
+                                    local_id = existing[0]
+                                    if sb_id is not None:
+                                        id_map[table][sb_id] = local_id
+                                log.warning("Pull ins [%s] IGNORED sync_uuid=%s (unique constraint?)", table, sync_uuid)
+                                errors += 1
                         except Exception as e:
-                            log.warning("Pull ins [%s]: %s", table, e)
+                            log.warning("Pull ins [%s] sync_uuid=%s: %s", table, sync_uuid, e)
+                            errors += 1
                     else:
+                        # Existing row — update if cloud version is newer
+                        local_id = local_synced[sync_uuid]["id"]
+                        if sb_id is not None:
+                            id_map[table][sb_id] = local_id
                         cloud_ts = cloud_row.get("updated_at") or ""
                         local_ts = local_synced[sync_uuid]["updated_at"]
                         if cloud_ts > local_ts:
@@ -286,14 +400,28 @@ class SyncEngine(threading.Thread):
                                 try:
                                     con.execute(
                                         f"UPDATE {table} SET {set_clause} WHERE id=?",
-                                        list(sets.values()) + [local_synced[sync_uuid]["id"]],
+                                        list(sets.values()) + [local_id],
                                     )
+                                    updated += 1
                                 except Exception as e:
-                                    log.warning("Pull upd [%s]: %s", table, e)
+                                    log.warning("Pull upd [%s] id=%s: %s", table, local_id, e)
+                                    errors += 1
+
             except Exception as e:
-                log.warning("Pull [%s]: %s", table, e)
-                continue
+                log.warning("Pull [%s] fatal: %s", table, e)
+                errors += 1
+            finally:
+                sync_log[table] = {
+                    "pulled": pulled, "inserted": inserted,
+                    "updated": updated, "deleted": deleted, "errors": errors,
+                }
+
         con.commit()
+        # Log summary for non-zero tables
+        for tbl, s in sync_log.items():
+            if any(v > 0 for v in s.values()):
+                log.info("Sync pull [%s]: %s", tbl, s)
+        return sync_log
 
     def push_now(self) -> dict:
         creds = _read_creds()
@@ -305,12 +433,17 @@ class SyncEngine(threading.Thread):
             con = sqlite3.connect(self.db_path)
             con.row_factory = sqlite3.Row
             try:
-                self._pull_mobile_rows(con, client)
+                pull_log = self._pull_mobile_rows(con, client)
             finally:
                 con.close()
             self._push_all(client)
-            _status.update(state="synced", last_sync=datetime.now(timezone.utc).isoformat(), error=None)
-            return {"ok": True}
+            _status.update(
+                state="synced",
+                last_sync=datetime.now(timezone.utc).isoformat(),
+                last_pull_log=pull_log,
+                error=None,
+            )
+            return {"ok": True, "pull_log": pull_log}
         except Exception as e:
             _status.update(state="error", error=str(e)[:300])
             return {"ok": False, "error": str(e)[:300]}
