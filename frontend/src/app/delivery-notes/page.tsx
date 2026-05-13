@@ -204,7 +204,7 @@ function DeliveryNotesContent() {
                         {dn.status === "delivered" ? <Clock size={14} /> : <CheckCircle size={14} />}
                       </button>
                       <a
-                        href={downloadDeliveryNotePDF(dn.id)}
+                        href={downloadDeliveryNotePDF(dn.id, dn.dn_number)}
                         target="_blank"
                         rel="noreferrer"
                         className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-brand-indigo transition-colors"

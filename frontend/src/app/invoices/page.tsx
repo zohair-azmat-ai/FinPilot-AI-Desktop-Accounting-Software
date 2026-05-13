@@ -134,7 +134,7 @@ function InvoicesContent() {
                     <td>
                       <div className="flex gap-2 items-center">
                         <button
-                          onClick={() => window.open(downloadInvoicePDF(inv.id), "_blank")}
+                          onClick={() => window.open(downloadInvoicePDF(inv.id, inv.invoice_number), "_blank")}
                           className="text-text-muted hover:text-brand-indigo transition-colors"
                           title="Download PDF"
                         >

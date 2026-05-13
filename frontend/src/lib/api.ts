@@ -2,6 +2,20 @@ import axios from "axios";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
 
+export function getCloudPdfUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const u = localStorage.getItem("fp_cloud_pdf_url");
+  return u ? u.replace(/\/$/, "") : null;
+}
+export function setCloudPdfUrl(url: string) {
+  if (typeof window === "undefined") return;
+  if (url.trim()) {
+    localStorage.setItem("fp_cloud_pdf_url", url.trim().replace(/\/$/, ""));
+  } else {
+    localStorage.removeItem("fp_cloud_pdf_url");
+  }
+}
+
 export const api = axios.create({
   baseURL: API_URL,
   headers: { "Content-Type": "application/json" },
@@ -52,7 +66,11 @@ export const createQuotation = (data: unknown) => api.post("/api/quotations/", d
 export const updateQuotation = (id: number, data: unknown) => api.put(`/api/quotations/${id}`, data);
 export const convertQuotation = (id: number) => api.post(`/api/quotations/${id}/convert`);
 export const deleteQuotation = (id: number) => api.delete(`/api/quotations/${id}`);
-export const downloadQuotationPDF = (id: number) => `${API_URL}/api/quotations/${id}/pdf`;
+export const downloadQuotationPDF = (id: number, num?: string) => {
+  const cloud = getCloudPdfUrl();
+  if (cloud && num) return `${cloud}/api/quotations/${encodeURIComponent(num)}/pdf`;
+  return `${API_URL}/api/quotations/${id}/pdf`;
+};
 
 // Invoices
 export const getInvoices = (params?: Record<string, unknown>) => api.get("/api/invoices/", { params });
@@ -60,7 +78,11 @@ export const getInvoice = (id: number) => api.get(`/api/invoices/${id}`);
 export const createInvoice = (data: unknown) => api.post("/api/invoices/", data);
 export const updateInvoice = (id: number, data: unknown) => api.put(`/api/invoices/${id}`, data);
 export const deleteInvoice = (id: number) => api.delete(`/api/invoices/${id}`);
-export const downloadInvoicePDF = (id: number) => `${API_URL}/api/invoices/${id}/pdf`;
+export const downloadInvoicePDF = (id: number, num?: string) => {
+  const cloud = getCloudPdfUrl();
+  if (cloud && num) return `${cloud}/api/invoices/${encodeURIComponent(num)}/pdf`;
+  return `${API_URL}/api/invoices/${id}/pdf`;
+};
 
 // Payments
 export const getPayments = (params?: Record<string, unknown>) => api.get("/api/payments/", { params });
@@ -127,7 +149,11 @@ export const getDeliveryNote = (id: number) => api.get(`/api/delivery-notes/${id
 export const createDeliveryNote = (data: unknown) => api.post("/api/delivery-notes/", data);
 export const updateDeliveryNote = (id: number, data: unknown) => api.put(`/api/delivery-notes/${id}`, data);
 export const deleteDeliveryNote = (id: number) => api.delete(`/api/delivery-notes/${id}`);
-export const downloadDeliveryNotePDF = (id: number) => `${API_URL}/api/delivery-notes/${id}/pdf`;
+export const downloadDeliveryNotePDF = (id: number, num?: string) => {
+  const cloud = getCloudPdfUrl();
+  if (cloud && num) return `${cloud}/api/delivery-notes/${encodeURIComponent(num)}/pdf`;
+  return `${API_URL}/api/delivery-notes/${id}/pdf`;
+};
 
 // Expenses
 export const getExpenses = (params?: Record<string, unknown>) => api.get("/api/expenses/", { params });
@@ -144,7 +170,11 @@ export const getPurchaseOrder = (id: number) => api.get(`/api/purchase-orders/${
 export const createPurchaseOrder = (data: unknown) => api.post("/api/purchase-orders/", data);
 export const updatePurchaseOrder = (id: number, data: unknown) => api.put(`/api/purchase-orders/${id}`, data);
 export const deletePurchaseOrder = (id: number) => api.delete(`/api/purchase-orders/${id}`);
-export const downloadPurchaseOrderPDF = (id: number) => `${API_URL}/api/purchase-orders/${id}/pdf`;
+export const downloadPurchaseOrderPDF = (id: number, num?: string) => {
+  const cloud = getCloudPdfUrl();
+  if (cloud && num) return `${cloud}/api/purchase-orders/${encodeURIComponent(num)}/pdf`;
+  return `${API_URL}/api/purchase-orders/${id}/pdf`;
+};
 
 // Backup & Restore
 export const downloadBackup = () => `${API_URL}/api/backup`;

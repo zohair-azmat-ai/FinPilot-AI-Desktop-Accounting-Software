@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import {
   downloadBackup, restoreBackup, apiErr,
   getCloudStatus, cloudConnect, cloudDisconnect, cloudSyncNow, cloudRestore, getCloudSchema,
+  getCloudPdfUrl, setCloudPdfUrl,
 } from "@/lib/api";
 import {
   HardDrive, Download, Upload, AlertTriangle, CheckCircle,
@@ -75,6 +76,12 @@ export default function BackupPage() {
   const [schema, setSchema] = useState("");
   const [showSchema, setShowSchema] = useState(false);
   const [schemaCopied, setSchemaCopied] = useState(false);
+  const [cloudPdfUrlInput, setCloudPdfUrlInput] = useState("");
+
+  useEffect(() => {
+    const saved = getCloudPdfUrl();
+    if (saved) setCloudPdfUrlInput(saved);
+  }, []);
 
   const loadCloudStatus = async () => {
     try {
@@ -443,6 +450,37 @@ export default function BackupPage() {
                 </div>
               </>
             )}
+
+            {/* Cloud PDF Backend */}
+            <div className="card space-y-4">
+              <div>
+                <h3 className="font-semibold text-text-primary">Cloud PDF Backend</h3>
+                <p className="text-xs text-text-secondary mt-1">
+                  Set the Hugging Face Space URL to generate PDFs via cloud. When configured, invoice / quotation / DN / PO PDF buttons use this URL instead of the local backend — works even when the local PC backend is off.
+                </p>
+              </div>
+              <div>
+                <label className="label">Cloud PDF Backend URL</label>
+                <input
+                  className="input text-sm font-mono"
+                  placeholder="https://zohairazmat-finpilot-ai-backend.hf.space"
+                  value={cloudPdfUrlInput}
+                  onChange={(e) => setCloudPdfUrlInput(e.target.value)}
+                />
+                <p className="text-xs text-text-muted mt-1">
+                  Leave blank to always use the local backend (http://127.0.0.1:8001).
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setCloudPdfUrl(cloudPdfUrlInput);
+                  toast.success(cloudPdfUrlInput.trim() ? "Cloud PDF Backend URL saved." : "Cloud PDF Backend URL cleared.");
+                }}
+                className="btn-primary w-full justify-center"
+              >
+                Save Cloud PDF Backend
+              </button>
+            </div>
 
             <div className="p-3 rounded-lg bg-bg-secondary border border-bg-border text-xs text-text-muted space-y-1">
               <p>• Sync runs automatically every 2 minutes when connected.</p>

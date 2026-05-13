@@ -204,7 +204,7 @@ export default function PurchaseOrdersPage() {
                     <td className="p-3 text-right font-semibold text-text-primary">{po.total.toFixed(2)}</td>
                     <td className="p-3">
                       <div className="flex items-center gap-2 justify-end">
-                        <a href={downloadPurchaseOrderPDF(po.id)} target="_blank" rel="noopener noreferrer"
+                        <a href={downloadPurchaseOrderPDF(po.id, po.po_number)} target="_blank" rel="noopener noreferrer"
                           className="btn-secondary py-1 px-2 text-xs">
                           <FileDown size={13} /> PDF
                         </a>

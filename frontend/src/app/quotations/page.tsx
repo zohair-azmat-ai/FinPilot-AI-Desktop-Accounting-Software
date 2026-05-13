@@ -195,7 +195,7 @@ export default function QuotationsPage() {
                     <td className="font-medium">AED {q.total.toFixed(2)}</td>
                     <td><span className={`status-badge border ${sc}`}>{q.status}</span></td>
                     <td><div className="flex gap-2">
-                      <button onClick={() => window.open(downloadQuotationPDF(q.id), "_blank")} className="text-text-muted hover:text-brand-indigo" title="Download PDF"><FileDown size={14} /></button>
+                      <button onClick={() => window.open(downloadQuotationPDF(q.id, q.quotation_number), "_blank")} className="text-text-muted hover:text-brand-indigo" title="Download PDF"><FileDown size={14} /></button>
                       {!q.converted_to_invoice && (
                         <>
                           <button onClick={() => openEdit(q.id)} className="text-text-muted hover:text-brand-indigo" title="Edit"><Edit2 size={14} /></button>

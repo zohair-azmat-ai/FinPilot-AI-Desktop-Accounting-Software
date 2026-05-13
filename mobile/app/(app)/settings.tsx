@@ -84,7 +84,7 @@ export default function SettingsScreen() {
 
   const testBackend = async () => {
     if (!backendUrl.trim()) {
-      Alert.alert('No URL', 'Enter a Desktop Backend URL first.');
+      Alert.alert('No URL', 'Enter a Cloud PDF Backend URL first.');
       return;
     }
     setBackendStatus('checking');
@@ -96,7 +96,7 @@ export default function SettingsScreen() {
       setBackendStatus('err');
       Alert.alert(
         'Backend unreachable',
-        `Could not reach ${backendUrl.trim()}.\n\nEnsure:\n• FinPilot desktop is open\n• Phone and PC are on the same Wi-Fi\n• IP address is correct`,
+        `Could not reach ${backendUrl.trim()}.\n\nIf using Hugging Face Space:\n• Ensure the Space is running (may take 30s to wake)\n• Check SUPABASE_URL and SUPABASE_KEY are set in Space secrets\n\nIf using local PC:\n• Ensure FinPilot desktop is open\n• Phone and PC must be on the same Wi-Fi`,
       );
     }
   };
@@ -160,7 +160,7 @@ export default function SettingsScreen() {
               errText="Unreachable"
             />
             <StatusRow
-              label="Desktop Backend"
+              label="Cloud PDF Backend"
               status={backendStatus}
               okText="Reachable"
               errText="Unreachable"
@@ -181,21 +181,22 @@ export default function SettingsScreen() {
             <Field label="Workspace ID" value={wsId} onChange={setWsId} placeholder="e.g. daralsalam-office" />
           </View>
 
-          {/* ── Desktop Backend ── */}
+          {/* ── Cloud PDF Backend ── */}
           <View style={s.card}>
-            <Text style={s.cardTitle}>Desktop Backend (PDF)</Text>
+            <Text style={s.cardTitle}>Cloud PDF Backend</Text>
             <Text style={s.cardHint}>
-              Required for PDF generation. Enter your desktop machine's IP while on the same Wi-Fi network.
+              Enter the Hugging Face Space URL for cloud PDF generation — works without your PC being on.
+              Optionally, enter your desktop machine's local IP if you prefer local generation on the same Wi-Fi.
             </Text>
             <Field
-              label="Backend URL"
+              label="Cloud PDF Backend URL"
               value={backendUrl}
               onChange={setBackendUrl}
-              placeholder="http://192.168.1.5:8001"
+              placeholder="https://zohairazmat-finpilot-ai-backend.hf.space"
               keyboardType="url"
             />
             <Text style={s.fieldHint}>
-              Find your IP: run ipconfig on the desktop and look for IPv4 under your Wi-Fi adapter.
+              Default: Hugging Face Space (always available). Alternatively, use http://&lt;PC-IP&gt;:8001 for local backend on the same Wi-Fi.
             </Text>
           </View>
 
