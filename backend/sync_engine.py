@@ -281,6 +281,22 @@ class SyncEngine(threading.Thread):
                 if "sync_uuid" not in local_cols:
                     continue
 
+                # Build col_defaults map: for non-nullable TEXT/BOOLEAN/NUMERIC columns,
+                # store their default so we can coerce None from Supabase to a safe value.
+                col_defaults: dict = {}
+                for ci in col_infos:
+                    col_name = ci[1]
+                    col_type = (ci[2] or "").upper()
+                    notnull = ci[3]
+                    dflt = ci[4]
+                    if notnull and dflt is None:
+                        if "TEXT" in col_type or "CHAR" in col_type or "CLOB" in col_type:
+                            col_defaults[col_name] = ""
+                        elif "BOOL" in col_type:
+                            col_defaults[col_name] = 0
+                        elif any(t in col_type for t in ("INT", "REAL", "FLOA", "DOUB", "NUMER")):
+                            col_defaults[col_name] = 0
+
                 # Local rows that have been synced at least once
                 cur.execute(
                     f"SELECT id, sync_uuid, updated_at FROM {table} WHERE sync_uuid IS NOT NULL"
@@ -340,7 +356,13 @@ class SyncEngine(threading.Thread):
                     if sync_uuid not in local_synced:
                         # New row from cloud — strip 'id' to avoid PK conflicts;
                         # SQLite auto-assigns a safe local id via rowid.
-                        new_row = {k: v for k, v in filtered.items() if k != "id"}
+                        # Also coerce None to column defaults for non-nullable columns so
+                        # mobile-created rows (with missing optional fields) don't break
+                        # Pydantic serialisation on the desktop.
+                        new_row = {
+                            k: (col_defaults[k] if v is None and k in col_defaults else v)
+                            for k, v in filtered.items() if k != "id"
+                        }
                         cols = list(new_row.keys())
                         if not cols:
                             continue

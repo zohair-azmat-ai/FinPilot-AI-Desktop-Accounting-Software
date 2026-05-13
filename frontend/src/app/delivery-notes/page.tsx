@@ -41,7 +41,15 @@ function DeliveryNotesContent() {
   const load = () => {
     setLoading(true);
     Promise.all([getDeliveryNotes(), getCustomers()])
-      .then(([dn, cust]) => { setNotes(dn.data); setCustomers(cust.data); })
+      .then(([dn, cust]) => {
+        console.log("[delivery-notes] API returned", dn.data?.length, "records");
+        setNotes(Array.isArray(dn.data) ? dn.data : []);
+        setCustomers(Array.isArray(cust.data) ? cust.data : []);
+      })
+      .catch((err) => {
+        console.error("[delivery-notes] API error", err?.response?.status, err?.response?.data);
+        setNotes([]);
+      })
       .finally(() => setLoading(false));
   };
 

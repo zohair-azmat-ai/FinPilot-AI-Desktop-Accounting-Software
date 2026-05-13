@@ -30,7 +30,14 @@ function InvoicesContent() {
   const load = () => {
     setLoading(true);
     getInvoices(statusFilter ? { status: statusFilter } : {})
-      .then((r) => setInvoices(r.data))
+      .then((r) => {
+        console.log("[invoices] API returned", r.data?.length, "records");
+        setInvoices(Array.isArray(r.data) ? r.data : []);
+      })
+      .catch((err) => {
+        console.error("[invoices] API error", err?.response?.status, err?.response?.data);
+        setInvoices([]);
+      })
       .finally(() => setLoading(false));
   };
 

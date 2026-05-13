@@ -45,7 +45,15 @@ export default function QuotationsPage() {
   const [includeStamp, setIncludeStamp] = useState(false);
   const [lines, setLines] = useState<LineItem[]>([{ item_id: null, description: "", quantity: 1, unit_price: 0, vat_applicable: true }]);
 
-  const load = () => getQuotations().then((r) => setQuotations(r.data));
+  const load = () => getQuotations()
+    .then((r) => {
+      console.log("[quotations] API returned", r.data?.length, "records");
+      setQuotations(Array.isArray(r.data) ? r.data : []);
+    })
+    .catch((err) => {
+      console.error("[quotations] API error", err?.response?.status, err?.response?.data);
+      setQuotations([]);
+    });
   useEffect(() => {
     load();
     getCustomers().then((r) => setCustomers(r.data));

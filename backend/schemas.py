@@ -1,6 +1,20 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, field_validator
+from typing import Any, Optional, List
 from datetime import datetime
+
+
+def _str(v: Any) -> str:
+    """Coerce None → empty string so mobile-created rows (which may have NULL
+    text columns) don't break Pydantic serialisation."""
+    return "" if v is None else str(v)
+
+
+def _bool(v: Any) -> bool:
+    return bool(v) if v is not None else False
+
+
+def _float(v: Any) -> float:
+    return float(v) if v is not None else 0.0
 
 
 class CompanyBase(BaseModel):
@@ -137,6 +151,18 @@ class QuotationOut(BaseModel):
     class Config:
         from_attributes = True
 
+    @field_validator("notes", "payment_terms", "delivery", "status", mode="before")
+    @classmethod
+    def _str(cls, v): return _str(v)
+
+    @field_validator("subtotal", "vat_amount", "discount", "total", mode="before")
+    @classmethod
+    def _float(cls, v): return _float(v)
+
+    @field_validator("include_stamp", "letterhead", "converted_to_invoice", mode="before")
+    @classmethod
+    def _bool(cls, v): return _bool(v)
+
 
 class InvoiceItemCreate(BaseModel):
     item_id: Optional[int] = None
@@ -191,6 +217,18 @@ class InvoiceOut(BaseModel):
     items: List[InvoiceItemOut]
     class Config:
         from_attributes = True
+
+    @field_validator("notes", "lpo_no", "do_no", "status", mode="before")
+    @classmethod
+    def _str(cls, v): return _str(v)
+
+    @field_validator("subtotal", "vat_amount", "discount", "total", "amount_paid", "balance_due", mode="before")
+    @classmethod
+    def _float(cls, v): return _float(v)
+
+    @field_validator("letterhead", "is_cash", "include_stamp", "require_customer_signature", mode="before")
+    @classmethod
+    def _bool(cls, v): return _bool(v)
 
 
 class InvoiceAllocation(BaseModel):
@@ -393,6 +431,14 @@ class DeliveryNoteOut(BaseModel):
     class Config:
         from_attributes = True
 
+    @field_validator("remarks", "status", mode="before")
+    @classmethod
+    def _str(cls, v): return _str(v)
+
+    @field_validator("letterhead", mode="before")
+    @classmethod
+    def _bool(cls, v): return _bool(v)
+
 
 class ExpenseCreate(BaseModel):
     date: Optional[datetime] = None
@@ -483,6 +529,18 @@ class PurchaseOrderOut(BaseModel):
     class Config:
         from_attributes = True
 
+    @field_validator("payment_terms", "delivery_terms", "notes", "status", mode="before")
+    @classmethod
+    def _str(cls, v): return _str(v)
+
+    @field_validator("subtotal", "vat_amount", "total", mode="before")
+    @classmethod
+    def _float(cls, v): return _float(v)
+
+    @field_validator("include_stamp", "letterhead", mode="before")
+    @classmethod
+    def _bool(cls, v): return _bool(v)
+
 
 # ── Supplier Bills ────────────────────────────────────────────────────────────
 
@@ -528,6 +586,14 @@ class SupplierBillOut(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
+
+    @field_validator("trn", "lpo_no", "notes", "status", mode="before")
+    @classmethod
+    def _str(cls, v): return _str(v)
+
+    @field_validator("subtotal", "vat_amount", "total", "amount_paid", "balance_due", mode="before")
+    @classmethod
+    def _float(cls, v): return _float(v)
 
 
 # ── Supplier Payments ─────────────────────────────────────────────────────────
