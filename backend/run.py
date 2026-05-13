@@ -44,10 +44,10 @@ def run():
     try:
         _log("importing main.app ...")
         from main import app  # noqa: PLC0415
-        _log("main.app imported OK — starting uvicorn on 127.0.0.1:8001")
+        _log("main.app imported OK — starting uvicorn on 0.0.0.0:8001 (LAN accessible)")
         uvicorn.run(
             app,
-            host="127.0.0.1",
+            host="0.0.0.0",
             port=8001,
             log_config=None,
             access_log=False,

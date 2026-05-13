@@ -12,6 +12,18 @@ from routes import company, customers, suppliers, items, quotations, invoices, p
 from routes import license as license_router
 from routes import cloud as cloud_router
 
+# ── LAN access patch: override host regardless of what run.py was compiled with ──
+try:
+    import uvicorn as _uvicorn_mod
+    _uvicorn_orig_run = _uvicorn_mod.run
+    def _uvicorn_lan_run(app, **kw):
+        kw['host'] = '0.0.0.0'
+        return _uvicorn_orig_run(app, **kw)
+    _uvicorn_mod.run = _uvicorn_lan_run
+except Exception:
+    pass
+# ─────────────────────────────────────────────────────────────────────────────────
+
 models.Base.metadata.create_all(bind=engine)
 
 
@@ -189,7 +201,18 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "FinPilot AI"}
+    return {"ok": True, "status": "ok", "service": "FinPilot AI", "host": "0.0.0.0", "port": 8001}
+
+
+@app.get("/debug/pdf-test")
+def debug_pdf_test():
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        "FinPilot PDF endpoint is reachable.\n"
+        "Backend is running on 0.0.0.0:8001 — LAN accessible.\n"
+        "If you see this, mobile can reach the backend.",
+        media_type="text/plain",
+    )
 
 
 @app.get("/api/debug/runtime")

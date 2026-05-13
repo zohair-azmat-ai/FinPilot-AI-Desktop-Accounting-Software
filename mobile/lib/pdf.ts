@@ -15,6 +15,8 @@ import * as Sharing from 'expo-sharing';
 import { Alert, Linking } from 'react-native';
 import { getBackendUrl } from '@/lib/api';
 
+const REACH_TIMEOUT_MS = 5000;
+
 function noBackendAlert() {
   Alert.alert(
     'Backend not configured',
@@ -35,12 +37,37 @@ export function buildPdfUrl(apiPath: string): string | null {
   return `${base}${apiPath}`;
 }
 
+/** Quick 5-second reachability probe — resolves true if backend responds, false on timeout/error. */
+async function isBackendReachable(base: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REACH_TIMEOUT_MS);
+  try {
+    console.log(`[pdf] Probing backend reachability: ${base}/health`);
+    const res = await fetch(`${base}/health`, { method: 'GET', signal: controller.signal });
+    console.log(`[pdf] Probe status: ${res.status}`);
+    return res.ok;
+  } catch (e: any) {
+    console.log(`[pdf] Probe failed: ${e?.message ?? e}`);
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function viewPDF(apiPath: string): Promise<void> {
-  const url = buildPdfUrl(apiPath);
-  if (!url) { noBackendAlert(); return; }
+  const base = getBackendUrl();
+  if (!base) { noBackendAlert(); return; }
+
+  const url = `${base}${apiPath}`;
+  console.log(`[pdf] viewPDF → ${url}`);
+
+  const reachable = await isBackendReachable(base);
+  if (!reachable) { networkErrorAlert(base); return; }
+
   try {
     await Linking.openURL(url);
-  } catch {
+  } catch (e: any) {
+    console.log(`[pdf] Linking.openURL failed: ${e?.message ?? e}`);
     Alert.alert('Cannot open PDF', `Could not open: ${url}`);
   }
 }
@@ -53,11 +80,18 @@ export async function downloadAndSharePDF(
   if (!base) { noBackendAlert(); return; }
 
   const url = `${base}${apiPath}`;
+  console.log(`[pdf] downloadAndSharePDF → ${url}`);
+
+  const reachable = await isBackendReachable(base);
+  if (!reachable) { networkErrorAlert(base); return; }
+
   const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
   const dest = `${FileSystem.cacheDirectory}${safe}`;
 
   try {
+    console.log(`[pdf] Downloading to: ${dest}`);
     const result = await FileSystem.downloadAsync(url, dest);
+    console.log(`[pdf] Download status: ${result.status}, uri: ${result.uri}`);
     if (result.status !== 200) {
       throw new Error(`Backend returned HTTP ${result.status}. Is FinPilot desktop running?`);
     }
@@ -68,6 +102,7 @@ export async function downloadAndSharePDF(
     });
   } catch (e: any) {
     const msg: string = e.message ?? String(e);
+    console.log(`[pdf] Error: ${msg}`);
     if (
       msg.includes('Network request failed') ||
       msg.includes('ECONNREFUSED') ||
