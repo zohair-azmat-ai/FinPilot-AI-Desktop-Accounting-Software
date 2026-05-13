@@ -14,6 +14,7 @@ interface Module {
 }
 
 const MODULES: Module[] = [
+  { label: 'Settings',         icon: 'settings-outline',       route: '/(app)/settings',          color: '#64748b' },
   { label: 'Reports',          icon: 'bar-chart-outline',      route: '/(app)/reports',           color: '#6366f1' },
   { label: 'Quotations',       icon: 'document-outline',       route: '/(app)/quotations',        color: '#0ea5e9' },
   { label: 'Delivery Notes',   icon: 'cube-outline',           route: '/(app)/delivery-notes',    color: '#10b981' },

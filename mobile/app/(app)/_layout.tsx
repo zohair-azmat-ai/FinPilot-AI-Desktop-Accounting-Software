@@ -57,6 +57,7 @@ export default function AppLayout() {
       {hidden('supplier-payments')}
       {hidden('ledger')}
       {hidden('supplier-ledger')}
+      {hidden('settings')}
     </Tabs>
   );
 }

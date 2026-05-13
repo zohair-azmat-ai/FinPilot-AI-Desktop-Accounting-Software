@@ -53,6 +53,19 @@ export async function testConnection(url: string, anonKey: string, workspaceId: 
     throw new Error(`Cannot reach Supabase (${res.status}).`);
 }
 
+export async function testBackendUrl(backendUrl: string): Promise<void> {
+  const base = backendUrl.replace(/\/$/, '');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const res = await fetch(`${base}/`, { signal: controller.signal });
+    if (!res.ok && res.status !== 404 && res.status !== 405)
+      throw new Error(`Backend returned HTTP ${res.status}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ── Company ───────────────────────────────────────────────────────────────────
 export async function getCompany() {
   const d = await pg<any>('companies', { limit: '1' });

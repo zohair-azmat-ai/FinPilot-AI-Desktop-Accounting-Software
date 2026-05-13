@@ -7,8 +7,6 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getDashboard, fmtCurrency, fmtDate } from '@/lib/api';
-import { clearWorkspace } from '@/lib/storage';
-import { setApiConfig } from '@/lib/api';
 import { C, STATUS_COLOR, STATUS_BG } from '@/lib/theme';
 
 export default function DashboardScreen() {
@@ -24,12 +22,6 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => { load(); }, []);
-
-  const disconnect = async () => {
-    await clearWorkspace();
-    setApiConfig(null as any);
-    router.replace('/');
-  };
 
   if (loading) return (
     <SafeAreaView style={[s.safe, { alignItems: 'center', justifyContent: 'center' }]}>
@@ -49,8 +41,8 @@ export default function DashboardScreen() {
             <Text style={s.company}>{data?.company?.name ?? 'FinPilot'}</Text>
             <Text style={s.sub}>Dashboard</Text>
           </View>
-          <TouchableOpacity onPress={disconnect} style={s.disconnectBtn}>
-            <Ionicons name="log-out-outline" size={18} color={C.muted} />
+          <TouchableOpacity onPress={() => router.push('/(app)/settings')} style={s.disconnectBtn}>
+            <Ionicons name="settings-outline" size={20} color={C.muted} />
           </TouchableOpacity>
         </View>
 
