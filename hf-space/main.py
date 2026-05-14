@@ -65,9 +65,11 @@ def _fetch_doc(table: str, workspace_id: Optional[str], **col_filters) -> Option
     return rows[0] if rows else None
 
 
-def _fetch_many(table: str, workspace_id: Optional[str], **col_filters) -> list:
+def _fetch_many(table: str, workspace_id: Optional[str], active_only: bool = False, **col_filters) -> list:
     params = {k: f"eq.{v}" for k, v in col_filters.items()}
     params["limit"] = "500"
+    if active_only:
+        params["deleted_at"] = "is.null"
     return _sb_get(table, params, workspace_id)
 
 
@@ -188,7 +190,7 @@ def invoice_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
 
     comp = _company_dict(ws)
     cust = _customer_dict(inv.get("customer_id"), ws, include_po_box=True)
-    items_rows = _fetch_many("invoice_items", ws, invoice_id=inv["id"])
+    items_rows = _fetch_many("invoice_items", ws, active_only=True, invoice_id=inv["id"])
     items = [
         {
             "description": it.get("description", ""),
@@ -233,7 +235,7 @@ def quotation_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
 
     comp = _company_dict(ws)
     cust = _customer_dict(q.get("customer_id"), ws, include_po_box=False)
-    items_rows = _fetch_many("quotation_items", ws, quotation_id=q["id"])
+    items_rows = _fetch_many("quotation_items", ws, active_only=True, quotation_id=q["id"])
     items = [
         {
             "description": it.get("description", ""),
@@ -290,7 +292,7 @@ def dn_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
                 "phone": c.get("phone", ""), "trn": c.get("trn", ""),
             }
 
-    items_rows = _fetch_many("delivery_note_items", ws, dn_id=dn["id"])
+    items_rows = _fetch_many("delivery_note_items", ws, active_only=True, dn_id=dn["id"])
     items = [
         {
             "sno": i + 1,
@@ -326,7 +328,7 @@ def po_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
 
     comp = _company_dict(ws)
     sup = _supplier_dict(po.get("supplier_id"), ws)
-    items_rows = _fetch_many("purchase_order_items", ws, po_id=po["id"])
+    items_rows = _fetch_many("purchase_order_items", ws, active_only=True, po_id=po["id"])
     items = [
         {
             "description": it.get("description", ""),

@@ -161,6 +161,8 @@ class InvoiceItem(Base):
     vat_applicable = Column(Boolean, default=True)
     vat_amount = Column(Float, default=0.0)
     total = Column(Float, default=0.0)
+    deleted_at = Column(String, nullable=True, default=None)
+    updated_at = Column(String, nullable=True, default=None)
 
     invoice = relationship("Invoice", back_populates="items")
     item = relationship("Item")

@@ -74,7 +74,8 @@ def _run_migrations():
         ("supplier_bills",      "amount_paid",                "REAL DEFAULT 0.0"),
         ("supplier_bills",      "balance_due",                "REAL DEFAULT 0.0"),
         ("supplier_bills",      "status",                     "TEXT DEFAULT 'unpaid'"),
-        # Soft-delete column — added to parent entity tables
+        # Soft-delete column — added to parent entity tables and item tables
+        ("invoice_items",   "deleted_at", "TEXT DEFAULT NULL"),
         ("invoices",        "deleted_at", "TEXT DEFAULT NULL"),
         ("quotations",      "deleted_at", "TEXT DEFAULT NULL"),
         ("delivery_notes",  "deleted_at", "TEXT DEFAULT NULL"),

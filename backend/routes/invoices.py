@@ -158,7 +158,12 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
         invoice.amount_paid = 0.0
         invoice.balance_due = balance_due
         invoice.status = "unpaid"
-        db.query(models.InvoiceItem).filter(models.InvoiceItem.invoice_id == invoice.id).delete()
+        restore_now = datetime.now(timezone.utc).isoformat()
+        db.query(models.InvoiceItem).filter(
+            models.InvoiceItem.invoice_id == invoice.id,
+            models.InvoiceItem.deleted_at.is_(None),
+        ).update({"deleted_at": restore_now, "updated_at": restore_now})
+        db.flush()
     else:
         invoice = models.Invoice(
             invoice_number=inv_number,
@@ -219,6 +224,7 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
     processed_items, subtotal, vat_total = _calculate_items(data.items, vat_rate)
     total = round(subtotal + vat_total - (data.discount or 0), 2)
 
+    now = datetime.now(timezone.utc).isoformat()
     inv.customer_id = data.customer_id
     inv.date = data.date or inv.date
     inv.due_date = data.due_date
@@ -241,7 +247,13 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
     else:
         inv.status = "unpaid"
 
-    db.query(models.InvoiceItem).filter(models.InvoiceItem.invoice_id == invoice_id).delete()
+    # Soft-delete all existing active items so Supabase sync can propagate the deletion
+    db.query(models.InvoiceItem).filter(
+        models.InvoiceItem.invoice_id == invoice_id,
+        models.InvoiceItem.deleted_at.is_(None),
+    ).update({"deleted_at": now, "updated_at": now})
+    db.flush()
+
     for item in processed_items:
         db_item = models.InvoiceItem(
             invoice_id=inv.id,
@@ -303,6 +315,7 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
                 "address": customer.address,
                 "po_box": customer.po_box or "",
             }
+        active_items = [it for it in inv.items if not it.deleted_at]
         invoice_data = {
             "invoice_number": inv.invoice_number,
             "date": inv.date.strftime("%d %b %Y"),
@@ -315,7 +328,7 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
                     "vat_applicable": it.vat_applicable,
                     "vat_amount": it.vat_amount,
                     "total": it.total,
-                } for it in inv.items
+                } for it in active_items
             ],
             "subtotal": inv.subtotal,
             "vat_amount": inv.vat_amount,
