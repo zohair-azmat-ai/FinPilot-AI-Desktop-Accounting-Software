@@ -20,7 +20,7 @@ def _dbg(msg: str) -> None:
     except Exception:
         pass
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V5_HF LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V6_HF LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -348,27 +348,6 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     story.append(Paragraph("TAX INVOICE", _ti))
     story.append(Spacer(1, 2.5 * mm))
 
-    # ── Company text block — shown when flag=ON but letterhead image unavailable
-    _show_comp = (not use_letterhead) and bool(invoice_data.get("letterhead", True)) and company
-    if _show_comp:
-        _cn2 = ParagraphStyle("_cn2", fontName="Helvetica-Bold", fontSize=12, textColor=PRIMARY)
-        _cd  = ParagraphStyle("_cd",  fontName="Helvetica",      fontSize=8,  textColor=MED_GRAY)
-        story.append(Paragraph(_xe(company.get("name", "")), _cn2))
-        _det_parts = []
-        if company.get("address"):
-            _det_parts.append(_xe(company["address"].replace("\n", " | ")))
-        if company.get("phone"):
-            _det_parts.append(f"Tel: {_xe(company['phone'])}")
-        if company.get("email"):
-            _det_parts.append(f"Email: {_xe(company['email'])}")
-        if company.get("trn"):
-            _det_parts.append(f"TRN: {_xe(company['trn'])}")
-        if _det_parts:
-            story.append(Paragraph("  •  ".join(_det_parts), _cd))
-        story.append(Spacer(1, 2 * mm))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=PRIMARY))
-        story.append(Spacer(1, 2 * mm))
-
     # ── 2. Invoice No | Date row ──────────────────────────────────────────────
     if use_letterhead:
         info_data = [[[Paragraph("Invoice No:", _lbl),  Paragraph(_xe(inv_no),   _val)],
@@ -403,14 +382,11 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         if customer.get("address"):
             cust_col.append(Paragraph(_xe(customer["address"].replace("\n", ", ")), _sub))
 
-    comp_trn = (company.get("trn", "") or "") if company else ""
     ref_col = []
     if do_no:
         ref_col += [Paragraph("DO NO:",  _lblr), Paragraph(_xe(do_no),  _valr), Spacer(1, 2)]
     if lpo_no:
-        ref_col += [Paragraph("LPO NO:", _lblr), Paragraph(_xe(lpo_no), _valr), Spacer(1, 2)]
-    if comp_trn:
-        ref_col += [Paragraph("SUPPLIER TRN:", _lblr), Paragraph(_xe(comp_trn), _valr)]
+        ref_col += [Paragraph("LPO NO:", _lblr), Paragraph(_xe(lpo_no), _valr)]
 
     cust_t = Table([[cust_col, ref_col]], colWidths=[110 * mm, 70 * mm])
     cust_t.setStyle(TableStyle([
