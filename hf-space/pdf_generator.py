@@ -20,7 +20,7 @@ def _dbg(msg: str) -> None:
     except Exception:
         pass
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=UAE_INDUSTRIAL_V3_HF LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V4_HF LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -320,29 +320,28 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     total      = invoice_data.get("total",      0)
     actual_items = invoice_data.get("items", [])
 
-    # ── UAE industrial color palette ──────────────────────────────────────────
-    HDR_BG  = colors.HexColor("#1F1F1F")   # table header bar
-    ROW_A   = colors.HexColor("#F3F4F6")   # odd row
-    ROW_B   = colors.white                 # even row
-    GRID_C  = colors.HexColor("#BBBBBB")   # cell border
-    CAP_BG  = colors.HexColor("#F8F9FB")   # clean end-cap fill
-    INK     = colors.HexColor("#111111")   # body text
-    MUTED   = colors.HexColor("#555555")   # label / secondary text
-    STRIP   = colors.HexColor("#EAECEF")   # TRN compliance strip background
+    # ── FinPilot blue palette (restored) ─────────────────────────────────────
+    HDR_BG  = PRIMARY                       # navy blue table header
+    ROW_A   = LIGHT_GRAY                    # #F8FAFC odd row
+    ROW_B   = WHITE                         # even row
+    GRID_C  = colors.HexColor("#CBD5E1")    # blue-gray cell border
+    CAP_BG  = colors.HexColor("#F8FAFC")    # clean end-cap fill
+    INK     = DARK                          # #0F172A body text
+    MUTED   = MED_GRAY                      # #94A3B8 label / secondary text
 
     # ── Shared styles ─────────────────────────────────────────────────────────
-    _ti    = ParagraphStyle("_ti",   fontName="Helvetica-Bold", fontSize=18, textColor=INK, alignment=TA_CENTER)
-    _lbl   = ParagraphStyle("_lbl",  fontName="Helvetica",      fontSize=7.5, textColor=MUTED)
-    _val   = ParagraphStyle("_val",  fontName="Helvetica-Bold", fontSize=10,  textColor=INK)
-    _lblr  = ParagraphStyle("_lblr", fontName="Helvetica",      fontSize=7.5, textColor=MUTED, alignment=TA_RIGHT)
-    _valr  = ParagraphStyle("_valr", fontName="Helvetica-Bold", fontSize=9,   textColor=INK,  alignment=TA_RIGHT)
-    _sub   = ParagraphStyle("_sub",  fontName="Helvetica",      fontSize=8.5, textColor=INK)
+    _ti    = ParagraphStyle("_ti",   fontName="Helvetica-Bold", fontSize=18, textColor=PRIMARY, alignment=TA_CENTER)
+    _lbl   = ParagraphStyle("_lbl",  fontName="Helvetica",      fontSize=7.5, textColor=MED_GRAY)
+    _val   = ParagraphStyle("_val",  fontName="Helvetica-Bold", fontSize=10,  textColor=PRIMARY)
+    _lblr  = ParagraphStyle("_lblr", fontName="Helvetica",      fontSize=7.5, textColor=MED_GRAY, alignment=TA_RIGHT)
+    _valr  = ParagraphStyle("_valr", fontName="Helvetica-Bold", fontSize=9,   textColor=DARK,    alignment=TA_RIGHT)
+    _sub   = ParagraphStyle("_sub",  fontName="Helvetica",      fontSize=8.5, textColor=DARK)
     _ih    = ParagraphStyle("_ih",   fontName="Helvetica-Bold", fontSize=7.5, textColor=colors.white, alignment=TA_CENTER)
-    _ir    = ParagraphStyle("_ir",   fontName="Helvetica",      fontSize=8,   textColor=INK)
-    _irc   = ParagraphStyle("_irc",  fontName="Helvetica",      fontSize=8,   textColor=INK, alignment=TA_RIGHT)
-    _icc   = ParagraphStyle("_icc",  fontName="Helvetica",      fontSize=8,   textColor=INK, alignment=TA_CENTER)
-    _slbl  = ParagraphStyle("_slbl", fontName="Helvetica-Bold", fontSize=6.5, textColor=MUTED)
-    _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=7.5, textColor=INK)
+    _ir    = ParagraphStyle("_ir",   fontName="Helvetica",      fontSize=8,   textColor=DARK)
+    _irc   = ParagraphStyle("_irc",  fontName="Helvetica",      fontSize=8,   textColor=DARK, alignment=TA_RIGHT)
+    _icc   = ParagraphStyle("_icc",  fontName="Helvetica",      fontSize=8,   textColor=DARK, alignment=TA_CENTER)
+    _slbl  = ParagraphStyle("_slbl", fontName="Helvetica-Bold", fontSize=6.5, textColor=MED_GRAY)
+    _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=7.5, textColor=DARK)
 
     # ── 1. TAX INVOICE title ──────────────────────────────────────────────────
     story.append(Spacer(1, 4 * mm))
@@ -395,34 +394,10 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     ]))
     story.append(cust_t)
     story.append(Spacer(1, 2 * mm))
+    story.append(HRFlowable(width="100%", thickness=0.4, color=colors.HexColor("#CBD5E1")))
+    story.append(Spacer(1, 1.5 * mm))
 
-    # ── 4. UAE Article 59 compliance strip ───────────────────────────────────
-    comp_trn = (company.get("trn", "") or "") if company else ""
-    cust_trn = customer.get("trn", "") or ""
-
-    strip_cells, strip_widths = [], []
-    if comp_trn:
-        strip_cells.append([Paragraph("SUPPLIER TRN", _slbl), Paragraph(_xe(comp_trn), _sval)])
-        strip_widths.append(60 * mm)
-    if cust_trn:
-        strip_cells.append([Paragraph("CUSTOMER TRN", _slbl), Paragraph(_xe(cust_trn), _sval)])
-        strip_widths.append(60 * mm)
-    strip_cells.append([Paragraph("DATE OF SUPPLY", _slbl), Paragraph(_xe(inv_date), _sval)])
-    used_w = sum(strip_widths)
-    strip_widths.append(max(20 * mm, _CONTENT_W - used_w))
-
-    strip_t = Table([strip_cells], colWidths=strip_widths)
-    strip_t.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), STRIP),
-        ("GRID",          (0, 0), (-1, -1), 0.4, GRID_C),
-        ("TOPPADDING",    (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 5), ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    story.append(strip_t)
-    story.append(Spacer(1, 1 * mm))
-
-    # ── 5. Items table ────────────────────────────────────────────────────────
+    # ── 4. Items table ────────────────────────────────────────────────────────
     stamp_path_check = _get_stamp_path() if include_stamp else ""
 
     col_w = [9*mm, 59*mm, 13*mm, 23*mm, 23*mm, 13*mm, 20*mm, 20*mm]
@@ -467,11 +442,11 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ]))
         return t
 
-    # Footer budget: totals + bank + terms + sig ≈ 82 mm
-    _FOOTER_H      = 82 * mm
+    # Footer budget: totals + bank + terms + sig ≈ 78 mm
+    _FOOTER_H      = 78 * mm
     _usable_h      = A4[1] - top_margin - 4 * mm
     _max_tbl_h     = max(55 * mm, _usable_h - _FOOTER_H)
-    _MIN_VISUAL_H  = 88 * mm   # minimum visual table area (no visible empty rows)
+    _MIN_VISUAL_H  = 50 * mm   # minimum visual table area height
 
     items_tbl = _make_items_tbl(base_rows)
     items_h   = items_tbl.wrap(_CONTENT_W, 9999 * mm)[1]

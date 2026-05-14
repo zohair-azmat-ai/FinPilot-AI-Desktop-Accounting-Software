@@ -5,7 +5,7 @@ import Header from "@/components/Header";
 import {
   downloadBackup, restoreBackup, apiErr,
   getCloudStatus, cloudConnect, cloudDisconnect, cloudSyncNow, cloudRestore, getCloudSchema,
-  getCloudPdfUrl, setCloudPdfUrl,
+  getCloudPdfUrl, setCloudPdfUrl, api,
 } from "@/lib/api";
 import {
   HardDrive, Download, Upload, AlertTriangle, CheckCircle,
@@ -472,9 +472,18 @@ export default function BackupPage() {
                 </p>
               </div>
               <button
-                onClick={() => {
-                  setCloudPdfUrl(cloudPdfUrlInput);
-                  toast.success(cloudPdfUrlInput.trim() ? "Cloud PDF Backend URL saved." : "Cloud PDF Backend URL cleared.");
+                onClick={async () => {
+                  const trimmed = cloudPdfUrlInput.trim().replace(/\/$/, "");
+                  setCloudPdfUrl(trimmed);
+                  toast.success(trimmed ? "Cloud PDF Backend URL saved." : "Cloud PDF Backend URL cleared.");
+                  if (trimmed) {
+                    try {
+                      await api.post("/api/cloud/push-assets", { hf_url: trimmed });
+                      toast.success("Letterhead & stamp synced to cloud backend.");
+                    } catch {
+                      toast.error("Assets sync failed — cloud PDF may lack letterhead/stamp.");
+                    }
+                  }
                 }}
                 className="btn-primary w-full justify-center"
               >

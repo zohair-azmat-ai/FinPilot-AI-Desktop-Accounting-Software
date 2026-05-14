@@ -1,16 +1,24 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import sqlite3, json, urllib.request, urllib.parse
+import sqlite3, json, urllib.request, urllib.parse, os
 import sync_engine
 from database import DB_PATH
 
 router = APIRouter(prefix="/api/cloud", tags=["cloud"])
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_BACKEND_DIR = os.path.dirname(_HERE)  # backend/routes/../ = backend/
+_USER_ASSETS = os.path.join(os.path.expanduser("~"), "FinPilot", "assets")
 
 
 class ConnectRequest(BaseModel):
     url: str
     anon_key: str
     workspace_id: str
+
+
+class PushAssetsRequest(BaseModel):
+    hf_url: str
 
 
 @router.get("/status")
@@ -239,3 +247,79 @@ def debug_invoice_items(invoice_ref: str):
         },
         "pdf_will_show": len(local_items_active),
     }
+
+
+@router.post("/push-assets")
+def push_assets(body: PushAssetsRequest):
+    """Read local letterhead/stamp and POST them to the HF Space asset upload endpoint."""
+    hf_url = body.hf_url.rstrip("/")
+    if not hf_url:
+        raise HTTPException(400, "hf_url is required")
+
+    results = {}
+
+    # Letterhead: look in backend/assets/ first, then _internal/ sibling
+    lh_paths = [
+        os.path.join(_BACKEND_DIR, "assets", "letterhead.jpg"),
+        os.path.join(_HERE, "..", "assets", "letterhead.jpg"),
+    ]
+    lh_path = next((p for p in lh_paths if os.path.exists(p)), None)
+    if lh_path:
+        try:
+            with open(lh_path, "rb") as f:
+                data = f.read()
+            boundary = b"----FinPilotBoundary"
+            body_parts = (
+                b"--" + boundary + b"\r\n"
+                b'Content-Disposition: form-data; name="asset_type"\r\n\r\nletterhead\r\n'
+                b"--" + boundary + b"\r\n"
+                b'Content-Disposition: form-data; name="file"; filename="letterhead.jpg"\r\n'
+                b"Content-Type: image/jpeg\r\n\r\n" + data + b"\r\n"
+                b"--" + boundary + b"--\r\n"
+            )
+            req = urllib.request.Request(
+                f"{hf_url}/api/assets/upload",
+                data=body_parts,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary.decode()}"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as r:
+                results["letterhead"] = {"ok": True, "size": len(data), "response": json.loads(r.read())}
+        except Exception as e:
+            results["letterhead"] = {"ok": False, "error": str(e)[:200]}
+    else:
+        results["letterhead"] = {"ok": False, "error": "letterhead.jpg not found in backend/assets/"}
+
+    # Stamp: look in user FinPilot/assets/ first, then backend/assets/
+    stamp_paths = [
+        os.path.join(_USER_ASSETS, "stamp.png"),
+        os.path.join(_BACKEND_DIR, "assets", "stamp.png"),
+    ]
+    stamp_path = next((p for p in stamp_paths if os.path.exists(p)), None)
+    if stamp_path:
+        try:
+            with open(stamp_path, "rb") as f:
+                data = f.read()
+            boundary = b"----FinPilotBoundary2"
+            body_parts = (
+                b"--" + boundary + b"\r\n"
+                b'Content-Disposition: form-data; name="asset_type"\r\n\r\nstamp\r\n'
+                b"--" + boundary + b"\r\n"
+                b'Content-Disposition: form-data; name="file"; filename="stamp.png"\r\n'
+                b"Content-Type: image/png\r\n\r\n" + data + b"\r\n"
+                b"--" + boundary + b"--\r\n"
+            )
+            req = urllib.request.Request(
+                f"{hf_url}/api/assets/upload",
+                data=body_parts,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary.decode()}"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as r:
+                results["stamp"] = {"ok": True, "size": len(data), "response": json.loads(r.read())}
+        except Exception as e:
+            results["stamp"] = {"ok": False, "error": str(e)[:200]}
+    else:
+        results["stamp"] = {"ok": False, "error": "stamp.png not found"}
+
+    return {"hf_url": hf_url, "results": results}

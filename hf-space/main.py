@@ -76,12 +76,19 @@ def _fetch_many(table: str, workspace_id: Optional[str], active_only: bool = Fal
 def _fmt_date(val) -> str:
     if not val:
         return ""
-    s = str(val)
-    for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+    s = str(val).strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
-            return datetime.strptime(s[:len(fmt)], fmt).strftime("%d %b %Y")
+            return datetime.strptime(s, fmt).strftime("%d %b %Y")
         except ValueError:
             continue
+    # Last resort: try just the date prefix
+    if len(s) >= 10:
+        try:
+            return datetime.strptime(s[:10], "%Y-%m-%d").strftime("%d %b %Y")
+        except ValueError:
+            pass
     return s
 
 
