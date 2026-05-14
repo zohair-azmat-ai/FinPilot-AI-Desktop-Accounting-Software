@@ -249,6 +249,49 @@ def debug_invoice_items(invoice_ref: str):
     }
 
 
+@router.get("/debug/pdf-runtime")
+def debug_pdf_runtime():
+    """Return actual runtime paths used by the backend process — for diagnosing asset issues."""
+    import sys
+    import pdf_generator as pg
+
+    here_routes  = _HERE          # routes/ dir
+    backend_dir  = _BACKEND_DIR   # _internal/ or backend/
+    user_assets  = _USER_ASSETS   # ~/FinPilot/assets/
+
+    lh_path      = pg.LETTERHEAD_PATH
+    stamp_bundle = os.path.join(backend_dir, "assets", "stamp.png")
+    stamp_user   = os.path.join(user_assets, "stamp.png")
+    stamp_found  = pg._get_stamp_path()
+
+    log_path     = pg._DBG_LOG
+    try:
+        with open(log_path, encoding="utf-8") as _f:
+            last_log = _f.readlines()[-20:]
+    except Exception as _e:
+        last_log = [f"log read error: {_e}"]
+
+    return {
+        "build": "FP_BLUE_V7",
+        "python_exe": sys.executable,
+        "cwd": os.getcwd(),
+        "routes_here": here_routes,
+        "backend_dir": backend_dir,
+        "letterhead": {
+            "path": lh_path,
+            "exists": os.path.exists(lh_path),
+        },
+        "stamp": {
+            "bundle_path": stamp_bundle,
+            "bundle_exists": os.path.exists(stamp_bundle),
+            "user_path": stamp_user,
+            "user_exists": os.path.exists(stamp_user),
+            "resolved_path": stamp_found,
+        },
+        "last_log_lines": last_log,
+    }
+
+
 @router.post("/push-assets")
 def push_assets(body: PushAssetsRequest):
     """Read local letterhead/stamp and POST them to the HF Space asset upload endpoint."""
