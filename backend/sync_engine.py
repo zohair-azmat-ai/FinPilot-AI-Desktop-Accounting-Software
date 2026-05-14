@@ -321,13 +321,15 @@ class SyncEngine(threading.Thread):
                             col_defaults[col_name] = 0
 
                 # Local rows that have been synced at least once
-                cur.execute(
-                    f"SELECT id, sync_uuid, updated_at FROM {table} WHERE sync_uuid IS NOT NULL"
-                )
-                local_synced = {
-                    r[1]: {"id": r[0], "updated_at": r[2] or ""}
-                    for r in cur.fetchall()
-                }
+                has_deleted_at = "deleted_at" in local_cols
+                _cols = "id, sync_uuid, updated_at" + (", deleted_at" if has_deleted_at else "")
+                cur.execute(f"SELECT {_cols} FROM {table} WHERE sync_uuid IS NOT NULL")
+                local_synced = {}
+                for r in cur.fetchall():
+                    entry = {"id": r[0], "updated_at": r[2] or ""}
+                    if has_deleted_at:
+                        entry["deleted_at"] = r[3]
+                    local_synced[r[1]] = entry
 
                 # Fetch from Supabase
                 try:
@@ -499,6 +501,12 @@ class SyncEngine(threading.Thread):
                                 log.info("Pull fk-fix [%s] id=%s: %s", table, local_id, remapped_fks)
                             except Exception as e:
                                 log.warning("Pull fk-fix [%s] id=%s: %s", table, local_id, e)
+
+                        # If this row was soft-deleted locally, don't let a cloud
+                        # row without deleted_at restore it (local soft-delete wins).
+                        local_del = local_synced[sync_uuid].get("deleted_at")
+                        if local_del and not cloud_row.get("deleted_at"):
+                            continue
 
                         cloud_ts = cloud_row.get("updated_at") or ""
                         local_ts = local_synced[sync_uuid]["updated_at"]

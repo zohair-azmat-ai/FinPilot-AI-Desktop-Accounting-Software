@@ -2,7 +2,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image, Flowable
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from reportlab.pdfgen import canvas
 from datetime import datetime
@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=INV_AUTOFIT_V2 LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=UAE_INDUSTRIAL_V3 LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -255,21 +255,21 @@ def _build_top(story, company, title, doc_number, doc_date, due_date=None):
         story.append(_header_table(company, title, doc_number, doc_date, due_date, letterhead=True))
 
 
-# ── Invoice (UAE TAX INVOICE — production layout) ─────────────────────────
+# ── Invoice (UAE TAX INVOICE — industrial layout) ─────────────────────────
 def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
+    from reportlab.platypus import KeepTogether
+
     filename = f"Invoice_{invoice_data['invoice_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath = os.path.join(EXPORT_DIR, filename)
 
     page_w, page_h = A4
 
-    # ── Letterhead: draw image when flag ON and file exists ───────────────────
+    # ── Letterhead ───────────────────────────────────────────────────────────
     use_letterhead = invoice_data.get("letterhead", True) and os.path.exists(LETTERHEAD_PATH)
-    LH_MAX_H  = 70 * mm   # cap at 70mm
-    LH_MIN_H  = 62 * mm   # stretch up to at least 62mm so it looks full-size
+    LH_MAX_H  = 70 * mm
+    LH_MIN_H  = 62 * mm
     raw_lh_h  = _lh_page_height() if use_letterhead else 0.0
     lh_draw_h = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
-    # OFF → 63 mm blank top so content starts below pre-printed letterhead
-    # ON  → letterhead height + 6 mm gap before story content
     top_margin = (lh_draw_h + 6 * mm) if lh_draw_h else 63 * mm
 
     def _draw_header(canv, _doc):
@@ -279,14 +279,14 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
                        width=page_w, height=lh_draw_h,
                        preserveAspectRatio=False, mask='auto')
-        canv.setStrokeColor(colors.HexColor("#D0D7DE"))
+        canv.setStrokeColor(colors.HexColor("#BBBBBB"))
         canv.setLineWidth(0.4)
         canv.line(0, page_h - lh_draw_h - 0.5 * mm,
                   page_w, page_h - lh_draw_h - 0.5 * mm)
         canv.restoreState()
 
     def _draw_later(_canv, _doc):
-        pass  # No letterhead on subsequent pages
+        pass
 
     doc = SimpleDocTemplate(
         filepath, pagesize=A4,
@@ -295,147 +295,158 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     )
     story = []
 
-    # ── Invoice flags & data ──────────────────────────────────────────────────
+    # ── Data ─────────────────────────────────────────────────────────────────
     is_cash       = invoice_data.get("is_cash", False)
     include_stamp = invoice_data.get("include_stamp", False)
     inv_no   = invoice_data.get("invoice_number", "")
     inv_date = invoice_data.get("date", "")
     lpo_no   = invoice_data.get("lpo_no", "") or ""
-    do_no    = invoice_data.get("do_no", "")  or ""
+    do_no    = invoice_data.get("do_no",  "") or ""
     customer = invoice_data.get("customer") or {}
-    subtotal   = invoice_data.get("subtotal", 0)
+    subtotal   = invoice_data.get("subtotal",   0)
     vat_amount = invoice_data.get("vat_amount", 0)
-    discount   = invoice_data.get("discount", 0)
-    total      = invoice_data.get("total", 0)
+    discount   = invoice_data.get("discount",   0)
+    total      = invoice_data.get("total",      0)
+    actual_items = invoice_data.get("items", [])
 
-    # ── Styles ────────────────────────────────────────────────────────────────
-    ti_s    = ParagraphStyle("ti",    fontName="Helvetica-Bold", fontSize=22,  textColor=PRIMARY, alignment=TA_CENTER)
-    inv_lbl = ParagraphStyle("inlbl", fontName="Helvetica",      fontSize=7.5, textColor=MED_GRAY)
-    inv_val = ParagraphStyle("inval", fontName="Helvetica-Bold", fontSize=11,  textColor=PRIMARY)
-    dt_lbl  = ParagraphStyle("dtlbl", fontName="Helvetica",      fontSize=7.5, textColor=MED_GRAY, alignment=TA_RIGHT)
-    dt_val  = ParagraphStyle("dtval", fontName="Helvetica-Bold", fontSize=9,   textColor=DARK,    alignment=TA_RIGHT)
-    clbl_s  = ParagraphStyle("clbl",  fontName="Helvetica-Bold", fontSize=7.5, textColor=MED_GRAY)
-    cname_s = ParagraphStyle("cname", fontName="Helvetica-Bold", fontSize=10,  textColor=DARK)
-    csub_s  = ParagraphStyle("csub",  fontName="Helvetica",      fontSize=8.5, textColor=DARK)
-    ref_lbl = ParagraphStyle("rlbl",  fontName="Helvetica-Bold", fontSize=7.5, textColor=MED_GRAY, alignment=TA_RIGHT)
-    ref_val = ParagraphStyle("rval",  fontName="Helvetica-Bold", fontSize=9,   textColor=DARK,    alignment=TA_RIGHT)
+    # ── UAE industrial color palette ──────────────────────────────────────────
+    HDR_BG  = colors.HexColor("#1F1F1F")   # table header bar
+    ROW_A   = colors.HexColor("#F3F4F6")   # odd row
+    ROW_B   = colors.white                 # even row
+    GRID_C  = colors.HexColor("#BBBBBB")   # cell border
+    CAP_BG  = colors.HexColor("#F8F9FB")   # clean end-cap fill
+    INK     = colors.HexColor("#111111")   # body text
+    MUTED   = colors.HexColor("#555555")   # label / secondary text
+    STRIP   = colors.HexColor("#EAECEF")   # TRN compliance strip background
+
+    # ── Shared styles ─────────────────────────────────────────────────────────
+    _ti    = ParagraphStyle("_ti",   fontName="Helvetica-Bold", fontSize=18, textColor=INK, alignment=TA_CENTER)
+    _lbl   = ParagraphStyle("_lbl",  fontName="Helvetica",      fontSize=7.5, textColor=MUTED)
+    _val   = ParagraphStyle("_val",  fontName="Helvetica-Bold", fontSize=10,  textColor=INK)
+    _lblr  = ParagraphStyle("_lblr", fontName="Helvetica",      fontSize=7.5, textColor=MUTED, alignment=TA_RIGHT)
+    _valr  = ParagraphStyle("_valr", fontName="Helvetica-Bold", fontSize=9,   textColor=INK,  alignment=TA_RIGHT)
+    _sub   = ParagraphStyle("_sub",  fontName="Helvetica",      fontSize=8.5, textColor=INK)
+    _ih    = ParagraphStyle("_ih",   fontName="Helvetica-Bold", fontSize=7.5, textColor=colors.white, alignment=TA_CENTER)
+    _ir    = ParagraphStyle("_ir",   fontName="Helvetica",      fontSize=8,   textColor=INK)
+    _irc   = ParagraphStyle("_irc",  fontName="Helvetica",      fontSize=8,   textColor=INK, alignment=TA_RIGHT)
+    _icc   = ParagraphStyle("_icc",  fontName="Helvetica",      fontSize=8,   textColor=INK, alignment=TA_CENTER)
+    _slbl  = ParagraphStyle("_slbl", fontName="Helvetica-Bold", fontSize=6.5, textColor=MUTED)
+    _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=7.5, textColor=INK)
 
     # ── 1. TAX INVOICE title ──────────────────────────────────────────────────
-    story.append(Spacer(1, 5 * mm))
-    story.append(Paragraph("TAX INVOICE", ti_s))
-    story.append(Spacer(1, 2 * mm))
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph("TAX INVOICE", _ti))
+    story.append(Spacer(1, 2.5 * mm))
 
-    # ── 2. Invoice No (left) | Date (right) ──────────────────────────────────
+    # ── 2. Invoice No | Date row ──────────────────────────────────────────────
     if use_letterhead:
-        # Digital letterhead: show "Invoice No:" label + value on both sides
-        info_t = Table(
-            [[[Paragraph("Invoice No:", inv_lbl), Paragraph(inv_no, inv_val)],
-              [Paragraph("Date:", dt_lbl), Paragraph(inv_date, dt_val)]]],
-            colWidths=[90 * mm, 90 * mm]
-        )
+        info_data = [[[Paragraph("Invoice No:", _lbl),  Paragraph(_xe(inv_no),   _val)],
+                      [Paragraph("Date:",       _lblr), Paragraph(_xe(inv_date), _valr)]]]
     else:
-        # Pre-printed paper: NO labels — only bare serial number and bare date
-        # Pre-printed paper already has Ref / Date printed on it
-        info_t = Table(
-            [[Paragraph(inv_no, inv_val),
-              Paragraph(inv_date, dt_val)]],
-            colWidths=[110 * mm, 70 * mm]
-        )
+        info_data = [[Paragraph(_xe(inv_no), _val), Paragraph(_xe(inv_date), _valr)]]
+
+    info_t = Table(info_data, colWidths=[90 * mm, 90 * mm])
     info_t.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0), ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(info_t)
-    # Extra spacer before Bill To block for pre-printed paper
     story.append(Spacer(1, (4 if not use_letterhead else 2) * mm))
 
-    # ── 3. Bill To (left) | DO / LPO (right) ─────────────────────────────────
+    # ── 3. Bill To (left) | DO / LPO refs (right) ────────────────────────────
+    _cn = ParagraphStyle("_cn", fontName="Helvetica-Bold", fontSize=10, textColor=INK)
     if is_cash:
-        cust_col = [Paragraph("BILL TO:", clbl_s), Spacer(1, 1 * mm),
-                    Paragraph("CASH SALE", cname_s)]
+        cust_col = [Paragraph("BILL TO", _lbl), Spacer(1, 1), Paragraph("CASH SALE", _cn)]
     else:
-        cust_col = [Paragraph("BILL TO:", clbl_s), Spacer(1, 1 * mm),
-                    Paragraph(_xe(customer.get("name", "")), cname_s)]
-        for field, label in [("trn", "TRN"), ("phone", "Tel")]:
-            if customer.get(field):
-                cust_col.append(Paragraph(f"<b>{label} :</b>  {_xe(str(customer[field]))}", csub_s))
+        cust_col = [Paragraph("BILL TO", _lbl), Spacer(1, 1),
+                    Paragraph(_xe(customer.get("name", "")), _cn)]
+        if customer.get("attn"):
+            cust_col.append(Paragraph(f"Attn: {_xe(customer['attn'])}", _sub))
+        if customer.get("phone"):
+            cust_col.append(Paragraph(f"Tel: {_xe(str(customer['phone']))}", _sub))
         if customer.get("po_box"):
-            cust_col.append(Paragraph(f"<b>P.O Box :</b>  {_xe(str(customer['po_box']))}", csub_s))
+            cust_col.append(Paragraph(f"P.O Box: {_xe(str(customer['po_box']))}", _sub))
         if customer.get("address"):
-            addr_inline = _xe(customer["address"].replace("\n", ", "))
-            cust_col.append(Paragraph(f"<b>Address :</b>  {addr_inline}", csub_s))
+            cust_col.append(Paragraph(_xe(customer["address"].replace("\n", ", ")), _sub))
 
     ref_col = []
     if do_no:
-        ref_col += [Paragraph("DO NO:", ref_lbl), Paragraph(do_no, ref_val), Spacer(1, 2 * mm)]
+        ref_col += [Paragraph("DO NO:",  _lblr), Paragraph(_xe(do_no),  _valr), Spacer(1, 2)]
     if lpo_no:
-        ref_col += [Paragraph("LPO NO:", ref_lbl), Paragraph(lpo_no, ref_val)]
+        ref_col += [Paragraph("LPO NO:", _lblr), Paragraph(_xe(lpo_no), _valr)]
 
     cust_t = Table([[cust_col, ref_col]], colWidths=[110 * mm, 70 * mm])
     cust_t.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0), ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(cust_t)
     story.append(Spacer(1, 2 * mm))
-    story.append(HRFlowable(width="100%", thickness=0.4, color=colors.HexColor("#CBD5E1")))
-    story.append(Spacer(1, 1.5 * mm))
 
-    # ── 4. Items table — auto-fit to 1 page ──────────────────────────────────
+    # ── 4. UAE Article 59 compliance strip ───────────────────────────────────
+    # Supplier TRN | Customer TRN | Date of Supply — required on every tax invoice
+    comp_trn = (company.get("trn", "") or "") if company else ""
+    cust_trn = customer.get("trn", "") or ""
+
+    strip_cells, strip_widths = [], []
+    if comp_trn:
+        strip_cells.append([Paragraph("SUPPLIER TRN", _slbl), Paragraph(_xe(comp_trn), _sval)])
+        strip_widths.append(60 * mm)
+    if cust_trn:
+        strip_cells.append([Paragraph("CUSTOMER TRN", _slbl), Paragraph(_xe(cust_trn), _sval)])
+        strip_widths.append(60 * mm)
+    strip_cells.append([Paragraph("DATE OF SUPPLY", _slbl), Paragraph(_xe(inv_date), _sval)])
+    used_w = sum(strip_widths)
+    strip_widths.append(max(20 * mm, _CONTENT_W - used_w))
+
+    strip_t = Table([strip_cells], colWidths=strip_widths)
+    strip_t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), STRIP),
+        ("GRID",          (0, 0), (-1, -1), 0.4, GRID_C),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 5), ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(strip_t)
+    story.append(Spacer(1, 1 * mm))
+
+    # ── 5. Items table ────────────────────────────────────────────────────────
     stamp_path_check = _get_stamp_path() if include_stamp else ""
-    actual_items = invoice_data.get("items", [])
-
-    # Space available for the ENTIRE items table (header + data rows).
-    # _OVERHEAD: conservative sum of all other story elements:
-    # title(~10) + info(~8) + customer(~22) + spacers/HR(~7) +
-    # totals(~25) + words+bank(~22) + terms+sig+footer(~39) + buffers ≈ 165 mm
-    _usable_h       = A4[1] - top_margin - 4 * mm   # bottomMargin = 4 mm
-    _OVERHEAD       = 165 * mm
-    _avail_for_tbl  = max(0.0, _usable_h - _OVERHEAD)
 
     col_w = [9*mm, 59*mm, 13*mm, 23*mm, 23*mm, 13*mm, 20*mm, 20*mm]
-    ih_s  = ParagraphStyle("ih",  fontName="Helvetica-Bold", fontSize=7.5, textColor=WHITE, alignment=TA_CENTER)
-    ir_s  = ParagraphStyle("ir",  fontName="Helvetica",      fontSize=8,   textColor=DARK)
-    irc_s = ParagraphStyle("irc", fontName="Helvetica",      fontSize=8,   textColor=DARK, alignment=TA_RIGHT)
-    icc_s = ParagraphStyle("icc", fontName="Helvetica",      fontSize=8,   textColor=DARK, alignment=TA_CENTER)
+    hdrs  = ["SR\nNO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)",
+             "AMOUNT\n(AED)", "TAX\nRATE", "TAX AMT\n(AED)", "TOTAL\n(AED)"]
 
-    hdrs = ["SR\nNO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)",
-            "AMOUNT\n(AED)", "TAX\nRATE", "TAX AMT\n(AED)", "TOTAL\n(AED)"]
+    def _item_row(idx, item):
+        qty    = item.get("quantity",   1)
+        up     = item.get("unit_price", 0)
+        amt    = round(qty * up, 2)
+        vat_ok = item.get("vat_applicable", True)
+        tax_a  = item.get("vat_amount", 0)
+        tot_a  = item.get("total", round(amt + tax_a, 2))
+        return [
+            Paragraph(str(idx),                       _icc),
+            Paragraph(_xe(item.get("description","")), _ir),
+            Paragraph(f"{qty:.2f}",  _icc),
+            Paragraph(f"{up:.2f}",   _irc),
+            Paragraph(f"{amt:.2f}",  _irc),
+            Paragraph("5%" if vat_ok else "0%", _icc),
+            Paragraph(f"{tax_a:.2f}", _irc),
+            Paragraph(f"{tot_a:.2f}", _irc),
+        ]
 
-    def _base_rows():
-        rows = [[Paragraph(h, ih_s) for h in hdrs]]
-        for idx, item in enumerate(actual_items, 1):
-            qty      = item.get("quantity", 1)
-            up       = item.get("unit_price", 0)
-            amt      = round(qty * up, 2)
-            vat_app  = item.get("vat_applicable", True)
-            tax_rate = "5%" if vat_app else "0%"
-            tax_amt  = item.get("vat_amount", 0)
-            total_a  = item.get("total", round(amt + tax_amt, 2))
-            rows.append([
-                Paragraph(str(idx),                    icc_s),
-                Paragraph(item.get("description", ""), ir_s),
-                Paragraph(f"{qty:.2f}",    icc_s),
-                Paragraph(f"{up:.2f}",     irc_s),
-                Paragraph(f"{amt:.2f}",    irc_s),
-                Paragraph(tax_rate,        icc_s),
-                Paragraph(f"{tax_amt:.2f}",  irc_s),
-                Paragraph(f"{total_a:.2f}", irc_s),
-            ])
-        return rows
+    base_rows = [[Paragraph(h, _ih) for h in hdrs]]
+    for i, item in enumerate(actual_items, 1):
+        base_rows.append(_item_row(i, item))
 
-    def _make_tbl(rows, pad_t, pad_b):
+    def _make_items_tbl(rows, pad_t=6, pad_b=6):
         t = Table(rows, colWidths=col_w)
         t.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0),  (-1, 0),  PRIMARY),
-            ("ROWBACKGROUNDS",(0, 1),  (-1, -1), [LIGHT_GRAY, WHITE]),
-            ("GRID",          (0, 0),  (-1, -1), 0.5, colors.HexColor("#C0C8D8")),
+            ("BACKGROUND",    (0, 0),  (-1, 0),  HDR_BG),
+            ("ROWBACKGROUNDS",(0, 1),  (-1, -1), [ROW_A, ROW_B]),
+            ("GRID",          (0, 0),  (-1, -1), 0.5, GRID_C),
             ("VALIGN",        (0, 0),  (-1, -1), "MIDDLE"),
             ("TOPPADDING",    (0, 0),  (-1, 0),  5),
             ("BOTTOMPADDING", (0, 0),  (-1, 0),  5),
@@ -446,45 +457,61 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ]))
         return t
 
-    base_rows = _base_rows()
+    # Footer budget: totals + bank + terms + sig ≈ 82 mm
+    _FOOTER_H      = 82 * mm
+    _usable_h      = A4[1] - top_margin - 4 * mm
+    _max_tbl_h     = max(55 * mm, _usable_h - _FOOTER_H)
+    _MIN_VISUAL_H  = 88 * mm   # minimum visual table area (no visible empty rows)
 
-    # Measure actual height with normal padding (7/6 pt) — accounts for description wrapping
-    _tbl_normal = _make_tbl(base_rows, 7, 6)
-    _h_normal   = _tbl_normal.wrap(_CONTENT_W, 9999 * mm)[1]
+    items_tbl = _make_items_tbl(base_rows)
+    items_h   = items_tbl.wrap(_CONTENT_W, 9999 * mm)[1]
+    cap_h     = 0.0
 
-    if _h_normal <= _avail_for_tbl:
-        # Fits at normal padding — try adding filler rows to fill space
-        _filler_h  = 8 * mm   # estimated height per filler row at normal padding
-        _filler_n  = min(5, int((_avail_for_tbl - _h_normal) / _filler_h))
-        if _filler_n > 0:
-            empty_row = [Paragraph("", ir_s)] * 8
-            filler_rows = base_rows + [empty_row] * _filler_n
-            items_t = _make_tbl(filler_rows, 7, 6)
-        else:
-            items_t = _tbl_normal
-        _dbg(f"invoice items: normal layout n={len(actual_items)} filler={_filler_n} h={_h_normal:.1f}")
+    if items_h <= _max_tbl_h:
+        # Fits with room for footer — compute clean end-cap height
+        cap_h = max(0.0, _MIN_VISUAL_H - items_h)
+        _dbg(f"invoice items: fit n={len(actual_items)} h={items_h:.1f} cap={cap_h:.1f}")
     else:
-        # Items overflow at normal padding — try progressively tighter padding
-        items_t = None
+        # Try progressively tighter padding to fit within footer budget
+        items_tbl = None
         for _pt, _pb in [(5, 4), (4, 3), (3, 2), (2, 2)]:
-            _t = _make_tbl(base_rows, _pt, _pb)
+            _t = _make_items_tbl(base_rows, _pt, _pb)
             _h = _t.wrap(_CONTENT_W, 9999 * mm)[1]
-            if _h <= _avail_for_tbl:
-                items_t = _t
+            if _h <= _max_tbl_h:
+                items_tbl = _t
                 _dbg(f"invoice items: compressed pad={_pt}/{_pb} n={len(actual_items)} h={_h:.1f}")
                 break
-        if items_t is None:
-            # Best effort at minimum padding — still renders, may be tight
-            items_t = _make_tbl(base_rows, 2, 2)
-            _dbg(f"invoice items: minimum padding n={len(actual_items)} h_normal={_h_normal:.1f}")
+        if items_tbl is None:
+            # Multi-page: render at min padding, let ReportLab flow naturally
+            items_tbl = _make_items_tbl(base_rows, 2, 2)
+            _dbg(f"invoice items: overflow/multi-page n={len(actual_items)} h={items_h:.1f}")
 
-    story.append(items_t)
+    story.append(items_tbl)
 
-    # ── 5. Totals ─────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 3 * mm))
-    tl_s = ParagraphStyle("tl", fontName="Helvetica",      fontSize=8.5, textColor=DARK,  alignment=TA_RIGHT)
-    tv_s = ParagraphStyle("tv", fontName="Helvetica",      fontSize=8.5, textColor=DARK,  alignment=TA_RIGHT)
-    tb_s = ParagraphStyle("tb", fontName="Helvetica-Bold", fontSize=10,  textColor=WHITE, alignment=TA_RIGHT)
+    # Clean end-cap fills visual table area — no bordered empty rows
+    if cap_h > 3 * mm:
+        class _EndCap(Flowable):
+            def __init__(self, w, h):
+                super().__init__()
+                self.width = w
+                self._h = h
+            def wrap(self, aw, ah):
+                return self.width, self._h
+            def draw(self):
+                c = self.canv
+                c.setFillColor(CAP_BG)
+                c.setStrokeColor(GRID_C)
+                c.setLineWidth(0.5)
+                c.rect(0, 0, self.width, self._h, fill=1, stroke=1)
+        story.append(_EndCap(_CONTENT_W, cap_h))
+
+    # ── 6. Totals | Bank Details | Terms | Signature — KeepTogether ──────────
+    # Wrapping everything in one KeepTogether guarantees footer stays on same
+    # page as the last item row (won't split across pages for small invoices).
+
+    tl_s = ParagraphStyle("_tl", fontName="Helvetica",      fontSize=8.5, textColor=INK,          alignment=TA_RIGHT)
+    tv_s = ParagraphStyle("_tv", fontName="Helvetica",      fontSize=8.5, textColor=INK,          alignment=TA_RIGHT)
+    tb_s = ParagraphStyle("_tb", fontName="Helvetica-Bold", fontSize=10,  textColor=colors.white, alignment=TA_RIGHT)
 
     tot_rows = [[Paragraph("Amount Excl. VAT:", tl_s), Paragraph(f"AED {subtotal:.2f}", tv_s)]]
     if discount > 0:
@@ -496,36 +523,28 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     tot_t.setStyle(TableStyle([
         ("ALIGN",         (0, 0),  (-1, -1), "RIGHT"),
         ("VALIGN",        (0, 0),  (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0),  (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0),  (-1, -1), 3),
-        ("GRID",          (0, 0),  (-1, -2), 0.3, colors.HexColor("#CBD5E1")),
-        ("LINEABOVE",     (0, -1), (-1, -1), 1, PRIMARY),
-        ("BACKGROUND",    (0, -1), (-1, -1), PRIMARY),
+        ("TOPPADDING",    (0, 0),  (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("GRID",          (0, 0),  (-1, -2), 0.3, GRID_C),
+        ("LINEABOVE",     (0, -1), (-1, -1), 1,   HDR_BG),
+        ("BACKGROUND",    (0, -1), (-1, -1), HDR_BG),
     ]))
     tot_wrap = Table([[Spacer(1, 1), tot_t]], colWidths=[_CONTENT_W - 90 * mm, 90 * mm])
     tot_wrap.setStyle(TableStyle([
         ("VALIGN",       (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
-    story.append(tot_wrap)
 
-    # ── 6. Amount in Words | Bank Details ─────────────────────────────────────
-    story.append(Spacer(1, 2 * mm))
-    story.append(HRFlowable(width="100%", thickness=0.4, color=colors.HexColor("#CBD5E1")))
-    story.append(Spacer(1, 2 * mm))
-
-    ws_s   = ParagraphStyle("ws",  fontName="Helvetica-Bold", fontSize=7.5, textColor=DARK)
-    wv_s   = ParagraphStyle("wv",  fontName="Helvetica",      fontSize=7.5, textColor=DARK)
-    bk_lbl = ParagraphStyle("bkl", fontName="Helvetica-Bold", fontSize=7.5, textColor=MED_GRAY)
-    bk_val = ParagraphStyle("bkv", fontName="Helvetica",      fontSize=7.5, textColor=DARK)
+    ws_s   = ParagraphStyle("_ws",  fontName="Helvetica-Bold", fontSize=7.5, textColor=INK)
+    wv_s   = ParagraphStyle("_wv",  fontName="Helvetica",      fontSize=7.5, textColor=INK)
+    bk_lbl = ParagraphStyle("_bkl", fontName="Helvetica-Bold", fontSize=7.5, textColor=MUTED)
+    bk_val = ParagraphStyle("_bkv", fontName="Helvetica",      fontSize=7.5, textColor=INK)
 
     words_items = [Paragraph("Amount in Words:", ws_s), Spacer(1, 1 * mm),
                    Paragraph(_amount_in_words(total), wv_s)]
     if invoice_data.get("notes"):
         words_items += [Spacer(1, 1.5 * mm),
-                        Paragraph(f"<b>Note:</b> {invoice_data['notes']}",
-                                  ParagraphStyle("nt", fontName="Helvetica", fontSize=7, textColor=MED_GRAY))]
+                        Paragraph(f"<b>Note:</b> {_xe(invoice_data['notes'])}",
+                                  ParagraphStyle("_nt", fontName="Helvetica", fontSize=7, textColor=MUTED))]
 
     bank_items = [
         Paragraph("Bank Details:", bk_lbl), Spacer(1, 1 * mm),
@@ -539,26 +558,19 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     wb_t = Table([[words_items, bank_items]], colWidths=[90 * mm, 90 * mm])
     wb_t.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("LINEAFTER",     (0, 0), (0, 0),   0.3, colors.HexColor("#CBD5E1")),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0), ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LINEAFTER",     (0, 0), (0, 0),   0.3, GRID_C),
         ("LEFTPADDING",   (1, 0), (1, 0),   6),
     ]))
-    story.append(wb_t)
 
-    # ── 7. Terms & Conditions + Signatures (KeepTogether) ────────────────────
-    from reportlab.platypus import KeepTogether
+    tc_hdr  = ParagraphStyle("_tch",  fontName="Helvetica-Bold", fontSize=4.6, textColor=INK)
+    tc_body = ParagraphStyle("_tcb",  fontName="Helvetica",      fontSize=4.6, textColor=INK, leading=6)
+    sig_ln  = ParagraphStyle("_sgln", fontName="Helvetica",      fontSize=8,   textColor=INK, alignment=TA_CENTER)
+    sig_sub = ParagraphStyle("_sgsb", fontName="Helvetica",      fontSize=7,   textColor=INK, alignment=TA_CENTER)
+    sig_lbl = ParagraphStyle("_sgll", fontName="Helvetica-Bold", fontSize=7.5, textColor=INK, alignment=TA_CENTER)
+    ft_s    = ParagraphStyle("_ft",   fontName="Helvetica",      fontSize=6.5, textColor=MUTED, alignment=TA_CENTER)
 
-    tc_hdr  = ParagraphStyle("tch",  fontName="Helvetica-Bold", fontSize=4.6, textColor=DARK)
-    tc_body = ParagraphStyle("tcb",  fontName="Helvetica",      fontSize=4.6, textColor=DARK, leading=6)
-    sig_line = ParagraphStyle("sgl", fontName="Helvetica",      fontSize=8,   textColor=DARK,     alignment=TA_CENTER)
-    sig_lbl  = ParagraphStyle("sgll",fontName="Helvetica-Bold", fontSize=7.5, textColor=DARK,     alignment=TA_CENTER)
-    sig_sub  = ParagraphStyle("sgsb",fontName="Helvetica",      fontSize=7,   textColor=DARK,     alignment=TA_CENTER)
-    ft_s     = ParagraphStyle("ft",  fontName="Helvetica",      fontSize=6.5, textColor=MED_GRAY, alignment=TA_CENTER)
-
-    # 3 compact terms — no extra spacer between them
     terms_block = [
         Paragraph("Terms &amp; Conditions:", tc_hdr),
         Paragraph("1)  Goods once sold will not be taken back.", tc_body),
@@ -567,80 +579,66 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     ]
 
     require_cust_sig = bool(invoice_data.get("require_customer_signature", False))
-    comp_name = _xe(company.get("name", ""))
-    _dbg(f"generate_invoice_pdf: require_customer_signature={require_cust_sig}")
-    _dbg(f"include_stamp={include_stamp}")
-    _dbg(f"stamp_path={stamp_path_check or 'none'}")
+    _dbg(f"generate_invoice_pdf: require_cust_sig={require_cust_sig} stamp={include_stamp} path={stamp_path_check or 'none'}")
 
-    # Build Authorized cell — always rendered on the right
     auth_sig = []
-    stamp_rendered = False
     if include_stamp and stamp_path_check:
         try:
             from PIL import Image as PILImage
             with PILImage.open(stamp_path_check) as img:
                 sw, sh = img.size
             STAMP_W = 32 * mm
-            stamp_h = min(STAMP_W * sh / sw, 10 * mm)
-            auth_sig.append(Image(stamp_path_check, width=STAMP_W, height=stamp_h))
+            auth_sig.append(Image(stamp_path_check, width=STAMP_W, height=min(STAMP_W * sh / sw, 10 * mm)))
             auth_sig.append(Spacer(1, 0.5 * mm))
-            stamp_rendered = True
         except Exception:
             auth_sig.append(Spacer(1, 2 * mm))
     else:
         auth_sig.append(Spacer(1, 2 * mm))
-    _dbg(f"stamp_rendered={stamp_rendered}")
 
     auth_sig += [
-        Paragraph("________________________", sig_line),
+        Paragraph("________________________", sig_ln),
         Spacer(1, 4 * mm),
         Paragraph("Authorized Signature", sig_sub),
     ]
 
     if require_cust_sig:
-        _dbg("RENDERING 2-COL: Receiver (left) + Authorized (right)")
-        recv_sig = [
-            Spacer(1, 2 * mm),
-            Paragraph("________________________", sig_line),
-            Spacer(1, 4 * mm),
-            Paragraph("Receiver's Name &amp; Signature", sig_lbl),
-        ]
+        recv_sig = [Spacer(1, 2 * mm),
+                    Paragraph("________________________", sig_ln),
+                    Spacer(1, 4 * mm),
+                    Paragraph("Receiver's Name &amp; Signature", sig_lbl)]
         sig_t = Table([[recv_sig, auth_sig]], colWidths=[90 * mm, 90 * mm], rowHeights=[24 * mm])
         sig_t.setStyle(TableStyle([
-            ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
-            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 4),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
-            ("TOPPADDING",    (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-            ("LINEAFTER",     (0, 0), (0, 0),   0.3, colors.HexColor("#CBD5E1")),
+            ("VALIGN",       (0, 0), (-1, -1), "BOTTOM"), ("ALIGN",  (0, 0), (-1, -1), "CENTER"),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 4),        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING",   (0, 0), (-1, -1), 0),        ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
+            ("LINEAFTER",    (0, 0), (0, 0),   0.3, GRID_C),
         ]))
     else:
-        _dbg("RENDERING Authorized ONLY on right (sig=OFF)")
-        # Left cell empty, authorized on right
         sig_t = Table([[[], auth_sig]], colWidths=[90 * mm, 90 * mm], rowHeights=[24 * mm])
         sig_t.setStyle(TableStyle([
-            ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
-            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 4),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
-            ("TOPPADDING",    (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("VALIGN",       (0, 0), (-1, -1), "BOTTOM"), ("ALIGN",  (0, 0), (-1, -1), "CENTER"),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 4),        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING",   (0, 0), (-1, -1), 0),        ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
         ]))
 
-    bottom_content = [
-        HRFlowable(width="100%", thickness=0.4, color=colors.HexColor("#CBD5E1")),
-    ]
-    bottom_content += terms_block
-    bottom_content += [
+    footer_block = [
+        Spacer(1, 3 * mm),
+        tot_wrap,
+        Spacer(1, 2 * mm),
+        HRFlowable(width="100%", thickness=0.4, color=GRID_C),
+        Spacer(1, 2 * mm),
+        wb_t,
+        Spacer(1, 2 * mm),
+        HRFlowable(width="100%", thickness=0.4, color=GRID_C),
+    ] + terms_block + [
         Spacer(1, 0.5 * mm),
-        HRFlowable(width="100%", thickness=0.3, color=colors.HexColor("#CBD5E1")),
+        HRFlowable(width="100%", thickness=0.3, color=GRID_C),
         sig_t,
-        HRFlowable(width="100%", thickness=0.3, color=MED_GRAY),
+        HRFlowable(width="100%", thickness=0.3, color=MUTED),
         Spacer(1, 0.5 * mm),
         Paragraph("This is a computer generated TAX INVOICE. Thank you for your business.", ft_s),
     ]
-    story.append(KeepTogether(bottom_content))
+    story.append(KeepTogether(footer_block))
 
     doc.build(story, onFirstPage=_draw_header, onLaterPages=_draw_later)
     return filepath

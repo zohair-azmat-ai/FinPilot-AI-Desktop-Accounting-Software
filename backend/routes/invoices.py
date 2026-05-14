@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 from typing import List, Optional
 from datetime import datetime, timezone
 from database import get_db
@@ -111,7 +112,12 @@ def list_invoices(status: Optional[str] = None, customer_id: Optional[int] = Non
         q = q.filter(models.Invoice.status == status)
     if customer_id:
         q = q.filter(models.Invoice.customer_id == customer_id)
-    return q.order_by(models.Invoice.id.desc()).all()
+    invoices = q.order_by(models.Invoice.id.desc()).all()
+    # Strip soft-deleted items from each invoice so they don't appear in the UI
+    for inv in invoices:
+        active = [it for it in inv.items if not it.deleted_at]
+        set_committed_value(inv, 'items', active)
+    return invoices
 
 
 @router.get("/{invoice_id}", response_model=schemas.InvoiceOut)
@@ -119,6 +125,12 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
     inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id, _active()).first()
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    # Exclude soft-deleted items so the edit screen only shows active items
+    active_items = db.query(models.InvoiceItem).filter(
+        models.InvoiceItem.invoice_id == invoice_id,
+        models.InvoiceItem.deleted_at.is_(None),
+    ).all()
+    set_committed_value(inv, 'items', active_items)
     return inv
 
 

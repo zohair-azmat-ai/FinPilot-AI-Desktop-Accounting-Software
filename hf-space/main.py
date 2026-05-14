@@ -11,7 +11,7 @@ import urllib.parse
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -379,4 +379,87 @@ def debug_invoice(invoice_number: str, workspace_id: Optional[str] = Query(None)
             for r in rows
         ],
         "items_count": items_count,
+    }
+
+
+@app.get("/api/cloud/debug/invoice-items/{invoice_number}")
+def debug_invoice_items(invoice_number: str, workspace_id: Optional[str] = Query(None)):
+    """Show active/stale item counts for an invoice in Supabase + asset availability."""
+    ws = workspace_id or DEFAULT_WS
+    rows = _sb_get("invoices", {"invoice_number": f"eq.{invoice_number}", "limit": "5"}, ws)
+    inv = rows[0] if rows else None
+
+    active_items, stale_items = [], []
+    if inv:
+        all_items = _sb_get("invoice_items", {"invoice_id": f"eq.{inv['id']}", "limit": "200"}, ws)
+        for it in all_items:
+            entry = {
+                "id": it.get("id"), "sync_uuid": it.get("sync_uuid"),
+                "description": (it.get("description") or "")[:60],
+                "deleted_at": it.get("deleted_at"),
+            }
+            if it.get("deleted_at"):
+                stale_items.append(entry)
+            else:
+                active_items.append(entry)
+
+    lh_tmp  = "/tmp/assets/letterhead.jpg"
+    lh_repo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "letterhead.jpg")
+    st_tmp  = "/tmp/assets/stamp.png"
+    st_repo = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "stamp.png")
+
+    return {
+        "invoice_number": invoice_number,
+        "workspace_id": ws,
+        "invoice": {
+            "id": inv.get("id") if inv else None,
+            "deleted_at": inv.get("deleted_at") if inv else None,
+            "print_letterhead": inv.get("letterhead") if inv else None,
+            "include_stamp": inv.get("include_stamp") if inv else None,
+        } if inv else None,
+        "items": {
+            "active_count": len(active_items),
+            "stale_count": len(stale_items),
+            "active": active_items,
+            "stale": stale_items,
+        },
+        "assets": {
+            "letterhead_tmp": os.path.exists(lh_tmp),
+            "letterhead_repo": os.path.exists(lh_repo),
+            "stamp_tmp": os.path.exists(st_tmp),
+            "stamp_repo": os.path.exists(st_repo),
+        },
+        "pdf_will_show_items": len(active_items),
+    }
+
+
+@app.post("/api/assets/upload")
+async def upload_asset(
+    asset_type: str = Form(...),
+    file: UploadFile = File(...),
+):
+    """Upload letterhead or stamp asset to /tmp/assets/ for use in PDF generation.
+
+    asset_type: 'letterhead' → saves as /tmp/assets/letterhead.jpg
+                'stamp'      → saves as /tmp/assets/stamp.png
+    """
+    if asset_type not in ("letterhead", "stamp"):
+        raise HTTPException(400, "asset_type must be 'letterhead' or 'stamp'")
+
+    ext = "jpg" if asset_type == "letterhead" else "png"
+    dest = f"/tmp/assets/{asset_type}.{ext}"
+    os.makedirs("/tmp/assets", exist_ok=True)
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "Uploaded file is empty")
+
+    with open(dest, "wb") as f:
+        f.write(content)
+
+    return {
+        "ok": True,
+        "asset_type": asset_type,
+        "saved_to": dest,
+        "size_bytes": len(content),
     }
