@@ -272,7 +272,7 @@ def debug_pdf_runtime():
         last_log = [f"log read error: {_e}"]
 
     return {
-        "build": "FP_BLUE_V7",
+        "build": "FP_BLUE_V8",
         "python_exe": sys.executable,
         "cwd": os.getcwd(),
         "routes_here": here_routes,
@@ -367,8 +367,9 @@ def push_assets(body: PushAssetsRequest):
 
     results = {}
 
-    # Letterhead: look in backend/assets/ first, then _internal/ sibling
+    # Letterhead: user dir first (matches pdf_generator priority), then bundle assets
     lh_paths = [
+        os.path.join(_USER_ASSETS, "letterhead.jpg"),
         os.path.join(_BACKEND_DIR, "assets", "letterhead.jpg"),
         os.path.join(_HERE, "..", "assets", "letterhead.jpg"),
     ]

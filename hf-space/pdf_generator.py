@@ -20,7 +20,7 @@ def _dbg(msg: str) -> None:
     except Exception:
         pass
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V7_HF LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V8_HF LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -896,11 +896,15 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
 # ── Quotation ─────────────────────────────────────────────────────────────────
 def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     from reportlab.platypus import KeepTogether
+    _refresh_asset_paths()
 
     filename  = f"Quotation_{quotation_data['quotation_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath  = os.path.join(EXPORT_DIR, filename)
 
-    use_lh        = quotation_data.get("letterhead", True) and os.path.exists(LETTERHEAD_PATH)
+    lh_file_ok_q  = os.path.exists(LETTERHEAD_PATH)
+    _dbg(f"[quotation] LETTERHEAD_PATH={LETTERHEAD_PATH} exists={lh_file_ok_q}")
+    use_lh        = quotation_data.get("letterhead", True) and lh_file_ok_q
+    _dbg(f"[quotation] use_lh={use_lh} flag={quotation_data.get('letterhead', True)}")
     page_w, page_h = A4
 
     LH_MAX_H  = 70 * mm
@@ -1135,7 +1139,9 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     if notes:
         terms_cell.append(Paragraph(f"Note: {_xe(notes)}", tc_val_s))
 
-    stamp_path_q = _get_stamp_path()
+    include_stamp_q = bool(quotation_data.get("include_stamp", False))
+    stamp_path_q = _get_stamp_path() if include_stamp_q else ""
+    _dbg(f"[quotation] include_stamp={include_stamp_q} stamp_path={stamp_path_q or 'none'}")
     sig_cell = []
     if stamp_path_q:
         try:
@@ -1146,9 +1152,12 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
             stamp_h = min(STAMP_W * sh / sw, 12 * mm)
             sig_cell.append(Image(stamp_path_q, width=STAMP_W, height=stamp_h))
             sig_cell.append(Spacer(1, 1 * mm))
-        except Exception:
+            _dbg(f"[quotation] stamp rendered: {STAMP_W:.1f}x{stamp_h:.1f}")
+        except Exception as _se:
+            _dbg(f"[quotation] stamp render ERROR: {_se}")
             sig_cell.append(Spacer(1, 3 * mm))
     else:
+        _dbg(f"[quotation] stamp skipped: include_stamp={include_stamp_q} path={stamp_path_q or 'none'}")
         sig_cell.append(Spacer(1, 3 * mm))
     sig_cell += [
         Paragraph("________________________", sig_ln_s),
