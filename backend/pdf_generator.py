@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V6 LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V7 LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -265,7 +265,11 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     page_w, page_h = A4
 
     # ── Letterhead ───────────────────────────────────────────────────────────
-    use_letterhead = invoice_data.get("letterhead", True) and os.path.exists(LETTERHEAD_PATH)
+    lh_file_ok = os.path.exists(LETTERHEAD_PATH)
+    _dbg(f"LETTERHEAD_PATH={LETTERHEAD_PATH} exists={lh_file_ok}")
+    _dbg(f"stamp_path={_get_stamp_path() or 'NOT FOUND'}")
+    use_letterhead = invoice_data.get("letterhead", True) and lh_file_ok
+    _dbg(f"use_letterhead={use_letterhead} (flag={invoice_data.get('letterhead', True)} file={lh_file_ok})")
     LH_MAX_H  = 70 * mm
     LH_MIN_H  = 62 * mm
     raw_lh_h  = _lh_page_height() if use_letterhead else 0.0
@@ -337,13 +341,9 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     story.append(Paragraph("TAX INVOICE", _ti))
     story.append(Spacer(1, 2.5 * mm))
 
-    # ── 2. Invoice No | Date row ──────────────────────────────────────────────
-    if use_letterhead:
-        info_data = [[[Paragraph("Invoice No:", _lbl),  Paragraph(_xe(inv_no),   _val)],
-                      [Paragraph("Date:",       _lblr), Paragraph(_xe(inv_date), _valr)]]]
-    else:
-        info_data = [[Paragraph(_xe(inv_no), _val), Paragraph(_xe(inv_date), _valr)]]
-
+    # ── 2. Invoice No | Invoice Date row (labels always shown) ───────────────
+    info_data = [[[Paragraph("Invoice No:", _lbl),    Paragraph(_xe(inv_no),   _val)],
+                  [Paragraph("Invoice Date:", _lblr), Paragraph(_xe(inv_date), _valr)]]]
     info_t = Table(info_data, colWidths=[90 * mm, 90 * mm])
     info_t.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
@@ -351,7 +351,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ("TOPPADDING",    (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(info_t)
-    story.append(Spacer(1, (4 if not use_letterhead else 2) * mm))
+    story.append(Spacer(1, 2 * mm))
 
     # ── 3. Bill To (left) | DO / LPO / Supplier TRN (right) ─────────────────
     _cn = ParagraphStyle("_cn", fontName="Helvetica-Bold", fontSize=10, textColor=INK)
@@ -563,12 +563,16 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
             from PIL import Image as PILImage
             with PILImage.open(stamp_path_check) as img:
                 sw, sh = img.size
-            STAMP_W = 32 * mm
-            auth_sig.append(Image(stamp_path_check, width=STAMP_W, height=min(STAMP_W * sh / sw, 10 * mm)))
+            STAMP_W = 38 * mm
+            STAMP_H = min(STAMP_W * sh / sw, 20 * mm)
+            auth_sig.append(Image(stamp_path_check, width=STAMP_W, height=STAMP_H))
             auth_sig.append(Spacer(1, 0.5 * mm))
-        except Exception:
+            _dbg(f"stamp rendered: {STAMP_W:.1f}x{STAMP_H:.1f} from {stamp_path_check}")
+        except Exception as _se:
+            _dbg(f"stamp render ERROR: {_se}")
             auth_sig.append(Spacer(1, 2 * mm))
     else:
+        _dbg(f"stamp skipped: include_stamp={include_stamp} path={stamp_path_check or 'none'}")
         auth_sig.append(Spacer(1, 2 * mm))
 
     auth_sig += [
@@ -891,7 +895,10 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     filename  = f"Quotation_{quotation_data['quotation_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath  = os.path.join(EXPORT_DIR, filename)
 
-    use_lh        = quotation_data.get("letterhead", True) and os.path.exists(LETTERHEAD_PATH)
+    lh_file_ok_q = os.path.exists(LETTERHEAD_PATH)
+    _dbg(f"[quotation] LETTERHEAD_PATH={LETTERHEAD_PATH} exists={lh_file_ok_q}")
+    use_lh        = quotation_data.get("letterhead", True) and lh_file_ok_q
+    _dbg(f"[quotation] use_lh={use_lh} flag={quotation_data.get('letterhead', True)}")
     page_w, page_h = A4
 
     LH_MAX_H  = 70 * mm

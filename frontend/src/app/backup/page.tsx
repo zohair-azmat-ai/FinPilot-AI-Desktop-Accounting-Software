@@ -9,7 +9,7 @@ import {
 } from "@/lib/api";
 import {
   HardDrive, Download, Upload, AlertTriangle, CheckCircle,
-  Cloud, CloudOff, RefreshCw, Unlink, Link, Copy, ChevronDown, ChevronUp,
+  Cloud, CloudOff, RefreshCw, Unlink, Link, Copy, ChevronDown, ChevronUp, ImageUp,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -77,6 +77,7 @@ export default function BackupPage() {
   const [showSchema, setShowSchema] = useState(false);
   const [schemaCopied, setSchemaCopied] = useState(false);
   const [cloudPdfUrlInput, setCloudPdfUrlInput] = useState("");
+  const [pushingAssets, setPushingAssets] = useState(false);
 
   useEffect(() => {
     const saved = getCloudPdfUrl();
@@ -472,23 +473,55 @@ export default function BackupPage() {
                 </p>
               </div>
               <button
-                onClick={async () => {
+                onClick={() => {
                   const trimmed = cloudPdfUrlInput.trim().replace(/\/$/, "");
                   setCloudPdfUrl(trimmed);
                   toast.success(trimmed ? "Cloud PDF Backend URL saved." : "Cloud PDF Backend URL cleared.");
-                  if (trimmed) {
-                    try {
-                      await api.post("/api/cloud/push-assets", { hf_url: trimmed });
-                      toast.success("Letterhead & stamp synced to cloud backend.");
-                    } catch {
-                      toast.error("Assets sync failed — cloud PDF may lack letterhead/stamp.");
-                    }
-                  }
                 }}
                 className="btn-primary w-full justify-center"
               >
                 Save Cloud PDF Backend
               </button>
+
+              <div className="border-t border-bg-border pt-3">
+                <p className="text-xs text-text-muted mb-2">
+                  Upload your letterhead and stamp images to the cloud backend so cloud-generated PDFs show the same branding as desktop PDFs.
+                </p>
+                <button
+                  onClick={async () => {
+                    const trimmed = cloudPdfUrlInput.trim().replace(/\/$/, "") || getCloudPdfUrl();
+                    if (!trimmed) {
+                      toast.error("Set and save a Cloud PDF Backend URL first.");
+                      return;
+                    }
+                    setPushingAssets(true);
+                    try {
+                      const r = await api.post("/api/cloud/push-assets", { hf_url: trimmed });
+                      const res = r.data?.results || {};
+                      const lhOk = res.letterhead?.ok;
+                      const stOk = res.stamp?.ok;
+                      if (lhOk && stOk) {
+                        toast.success("Letterhead & stamp uploaded to cloud backend.");
+                      } else {
+                        const errs = [
+                          !lhOk && `Letterhead: ${res.letterhead?.error || "failed"}`,
+                          !stOk && `Stamp: ${res.stamp?.error || "failed"}`,
+                        ].filter(Boolean).join("  |  ");
+                        toast.error(`Asset upload partial: ${errs}`);
+                      }
+                    } catch (e) {
+                      toast.error(apiErr(e, "Asset upload failed — check HF Space URL."));
+                    } finally {
+                      setPushingAssets(false);
+                    }
+                  }}
+                  disabled={pushingAssets}
+                  className="btn-secondary w-full justify-center disabled:opacity-40"
+                >
+                  <ImageUp size={14} />
+                  {pushingAssets ? "Uploading assets…" : "Push Assets to Cloud (Letterhead & Stamp)"}
+                </button>
+              </div>
             </div>
 
             <div className="p-3 rounded-lg bg-bg-secondary border border-bg-border text-xs text-text-muted space-y-1">
