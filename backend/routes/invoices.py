@@ -347,11 +347,11 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
             "discount": inv.discount,
             "total": inv.total,
             "notes": inv.notes,
-            "letterhead": inv.letterhead,
+            "letterhead": inv.letterhead if inv.letterhead is not None else True,
             "lpo_no": inv.lpo_no or "",
             "do_no": inv.do_no or "",
             "is_cash": inv.is_cash,
-            "include_stamp": inv.include_stamp,
+            "include_stamp": inv.include_stamp if inv.include_stamp is not None else False,
             "require_customer_signature": inv.require_customer_signature,
         }
         doc_number = inv.invoice_number

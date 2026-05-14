@@ -292,6 +292,72 @@ def debug_pdf_runtime():
     }
 
 
+@router.get("/debug/pdf-flags/{doc_type}/{doc_no}")
+def debug_pdf_flags(doc_type: str, doc_no: str):
+    """Return DB branding flags + resolved asset paths for an invoice or quotation.
+    doc_type: 'invoice' or 'quotation'
+    doc_no:   invoice_number (e.g. '8865') or quotation_number (e.g. 'QUO-2723')
+    """
+    import pdf_generator as pg
+    from database import DB_PATH as _db_path
+
+    con = sqlite3.connect(_db_path)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    doc_type = doc_type.lower()
+    row = None
+    if doc_type == "invoice":
+        cur.execute(
+            "SELECT id, invoice_number, letterhead, include_stamp FROM invoices "
+            "WHERE invoice_number = ? OR id = ? LIMIT 1",
+            (doc_no, doc_no if doc_no.isdigit() else -1),
+        )
+        row = cur.fetchone()
+    elif doc_type == "quotation":
+        cur.execute(
+            "SELECT id, quotation_number, letterhead, include_stamp FROM quotations "
+            "WHERE quotation_number = ? OR id = ? LIMIT 1",
+            (doc_no, doc_no if doc_no.isdigit() else -1),
+        )
+        row = cur.fetchone()
+    con.close()
+
+    if not row:
+        return {"error": f"{doc_type} '{doc_no}' not found in local DB"}
+
+    raw = dict(row)
+    # Apply the same defaulting logic as the PDF route
+    resolved_letterhead = raw["letterhead"] if raw["letterhead"] is not None else True
+    resolved_stamp = raw["include_stamp"] if raw["include_stamp"] is not None else False
+
+    lh_path = pg.LETTERHEAD_PATH
+    stamp_path = pg._get_stamp_path()
+
+    return {
+        "doc_type": doc_type,
+        "doc_no": doc_no,
+        "db_flags_raw": {
+            "letterhead": raw["letterhead"],
+            "include_stamp": raw["include_stamp"],
+        },
+        "resolved_flags": {
+            "letterhead": resolved_letterhead,
+            "include_stamp": resolved_stamp,
+        },
+        "assets": {
+            "letterhead_path": lh_path,
+            "letterhead_exists": os.path.exists(lh_path),
+            "stamp_path": stamp_path,
+            "stamp_exists": os.path.exists(stamp_path) if stamp_path else False,
+        },
+        "will_render": {
+            "use_letterhead": resolved_letterhead and os.path.exists(lh_path),
+            "use_stamp": resolved_stamp and bool(stamp_path) and os.path.exists(stamp_path or ""),
+        },
+    }
+
+
 @router.post("/push-assets")
 def push_assets(body: PushAssetsRequest):
     """Read local letterhead/stamp and POST them to the HF Space asset upload endpoint."""
