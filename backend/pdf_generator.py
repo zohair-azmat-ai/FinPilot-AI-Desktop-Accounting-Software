@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V7 LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V8 LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -61,7 +61,12 @@ os.makedirs(EXPORT_DIR, exist_ok=True)
 
 # Resolve assets/ relative to this file (works both from source and PyInstaller bundle)
 _HERE = os.path.dirname(os.path.abspath(__file__))
-LETTERHEAD_PATH = os.path.join(_HERE, "assets", "letterhead.jpg")
+
+# Letterhead: user-writable location first, fallback to bundle assets
+_USER_LH    = os.path.join(os.path.expanduser("~"), "FinPilot", "assets", "letterhead.jpg")
+_BUNDLE_LH  = os.path.join(_HERE, "assets", "letterhead.jpg")
+LETTERHEAD_PATH = _USER_LH if os.path.exists(_USER_LH) else _BUNDLE_LH
+_dbg(f"letterhead resolved: {LETTERHEAD_PATH} exists={os.path.exists(LETTERHEAD_PATH)}")
 
 # Stamp: user-writable location first, fallback to bundle assets
 _USER_STAMP  = os.path.join(os.path.expanduser("~"), "FinPilot", "assets", "stamp.png")
@@ -1133,7 +1138,9 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     if notes:
         terms_cell.append(Paragraph(f"Note: {_xe(notes)}", tc_val_s))
 
-    stamp_path_q = _get_stamp_path()
+    include_stamp_q = bool(quotation_data.get("include_stamp", False))
+    stamp_path_q = _get_stamp_path() if include_stamp_q else ""
+    _dbg(f"[quotation] include_stamp={include_stamp_q} stamp_path={stamp_path_q or 'none'}")
     sig_cell = []
     if stamp_path_q:
         try:
@@ -1144,9 +1151,12 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
             stamp_h = min(STAMP_W * sh / sw, 12 * mm)
             sig_cell.append(Image(stamp_path_q, width=STAMP_W, height=stamp_h))
             sig_cell.append(Spacer(1, 1 * mm))
-        except Exception:
+            _dbg(f"[quotation] stamp rendered: {STAMP_W:.1f}x{stamp_h:.1f}")
+        except Exception as _se:
+            _dbg(f"[quotation] stamp render ERROR: {_se}")
             sig_cell.append(Spacer(1, 3 * mm))
     else:
+        _dbg(f"[quotation] stamp skipped: include_stamp={include_stamp_q} path={stamp_path_q or 'none'}")
         sig_cell.append(Spacer(1, 3 * mm))
     sig_cell += [
         Paragraph("________________________", sig_ln_s),
