@@ -18,7 +18,8 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V10 LOADED <<<")
+_BUILD = "FP_BLUE_V10"
+_dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:

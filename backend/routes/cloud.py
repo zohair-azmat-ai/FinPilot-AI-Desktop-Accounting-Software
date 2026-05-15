@@ -272,7 +272,7 @@ def debug_pdf_runtime():
         last_log = [f"log read error: {_e}"]
 
     return {
-        "build": "FP_BLUE_V9",
+        "build": getattr(pg, "_BUILD", "unknown"),
         "python_exe": sys.executable,
         "cwd": os.getcwd(),
         "routes_here": here_routes,
