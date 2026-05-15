@@ -50,6 +50,8 @@ def _calculate_items(items_data, vat_rate=5.0):
     vat_total = 0.0
     processed = []
     for item in items_data:
+        if not (item.description or "").strip():
+            continue  # skip blank rows — never persist blank items
         line_total = item.quantity * item.unit_price
         vat_amt = round(line_total * (vat_rate / 100), 2) if item.vat_applicable else 0.0
         item_total = round(line_total + vat_amt, 2)
@@ -105,7 +107,7 @@ def create_quotation(data: schemas.QuotationCreate, db: Session = Depends(get_db
         quotation.vat_amount = vat_total
         quotation.total = total
         quotation.status = "draft"
-        db.query(models.QuotationItem).filter(models.QuotationItem.quotation_id == quotation.id).delete()
+        db.query(models.QuotationItem).filter(models.QuotationItem.quotation_id == quotation.id).delete(synchronize_session=False)
     else:
         quotation = models.Quotation(
             quotation_number=q_number,
@@ -138,6 +140,10 @@ def create_quotation(data: schemas.QuotationCreate, db: Session = Depends(get_db
             total=item["total"]
         )
         db.add(db_item)
+    db.flush()
+    _final_c = db.query(models.QuotationItem).filter(models.QuotationItem.quotation_id == quotation.id).count()
+    print(f"[quotation create] {quotation.quotation_number if hasattr(quotation, 'quotation_number') else q_number} "
+          f"received_items={len(data.items)} non_blank={len(processed_items)} final_db_count={_final_c}")
 
     db.commit()
     db.refresh(quotation)
@@ -234,11 +240,12 @@ def update_quotation(quotation_id: int, data: schemas.QuotationCreate, db: Sessi
     q.vat_amount = vat_total
     q.total = total
 
+    # Hard-delete ALL existing items for this quotation, then re-insert from payload.
+    # synchronize_session=False is required to avoid stale identity-map conflicts.
     _del_c = db.query(models.QuotationItem).filter(
         models.QuotationItem.quotation_id == quotation_id,
     ).delete(synchronize_session=False)
-    print(f"[quotation update] quotation_id={quotation_id} received={len(data.items)} deleted={_del_c} old items")
-    db.flush()
+    db.flush()   # flush the DELETE before any INSERT so no PK conflicts
 
     for item in processed_items:
         db.add(models.QuotationItem(
@@ -251,6 +258,18 @@ def update_quotation(quotation_id: int, data: schemas.QuotationCreate, db: Sessi
             vat_amount=item["vat_amount"],
             total=item["total"]
         ))
+    db.flush()
+
+    # Verify final row count before commit
+    _final_c = db.query(models.QuotationItem).filter(
+        models.QuotationItem.quotation_id == quotation_id
+    ).count()
+    print(f"[quotation update] quotation_id={quotation_id} "
+          f"received_items={len(data.items)} "
+          f"non_blank_items={len(processed_items)} "
+          f"deleted_old={_del_c} "
+          f"inserted={len(processed_items)} "
+          f"final_db_count={_final_c}")
 
     db.commit()
     db.refresh(q)

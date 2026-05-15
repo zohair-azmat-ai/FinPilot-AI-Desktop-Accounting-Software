@@ -56,6 +56,7 @@ class CustomerBase(BaseModel):
     address: Optional[str] = ""
     po_box: Optional[str] = ""
     opening_balance: Optional[float] = 0.0
+    payment_terms: Optional[str] = ""
 
 class CustomerCreate(CustomerBase):
     pass

@@ -39,6 +39,7 @@ class Customer(Base):
     address = Column(Text, default="")
     po_box = Column(String, nullable=True, default="")
     opening_balance = Column(Float, default=0.0)
+    payment_terms = Column(String, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
     deleted_at = Column(String, nullable=True, default=None)
 

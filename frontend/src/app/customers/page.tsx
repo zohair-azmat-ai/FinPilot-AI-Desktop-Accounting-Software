@@ -9,9 +9,10 @@ import { Plus, Edit2, Trash2, Users, X, Search } from "lucide-react";
 interface Customer {
   id: number; name: string; trn: string; attn: string;
   phone: string; email: string; address: string; po_box: string; opening_balance: number;
+  payment_terms: string;
 }
 
-const emptyForm = { name: "", trn: "", attn: "", phone: "", email: "", address: "", po_box: "", opening_balance: 0 };
+const emptyForm = { name: "", trn: "", attn: "", phone: "", email: "", address: "", po_box: "", opening_balance: 0, payment_terms: "" };
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -156,6 +157,10 @@ export default function CustomersPage() {
                 <div>
                   <label className="label">Opening Balance (AED)</label>
                   <input className="input" type="number" step="0.01" value={form.opening_balance} onChange={(e) => setForm({ ...form, opening_balance: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div className="col-span-2">
+                  <label className="label">Payment Terms</label>
+                  <input className="input" value={form.payment_terms} onChange={(e) => setForm({ ...form, payment_terms: e.target.value })} placeholder="e.g. 30 Days, Cash on Delivery" />
                 </div>
               </div>
               <div className="flex gap-3 pt-2">

@@ -7,7 +7,7 @@ import { getQuotations, getQuotation, getCustomers, getItems, createQuotation, u
 import toast from "react-hot-toast";
 import { Plus, FileText, Trash2, FileDown, ArrowRight, X, MessageCircle, Edit2 } from "lucide-react";
 
-interface Customer { id: number; name: string; }
+interface Customer { id: number; name: string; payment_terms: string; }
 interface Item { id: number; name: string; price: number; vat_applicable: boolean; }
 interface LineItem { item_id: number | null; description: string; quantity: number; unit_price: number; vat_applicable: boolean; [key: string]: unknown; }
 interface Quotation {
@@ -233,7 +233,11 @@ export default function QuotationsPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="col-span-2">
                   <label className="label">Customer *</label>
-                  <select className="input" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                  <select className="input" value={customerId} onChange={(e) => {
+                    setCustomerId(e.target.value);
+                    const sel = customers.find((c) => c.id === parseInt(e.target.value));
+                    if (sel?.payment_terms && !editingId) setPaymentTerms(sel.payment_terms);
+                  }}>
                     <option value="">— Select —</option>
                     {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>

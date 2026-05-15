@@ -7,7 +7,7 @@ import { getCustomers, getItems, createInvoice, getInvoice, updateInvoice, getCo
 import toast from "react-hot-toast";
 import { Plus, Trash2, ArrowLeft, Save } from "lucide-react";
 
-interface Customer { id: number; name: string; trn: string; attn: string; phone: string; address: string; po_box: string; }
+interface Customer { id: number; name: string; trn: string; attn: string; phone: string; address: string; po_box: string; payment_terms: string; }
 interface Item { id: number; name: string; description: string; unit: string; price: number; vat_applicable: boolean; }
 interface LineItem {
   item_id: number | null; description: string;
@@ -26,6 +26,7 @@ function InvoiceEditorContent() {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [discount, setDiscount] = useState(0);
   const [notes, setNotes] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState("");
   const [lpoNo, setLpoNo] = useState("");
   const [doNo, setDoNo] = useState("");
   const [letterhead, setLetterhead] = useState(true);
@@ -60,6 +61,7 @@ function InvoiceEditorContent() {
         setDate(inv.date?.split("T")[0] || "");
         setDiscount(inv.discount);
         setNotes(inv.notes);
+        setPaymentTerms(inv.payment_terms || "");
         setLpoNo(inv.lpo_no || "");
         setDoNo(inv.do_no || "");
         setLetterhead(inv.letterhead);
@@ -114,6 +116,7 @@ function InvoiceEditorContent() {
         date: date ? new Date(date).toISOString() : undefined,
         discount,
         notes,
+        payment_terms: paymentTerms,
         lpo_no: lpoNo,
         do_no: doNo,
         letterhead,
@@ -231,7 +234,11 @@ function InvoiceEditorContent() {
                 ) : (
                   <div className="md:col-span-2">
                     <label className="label">Customer *</label>
-                    <select className="input" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                    <select className="input" value={customerId} onChange={(e) => {
+                      setCustomerId(e.target.value);
+                      const sel = customers.find((c) => c.id === parseInt(e.target.value));
+                      if (sel?.payment_terms && !editId) setPaymentTerms(sel.payment_terms);
+                    }}>
                       <option value="">— Select Customer —</option>
                       {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
@@ -339,15 +346,26 @@ function InvoiceEditorContent() {
               </div>
             </div>
 
-            {/* Notes */}
-            <div className="card">
-              <label className="label">Notes / Terms</label>
-              <textarea
-                className="input h-20 resize-none"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Payment terms, notes..."
-              />
+            {/* Notes & Payment Terms */}
+            <div className="card space-y-4">
+              <div>
+                <label className="label">Payment Terms</label>
+                <input
+                  className="input"
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  placeholder="e.g. 30 Days, Cash on Delivery"
+                />
+              </div>
+              <div>
+                <label className="label">Notes</label>
+                <textarea
+                  className="input h-20 resize-none"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Additional notes..."
+                />
+              </div>
             </div>
           </div>
 

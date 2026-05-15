@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_BUILD = "FP_BLUE_V11"
+_BUILD = "FP_BLUE_V12"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -83,17 +83,16 @@ def _get_stamp_path() -> str:
 
 
 def _qty_label(qty: float) -> str:
-    """Format quantity as '1‑NO' or 'N‑NOS' (UAE unit style, non-breaking hyphen)."""
+    """Format quantity as '1-NO' or 'N-NOS' (UAE unit style, plain ASCII hyphen)."""
     n = int(qty) if qty == float(int(qty)) else qty
-    # U+2011 non-breaking hyphen prevents ReportLab from wrapping inside the quantity label
-    return f"{n}‑NO" if qty <= 1.0 else f"{n}‑NOS"
+    return f"{n}-NO" if qty <= 1.0 else f"{n}-NOS"
 
-# Brand blue extracted from letterhead logo (R=48 G=16 B=160 → #3010A0)
-PRIMARY    = colors.HexColor("#1A0B78")   # darker brand indigo — borders, text accents
-ACCENT     = colors.HexColor("#3010A0")   # letterhead brand blue — all headers, title, totals
+# Royal blue palette matching letterhead visual appearance
+PRIMARY    = colors.HexColor("#1E3A8A")   # dark navy — borders, text accents
+ACCENT     = colors.HexColor("#1E40AF")   # royal blue — all headers, titles, totals
 LIGHT_GRAY = colors.HexColor("#F8FAFC")
-LIGHT_BLUE = colors.HexColor("#EEF4FF")   # soft brand-blue tint for cell fill
-ROW_STRIPE = colors.HexColor("#EEEEFF")   # very light indigo row stripe
+LIGHT_BLUE = colors.HexColor("#EFF6FF")   # soft blue tint for cell fill
+ROW_STRIPE = colors.HexColor("#EEF4FF")   # very light blue row stripe
 MED_GRAY   = colors.HexColor("#94A3B8")
 DARK       = colors.HexColor("#0F172A")
 WHITE      = colors.white
@@ -354,9 +353,9 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _bh    = ParagraphStyle("_bh",   fontName="Helvetica-Bold", fontSize=8,   textColor=WHITE,  alignment=TA_CENTER)
 
     # ── 1. TAX INVOICE title — clean spacing below letterhead, no underline ───
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 6 * mm))
     story.append(Paragraph("TAX INVOICE", _ti))
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 6 * mm))
 
     # ── 2. Bill To (left box) | Invoice Details (right box) ──────────────────
     _cn  = ParagraphStyle("_cn",  fontName="Helvetica-Bold", fontSize=10, textColor=INK)
@@ -458,8 +457,8 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     stamp_path_check = _get_stamp_path() if include_stamp else ""
 
     # 9 columns: SR NO | DESCRIPTION | QTY | UNIT PRICE | DISCOUNT | TAXABLE AMT | TAX RATE | TAX AMT | TOTAL
-    # 8+48+14+22+16+22+11+19+20 = 180mm
-    col_w = [8*mm, 48*mm, 14*mm, 22*mm, 16*mm, 22*mm, 11*mm, 19*mm, 20*mm]
+    # 8+44+18+22+16+22+11+19+20 = 180mm  (QTY=18mm so '20-NOS' never wraps)
+    col_w = [8*mm, 44*mm, 18*mm, 22*mm, 16*mm, 22*mm, 11*mm, 19*mm, 20*mm]
     hdrs  = ["SR\nNO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)",
              "DISCOUNT\n(AED)", "TAXABLE\nAMT (AED)", "TAX\nRATE", "TAX AMT\n(AED)", "TOTAL\n(AED)"]
 
@@ -1027,9 +1026,9 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     ft_s     = ParagraphStyle("qft",  fontName="Helvetica",      fontSize=6.5, textColor=MED_GRAY,  alignment=TA_CENTER)
 
     # ── 1. Title ──────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 6 * mm))
     story.append(Paragraph("QUOTATION", title_s))
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 6 * mm))
 
     # ── 2. Two bordered boxes: Customer (left) | Quotation Info (right) ───────
     cust_rows = [[Paragraph("TO:", lbl_s), Paragraph(_xe(customer.get("name", "")), val_b)]]
@@ -1107,11 +1106,11 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
 
     # ── 3. Items table (5 cols: SR NO | DESCRIPTION | QTY | UNIT PRICE | AMOUNT)
     _actual_n   = len(quotation_data.get("items", []))
-    _ROW_H_Q    = 14 * mm   # conservative: accounts for multi-line descriptions
-    _OVERHEAD_Q = 155 * mm  # accurate: title+spacers+boxes+items-hdr+totals+aiw+bottom
+    _ROW_H_Q    = 10 * mm   # tighter: short descriptions fit in 10mm; long ones expand naturally
+    _OVERHEAD_Q = 160 * mm  # conservative overhead: title+spacers+boxes+hdr+totals+footer
     _usable_h   = A4[1] - top_margin - 4 * mm
-    _max_rows   = max(0, int((_usable_h - _OVERHEAD_Q) / _ROW_H_Q))
-    _filler_n   = min(2, max(0, _max_rows - _actual_n))
+    _max_rows   = max(_actual_n, int((_usable_h - _OVERHEAD_Q) / _ROW_H_Q))
+    _filler_n   = min(1, max(0, _max_rows - _actual_n))  # at most 1 filler row
     MIN_ROWS_Q  = _actual_n + _filler_n
 
     # 14+86+18+31+31 = 180mm
