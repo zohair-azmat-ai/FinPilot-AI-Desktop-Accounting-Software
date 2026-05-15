@@ -67,9 +67,10 @@ export const updateQuotation = (id: number, data: unknown) => api.put(`/api/quot
 export const convertQuotation = (id: number) => api.post(`/api/quotations/${id}/convert`);
 export const deleteQuotation = (id: number) => api.delete(`/api/quotations/${id}`);
 export const downloadQuotationPDF = (id: number, num?: string) => {
+  const ts = Date.now();
   const cloud = getCloudPdfUrl();
-  if (cloud && num) return `${cloud}/api/quotations/${encodeURIComponent(num)}/pdf`;
-  return `${API_URL}/api/quotations/${id}/pdf`;
+  if (cloud && num) return `${cloud}/api/quotations/${encodeURIComponent(num)}/pdf?ts=${ts}`;
+  return `${API_URL}/api/quotations/${id}/pdf?ts=${ts}`;
 };
 
 // Invoices
@@ -79,17 +80,18 @@ export const createInvoice = (data: unknown) => api.post("/api/invoices/", data)
 export const updateInvoice = (id: number, data: unknown) => api.put(`/api/invoices/${id}`, data);
 export const deleteInvoice = (id: number) => api.delete(`/api/invoices/${id}`);
 export const downloadInvoicePDF = (id: number, num?: string) => {
+  const ts = Date.now();
   const cloud = getCloudPdfUrl();
-  if (cloud && num) return `${cloud}/api/invoices/${encodeURIComponent(num)}/pdf`;
-  return `${API_URL}/api/invoices/${id}/pdf`;
+  if (cloud && num) return `${cloud}/api/invoices/${encodeURIComponent(num)}/pdf?ts=${ts}`;
+  return `${API_URL}/api/invoices/${id}/pdf?ts=${ts}`;
 };
 
 // Payments
 export const getPayments = (params?: Record<string, unknown>) => api.get("/api/payments/", { params });
 export const createPayment = (data: unknown) => api.post("/api/payments/", data);
 export const deletePayment = (id: number) => api.delete(`/api/payments/${id}`);
-export const downloadPaymentPDF = (id: number) => `${API_URL}/api/payments/${id}/pdf`;
-export const downloadReceiptPDF = (id: number) => `${API_URL}/api/payments/${id}/pdf`;
+export const downloadPaymentPDF = (id: number) => `${API_URL}/api/payments/${id}/pdf?ts=${Date.now()}`;
+export const downloadReceiptPDF = (id: number) => `${API_URL}/api/payments/${id}/pdf?ts=${Date.now()}`;
 
 // Ledger
 export const getCustomerLedger = (customerId: number, params?: Record<string, unknown>) =>
@@ -150,9 +152,10 @@ export const createDeliveryNote = (data: unknown) => api.post("/api/delivery-not
 export const updateDeliveryNote = (id: number, data: unknown) => api.put(`/api/delivery-notes/${id}`, data);
 export const deleteDeliveryNote = (id: number) => api.delete(`/api/delivery-notes/${id}`);
 export const downloadDeliveryNotePDF = (id: number, num?: string) => {
+  const ts = Date.now();
   const cloud = getCloudPdfUrl();
-  if (cloud && num) return `${cloud}/api/delivery-notes/${encodeURIComponent(num)}/pdf`;
-  return `${API_URL}/api/delivery-notes/${id}/pdf`;
+  if (cloud && num) return `${cloud}/api/delivery-notes/${encodeURIComponent(num)}/pdf?ts=${ts}`;
+  return `${API_URL}/api/delivery-notes/${id}/pdf?ts=${ts}`;
 };
 
 // Expenses
@@ -171,9 +174,10 @@ export const createPurchaseOrder = (data: unknown) => api.post("/api/purchase-or
 export const updatePurchaseOrder = (id: number, data: unknown) => api.put(`/api/purchase-orders/${id}`, data);
 export const deletePurchaseOrder = (id: number) => api.delete(`/api/purchase-orders/${id}`);
 export const downloadPurchaseOrderPDF = (id: number, num?: string) => {
+  const ts = Date.now();
   const cloud = getCloudPdfUrl();
-  if (cloud && num) return `${cloud}/api/purchase-orders/${encodeURIComponent(num)}/pdf`;
-  return `${API_URL}/api/purchase-orders/${id}/pdf`;
+  if (cloud && num) return `${cloud}/api/purchase-orders/${encodeURIComponent(num)}/pdf?ts=${ts}`;
+  return `${API_URL}/api/purchase-orders/${id}/pdf?ts=${ts}`;
 };
 
 // Backup & Restore
@@ -195,7 +199,7 @@ export const getSupplierBill = (id: number) => api.get(`/api/supplier-bills/${id
 export const createSupplierBill = (data: unknown) => api.post("/api/supplier-bills/", data);
 export const updateSupplierBill = (id: number, data: unknown) => api.put(`/api/supplier-bills/${id}`, data);
 export const deleteSupplierBill = (id: number) => api.delete(`/api/supplier-bills/${id}`);
-export const downloadSupplierBillPDF = (id: number) => `${API_URL}/api/supplier-bills/${id}/pdf`;
+export const downloadSupplierBillPDF = (id: number) => `${API_URL}/api/supplier-bills/${id}/pdf?ts=${Date.now()}`;
 export const getSupplierLedger = (supplierId: number) => api.get(`/api/supplier-bills/ledger/${supplierId}`);
 
 // Cloud Sync
@@ -212,4 +216,4 @@ export const getSupplierPayments = (params?: Record<string, unknown>) => api.get
 export const createSupplierPayment = (data: unknown) => api.post("/api/supplier-payments/", data);
 export const updateSupplierPayment = (id: number, data: unknown) => api.put(`/api/supplier-payments/${id}`, data);
 export const deleteSupplierPayment = (id: number) => api.delete(`/api/supplier-payments/${id}`);
-export const downloadSupplierPaymentPDF = (id: number) => `${API_URL}/api/supplier-payments/${id}/pdf`;
+export const downloadSupplierPaymentPDF = (id: number) => `${API_URL}/api/supplier-payments/${id}/pdf?ts=${Date.now()}`;
