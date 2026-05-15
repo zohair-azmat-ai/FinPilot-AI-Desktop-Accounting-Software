@@ -128,7 +128,10 @@ def update_delivery_note(dn_id: int, payload: schemas.DeliveryNoteUpdate, db: Se
         dn.status = payload.status
 
     if payload.items is not None:
-        db.query(models.DeliveryNoteItem).filter(models.DeliveryNoteItem.dn_id == dn_id).delete()
+        _del_c = db.query(models.DeliveryNoteItem).filter(
+            models.DeliveryNoteItem.dn_id == dn_id,
+        ).delete(synchronize_session=False)
+        print(f"[dn update] dn_id={dn_id} received={len(payload.items)} deleted={_del_c} old items")
         for item in payload.items:
             db.add(models.DeliveryNoteItem(
                 dn_id=dn.id,
@@ -202,5 +205,7 @@ def download_delivery_note_pdf(dn_id: str, db: Session = Depends(get_db)):
     return FileResponse(
         filepath,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="DeliveryNote_{doc_number}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="DeliveryNote_{doc_number}.pdf"',
+                 "Cache-Control": "no-cache, no-store, must-revalidate",
+                 "Pragma": "no-cache", "Expires": "0"},
     )

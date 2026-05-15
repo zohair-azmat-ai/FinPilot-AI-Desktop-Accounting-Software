@@ -104,7 +104,7 @@ def fetch_invoice_for_pdf(lookup: str):
     comp_dict = _company_dict(client)
     cust_dict = _customer_dict(client, inv.get("customer_id"), include_po_box=True)
 
-    # invoice_items.invoice_id is the FK column name
+    # invoice_items.invoice_id is the FK column name — only active (not soft-deleted)
     items_rows = _fetch_many(client, "invoice_items", invoice_id=inv["id"])
     items = [
         {
@@ -116,6 +116,7 @@ def fetch_invoice_for_pdf(lookup: str):
             "total": float(it.get("total", 0)),
         }
         for it in items_rows
+        if not it.get("deleted_at")
     ]
 
     invoice_data = {
@@ -153,7 +154,7 @@ def fetch_quotation_for_pdf(lookup: str):
     comp_dict = _company_dict(client)
     cust_dict = _customer_dict(client, q.get("customer_id"), include_po_box=False)
 
-    # quotation_items.quotation_id is the FK column
+    # quotation_items.quotation_id is the FK column — exclude blank/orphan rows
     items_rows = _fetch_many(client, "quotation_items", quotation_id=q["id"])
     items = [
         {
@@ -165,6 +166,7 @@ def fetch_quotation_for_pdf(lookup: str):
             "total": float(it.get("total", 0)),
         }
         for it in items_rows
+        if it.get("description", "").strip()  # skip blank/orphan rows
     ]
 
     q_data = {

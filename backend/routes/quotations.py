@@ -234,8 +234,10 @@ def update_quotation(quotation_id: int, data: schemas.QuotationCreate, db: Sessi
     q.vat_amount = vat_total
     q.total = total
 
-    for old_item in q.items:
-        db.delete(old_item)
+    _del_c = db.query(models.QuotationItem).filter(
+        models.QuotationItem.quotation_id == quotation_id,
+    ).delete(synchronize_session=False)
+    print(f"[quotation update] quotation_id={quotation_id} received={len(data.items)} deleted={_del_c} old items")
     db.flush()
 
     for item in processed_items:
@@ -313,5 +315,7 @@ def download_quotation_pdf(quotation_id: str, db: Session = Depends(get_db)):
     return FileResponse(
         filepath,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="Quotation_{doc_number}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="Quotation_{doc_number}.pdf"',
+                 "Cache-Control": "no-cache, no-store, must-revalidate",
+                 "Pragma": "no-cache", "Expires": "0"},
     )

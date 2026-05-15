@@ -208,7 +208,9 @@ def invoice_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
             "total": float(it.get("total", 0)),
         }
         for it in items_rows
+        if not it.get("deleted_at") and it.get("description", "").strip()
     ]
+    log.info("[invoice pdf] %s active_items=%s", inv.get("invoice_number"), len(items))
     data = {
         "invoice_number": inv.get("invoice_number", ""),
         "date": _fmt_date(inv.get("date")),
@@ -253,7 +255,9 @@ def quotation_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
             "total": float(it.get("total", 0)),
         }
         for it in items_rows
+        if not it.get("deleted_at") and it.get("description", "").strip()
     ]
+    log.info("[quotation pdf] %s active_items=%s", q.get("quotation_number"), len(items))
     data = {
         "quotation_number": q.get("quotation_number", ""),
         "date": _fmt_date(q.get("date")),

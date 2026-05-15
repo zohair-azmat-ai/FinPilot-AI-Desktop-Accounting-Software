@@ -113,9 +113,8 @@ def list_invoices(status: Optional[str] = None, customer_id: Optional[int] = Non
     if customer_id:
         q = q.filter(models.Invoice.customer_id == customer_id)
     invoices = q.order_by(models.Invoice.id.desc()).all()
-    # Strip soft-deleted items from each invoice so they don't appear in the UI
     for inv in invoices:
-        active = [it for it in inv.items if not it.deleted_at]
+        active = [it for it in inv.items if it.deleted_at is None]
         set_committed_value(inv, 'items', active)
     return invoices
 
@@ -170,11 +169,10 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
         invoice.amount_paid = 0.0
         invoice.balance_due = balance_due
         invoice.status = "unpaid"
-        restore_now = datetime.now(timezone.utc).isoformat()
-        db.query(models.InvoiceItem).filter(
+        _del_c = db.query(models.InvoiceItem).filter(
             models.InvoiceItem.invoice_id == invoice.id,
-            models.InvoiceItem.deleted_at.is_(None),
-        ).update({"deleted_at": restore_now, "updated_at": restore_now})
+        ).delete(synchronize_session=False)
+        print(f"[invoice create restore] invoice_id={invoice.id} num={inv_number} deleted={_del_c} old items")
         db.flush()
     else:
         invoice = models.Invoice(
@@ -215,6 +213,7 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
         db.add(db_item)
 
     db.flush()
+    print(f"[invoice create] num={inv_number} received={len(data.items)} inserted={len(processed_items)}")
     if not invoice.is_cash:
         _update_ledger(db, invoice)
     db.commit()
@@ -259,11 +258,10 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
     else:
         inv.status = "unpaid"
 
-    # Soft-delete all existing active items so Supabase sync can propagate the deletion
-    db.query(models.InvoiceItem).filter(
+    _del_c = db.query(models.InvoiceItem).filter(
         models.InvoiceItem.invoice_id == invoice_id,
-        models.InvoiceItem.deleted_at.is_(None),
-    ).update({"deleted_at": now, "updated_at": now})
+    ).delete(synchronize_session=False)
+    print(f"[invoice update] invoice_id={invoice_id} received={len(data.items)} deleted={_del_c} old items")
     db.flush()
 
     for item in processed_items:
@@ -279,6 +277,11 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
         )
         db.add(db_item)
 
+    _final_c = db.query(models.InvoiceItem).filter(
+        models.InvoiceItem.invoice_id == invoice_id,
+        models.InvoiceItem.deleted_at.is_(None),
+    ).count()
+    print(f"[invoice update] invoice_id={invoice_id} inserted={len(processed_items)} final_active={_final_c}")
     if not inv.is_cash:
         _update_ledger(db, inv)
     db.commit()
@@ -327,10 +330,15 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
                 "address": customer.address,
                 "po_box": customer.po_box or "",
             }
-        active_items = [it for it in inv.items if not it.deleted_at]
+        active_items = db.query(models.InvoiceItem).filter(
+            models.InvoiceItem.invoice_id == inv.id,
+            models.InvoiceItem.deleted_at.is_(None),
+        ).all()
+        print(f"[invoice pdf] invoice_id={inv.id} num={inv.invoice_number} active_items={len(active_items)}")
         invoice_data = {
             "invoice_number": inv.invoice_number,
             "date": inv.date.strftime("%d %b %Y"),
+            "due_date": inv.due_date.strftime("%d %b %Y") if inv.due_date else "",
             "customer": cust_dict,
             "items": [
                 {
@@ -366,5 +374,7 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
     return FileResponse(
         filepath,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="Invoice_{doc_number}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="Invoice_{doc_number}.pdf"',
+                 "Cache-Control": "no-cache, no-store, must-revalidate",
+                 "Pragma": "no-cache", "Expires": "0"},
     )

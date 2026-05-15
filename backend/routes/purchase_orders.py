@@ -164,8 +164,10 @@ def update_po(po_id: int, payload: schemas.PurchaseOrderUpdate, db: Session = De
         po.vat_amount = vat_amount
         po.total     = total
 
-        for old in list(po.items):
-            db.delete(old)
+        _del_c = db.query(models.PurchaseOrderItem).filter(
+            models.PurchaseOrderItem.po_id == po.id,
+        ).delete(synchronize_session=False)
+        print(f"[po update] po_id={po.id} deleted={_del_c} old items")
         db.flush()
         for it in built_items:
             db.add(models.PurchaseOrderItem(
@@ -256,5 +258,7 @@ def download_po_pdf(po_id: str, db: Session = Depends(get_db)):
     return FileResponse(
         filepath,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="PO_{doc_number}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="PO_{doc_number}.pdf"',
+                 "Cache-Control": "no-cache, no-store, must-revalidate",
+                 "Pragma": "no-cache", "Expires": "0"},
     )
