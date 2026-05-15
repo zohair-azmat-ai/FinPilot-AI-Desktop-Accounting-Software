@@ -60,6 +60,9 @@ Thumbs.db
 desktop/src-tauri/resources/
 src-tauri/resources/
 
+# ── HF Space binary assets (uploaded via huggingface_hub, not git) ───────────
+hf-space/assets/stamp.png
+
 # ── Claude internal files ─────────────────────────────────────────────────────
 .claude/
 

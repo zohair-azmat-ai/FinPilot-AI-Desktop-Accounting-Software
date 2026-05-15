@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_BUILD = "FP_BLUE_V10"
+_BUILD = "FP_BLUE_V11"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -83,15 +83,17 @@ def _get_stamp_path() -> str:
 
 
 def _qty_label(qty: float) -> str:
-    """Format quantity as '1-NO' or 'N-NOS' (UAE unit style)."""
+    """Format quantity as '1‑NO' or 'N‑NOS' (UAE unit style, non-breaking hyphen)."""
     n = int(qty) if qty == float(int(qty)) else qty
-    return f"{n}-NO" if qty <= 1.0 else f"{n}-NOS"
+    # U+2011 non-breaking hyphen prevents ReportLab from wrapping inside the quantity label
+    return f"{n}‑NO" if qty <= 1.0 else f"{n}‑NOS"
 
-PRIMARY    = colors.HexColor("#1E3A5F")
-ACCENT     = colors.HexColor("#2563EB")
+# Brand blue extracted from letterhead logo (R=48 G=16 B=160 → #3010A0)
+PRIMARY    = colors.HexColor("#1A0B78")   # darker brand indigo — borders, text accents
+ACCENT     = colors.HexColor("#3010A0")   # letterhead brand blue — all headers, title, totals
 LIGHT_GRAY = colors.HexColor("#F8FAFC")
-LIGHT_BLUE = colors.HexColor("#EFF6FF")
-ROW_STRIPE = colors.HexColor("#EEF4FF")
+LIGHT_BLUE = colors.HexColor("#EEF4FF")   # soft brand-blue tint for cell fill
+ROW_STRIPE = colors.HexColor("#EEEEFF")   # very light indigo row stripe
 MED_GRAY   = colors.HexColor("#94A3B8")
 DARK       = colors.HexColor("#0F172A")
 WHITE      = colors.white
@@ -337,7 +339,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     MUTED   = MED_GRAY                      # #94A3B8 label / secondary text
 
     # ── Shared styles ─────────────────────────────────────────────────────────
-    _ti    = ParagraphStyle("_ti",   fontName="Helvetica-Bold", fontSize=18, textColor=PRIMARY, alignment=TA_CENTER)
+    _ti    = ParagraphStyle("_ti",   fontName="Helvetica-Bold", fontSize=18, textColor=ACCENT, alignment=TA_CENTER)
     _lbl   = ParagraphStyle("_lbl",  fontName="Helvetica",      fontSize=7.5, textColor=MED_GRAY)
     _val   = ParagraphStyle("_val",  fontName="Helvetica-Bold", fontSize=10,  textColor=PRIMARY)
     _lblr  = ParagraphStyle("_lblr", fontName="Helvetica",      fontSize=7.5, textColor=MED_GRAY, alignment=TA_RIGHT)
@@ -351,12 +353,10 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=8,   textColor=DARK)
     _bh    = ParagraphStyle("_bh",   fontName="Helvetica-Bold", fontSize=8,   textColor=WHITE,  alignment=TA_CENTER)
 
-    # ── 1. TAX INVOICE title with thin accent line ───────────────────────────
-    story.append(Spacer(1, 2 * mm))
+    # ── 1. TAX INVOICE title — clean spacing below letterhead, no underline ───
+    story.append(Spacer(1, 5 * mm))
     story.append(Paragraph("TAX INVOICE", _ti))
-    story.append(Spacer(1, 1 * mm))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=ACCENT))
-    story.append(Spacer(1, 2 * mm))
+    story.append(Spacer(1, 4 * mm))
 
     # ── 2. Bill To (left box) | Invoice Details (right box) ──────────────────
     _cn  = ParagraphStyle("_cn",  fontName="Helvetica-Bold", fontSize=10, textColor=INK)
@@ -458,8 +458,8 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     stamp_path_check = _get_stamp_path() if include_stamp else ""
 
     # 9 columns: SR NO | DESCRIPTION | QTY | UNIT PRICE | DISCOUNT | TAXABLE AMT | TAX RATE | TAX AMT | TOTAL
-    # 8+51+11+22+16+22+11+19+20 = 180mm
-    col_w = [8*mm, 51*mm, 11*mm, 22*mm, 16*mm, 22*mm, 11*mm, 19*mm, 20*mm]
+    # 8+48+14+22+16+22+11+19+20 = 180mm
+    col_w = [8*mm, 48*mm, 14*mm, 22*mm, 16*mm, 22*mm, 11*mm, 19*mm, 20*mm]
     hdrs  = ["SR\nNO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)",
              "DISCOUNT\n(AED)", "TAXABLE\nAMT (AED)", "TAX\nRATE", "TAX AMT\n(AED)", "TOTAL\n(AED)"]
 
@@ -1008,7 +1008,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     delivery      = quotation_data.get("delivery",       "") or ""
     comp_trn      = company.get("trn", "") or ""
 
-    title_s  = ParagraphStyle("qt",   fontName="Helvetica-Bold", fontSize=18,  textColor=PRIMARY,   alignment=TA_CENTER)
+    title_s  = ParagraphStyle("qt",   fontName="Helvetica-Bold", fontSize=18,  textColor=ACCENT,    alignment=TA_CENTER)
     box_hdr  = ParagraphStyle("qbh",  fontName="Helvetica-Bold", fontSize=8.5, textColor=WHITE,     alignment=TA_CENTER)
     lbl_s    = ParagraphStyle("ql",   fontName="Helvetica-Bold", fontSize=8,   textColor=MED_GRAY)
     val_s    = ParagraphStyle("qv",   fontName="Helvetica",      fontSize=8.5, textColor=DARK)
@@ -1027,7 +1027,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     ft_s     = ParagraphStyle("qft",  fontName="Helvetica",      fontSize=6.5, textColor=MED_GRAY,  alignment=TA_CENTER)
 
     # ── 1. Title ──────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 1 * mm))
+    story.append(Spacer(1, 5 * mm))
     story.append(Paragraph("QUOTATION", title_s))
     story.append(Spacer(1, 4 * mm))
 
@@ -1733,8 +1733,8 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     )
 
     # ── Styles ─────────────────────────────────────────────────────────────────
-    title_s = ParagraphStyle("dn_title", fontName="Helvetica-Bold", fontSize=16,
-                              textColor=PRIMARY, alignment=TA_CENTER,
+    title_s = ParagraphStyle("dn_title", fontName="Helvetica-Bold", fontSize=18,
+                              textColor=ACCENT, alignment=TA_CENTER,
                               spaceAfter=0, spaceBefore=0)
     lbl_s   = ParagraphStyle("dn_lbl",   fontName="Helvetica-Bold", fontSize=8, textColor=DARK)
     val_s   = ParagraphStyle("dn_val",   fontName="Helvetica",      fontSize=9, textColor=DARK)
@@ -1907,7 +1907,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
 
     # ── Styles ──────────────────────────────────────────────────────────────
     title_s = ParagraphStyle("po_ti", fontName="Helvetica-Bold", fontSize=18,
-                              textColor=PRIMARY, alignment=TA_CENTER)
+                              textColor=ACCENT, alignment=TA_CENTER)
     box_hdr = ParagraphStyle("po_bh", fontName="Helvetica-Bold", fontSize=8.5,
                               textColor=WHITE, alignment=TA_CENTER)
     lbl_s   = ParagraphStyle("po_lb", fontName="Helvetica-Bold", fontSize=8, textColor=MED_GRAY)
