@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V9 LOADED <<<")
+_dbg(">>> ACTIVE PDF GENERATOR BUILD=FP_BLUE_V10 LOADED <<<")
 
 
 def _amount_in_words(amount: float) -> str:
@@ -65,7 +65,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 # Letterhead: user-writable location first, fallback to bundle assets
 _USER_LH    = os.path.join(os.path.expanduser("~"), "FinPilot", "assets", "letterhead.jpg")
 _BUNDLE_LH  = os.path.join(_HERE, "assets", "letterhead.jpg")
-LETTERHEAD_PATH = _USER_LH if os.path.exists(_USER_LH) else _BUNDLE_LH
+LETTERHEAD_PATH = _USER_LH if (os.path.exists(_USER_LH) and os.path.getsize(_USER_LH) > 0) else _BUNDLE_LH
 _dbg(f"letterhead resolved: {LETTERHEAD_PATH} exists={os.path.exists(LETTERHEAD_PATH)}")
 
 # Stamp: user-writable location first, fallback to bundle assets
@@ -327,7 +327,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     actual_items = invoice_data.get("items", [])
 
     # ── FinPilot blue palette (restored) ─────────────────────────────────────
-    HDR_BG  = PRIMARY                       # navy blue table header
+    HDR_BG  = ACCENT                        # royal blue table header
     ROW_A   = ROW_STRIPE                    # #EEF4FF blue-tinted odd row
     ROW_B   = WHITE                         # even row
     GRID_C  = colors.HexColor("#CBD5E1")    # blue-gray cell border
@@ -350,12 +350,12 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=8,   textColor=DARK)
     _bh    = ParagraphStyle("_bh",   fontName="Helvetica-Bold", fontSize=8,   textColor=WHITE,  alignment=TA_CENTER)
 
-    # ── 1. TAX INVOICE title with accent bar ─────────────────────────────────
-    story.append(Spacer(1, 3 * mm))
-    story.append(Paragraph("TAX INVOICE", _ti))
+    # ── 1. TAX INVOICE title with thin accent line ───────────────────────────
     story.append(Spacer(1, 2 * mm))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=ACCENT))
-    story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph("TAX INVOICE", _ti))
+    story.append(Spacer(1, 1 * mm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=ACCENT))
+    story.append(Spacer(1, 2 * mm))
 
     # ── 2. Bill To (left box) | Invoice Details (right box) ──────────────────
     _cn  = ParagraphStyle("_cn",  fontName="Helvetica-Bold", fontSize=10, textColor=INK)
@@ -391,9 +391,9 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
     bill_to_box = Table([[Paragraph("BILL TO", _bh)], [cust_inner_t]], colWidths=[96 * mm])
     bill_to_box.setStyle(TableStyle([
-        ("BOX",           (0, 0), (-1, -1), 0.8, PRIMARY),
-        ("LINEBELOW",     (0, 0), (-1, 0),  0.8, PRIMARY),
-        ("BACKGROUND",    (0, 0), (-1, 0),  PRIMARY),
+        ("BOX",           (0, 0), (-1, -1), 0.8, ACCENT),
+        ("LINEBELOW",     (0, 0), (-1, 0),  0.8, ACCENT),
+        ("BACKGROUND",    (0, 0), (-1, 0),  ACCENT),
         ("BACKGROUND",    (0, 1), (-1, 1),  LIGHT_BLUE),
         ("TOPPADDING",    (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
@@ -429,9 +429,9 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
     inv_det_box = Table([[Paragraph("INVOICE DETAILS", _bh)], [inv_det_inner]], colWidths=[80 * mm])
     inv_det_box.setStyle(TableStyle([
-        ("BOX",           (0, 0), (-1, -1), 0.8, PRIMARY),
-        ("LINEBELOW",     (0, 0), (-1, 0),  0.8, PRIMARY),
-        ("BACKGROUND",    (0, 0), (-1, 0),  PRIMARY),
+        ("BOX",           (0, 0), (-1, -1), 0.8, ACCENT),
+        ("LINEBELOW",     (0, 0), (-1, 0),  0.8, ACCENT),
+        ("BACKGROUND",    (0, 0), (-1, 0),  ACCENT),
         ("BACKGROUND",    (0, 1), (-1, 1),  LIGHT_BLUE),
         ("TOPPADDING",    (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
@@ -456,33 +456,36 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     # ── 4. Items table ────────────────────────────────────────────────────────
     stamp_path_check = _get_stamp_path() if include_stamp else ""
 
-    col_w = [9*mm, 59*mm, 13*mm, 23*mm, 23*mm, 13*mm, 20*mm, 20*mm]
+    # 9 columns: SR NO | DESCRIPTION | QTY | UNIT PRICE | DISCOUNT | TAXABLE AMT | TAX RATE | TAX AMT | TOTAL
+    # 8+51+11+22+16+22+11+19+20 = 180mm
+    col_w = [8*mm, 51*mm, 11*mm, 22*mm, 16*mm, 22*mm, 11*mm, 19*mm, 20*mm]
     hdrs  = ["SR\nNO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)",
-             "AMOUNT\n(AED)", "TAX\nRATE", "TAX AMT\n(AED)", "TOTAL\n(AED)"]
+             "DISCOUNT\n(AED)", "TAXABLE\nAMT (AED)", "TAX\nRATE", "TAX AMT\n(AED)", "TOTAL\n(AED)"]
 
     def _item_row(idx, item):
         qty    = item.get("quantity",   1)
         up     = item.get("unit_price", 0)
-        amt    = round(qty * up, 2)
+        taxable = round(qty * up, 2)          # taxable amount = qty × unit price (no per-item discount)
         vat_ok = item.get("vat_applicable", True)
         tax_a  = item.get("vat_amount", 0)
-        tot_a  = item.get("total", round(amt + tax_a, 2))
+        tot_a  = item.get("total", round(taxable + tax_a, 2))
         return [
-            Paragraph(str(idx),                       _icc),
-            Paragraph(_xe(item.get("description","")), _ir),
-            Paragraph(_qty_label(qty),  _icc),
-            Paragraph(f"{up:.2f}",   _irc),
-            Paragraph(f"{amt:.2f}",  _irc),
-            Paragraph("5%" if vat_ok else "0%", _icc),
-            Paragraph(f"{tax_a:.2f}", _irc),
-            Paragraph(f"{tot_a:.2f}", _irc),
+            Paragraph(str(idx),                        _icc),
+            Paragraph(_xe(item.get("description", "")), _ir),
+            Paragraph(_qty_label(qty),                 _icc),
+            Paragraph(f"{up:.2f}",                     _irc),
+            Paragraph("0.00",                          _irc),   # DISCOUNT (AED)
+            Paragraph(f"{taxable:.2f}",                _irc),   # TAXABLE AMOUNT (AED)
+            Paragraph("5%" if vat_ok else "0%",        _icc),
+            Paragraph(f"{tax_a:.2f}",                  _irc),
+            Paragraph(f"{tot_a:.2f}",                  _irc),
         ]
 
     base_rows = [[Paragraph(h, _ih) for h in hdrs]]
     for i, item in enumerate(actual_items, 1):
         base_rows.append(_item_row(i, item))
 
-    def _make_items_tbl(rows, pad_t=6, pad_b=6):
+    def _make_items_tbl(rows, pad_t=8, pad_b=8):
         t = Table(rows, colWidths=col_w)
         t.setStyle(TableStyle([
             ("BACKGROUND",    (0, 0),  (-1, 0),  HDR_BG),
@@ -502,7 +505,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _FOOTER_H      = 78 * mm
     _usable_h      = A4[1] - top_margin - 4 * mm
     _max_tbl_h     = max(55 * mm, _usable_h - _FOOTER_H)
-    _MIN_VISUAL_H  = 50 * mm   # minimum visual table area height
+    _MIN_VISUAL_H  = 28 * mm   # minimum visual table area height (reduced to shrink bottom whitespace)
 
     items_tbl = _make_items_tbl(base_rows)
     items_h   = items_tbl.wrap(_CONTENT_W, 9999 * mm)[1]
@@ -1005,7 +1008,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     comp_trn      = company.get("trn", "") or ""
 
     title_s  = ParagraphStyle("qt",   fontName="Helvetica-Bold", fontSize=18,  textColor=PRIMARY,   alignment=TA_CENTER)
-    box_hdr  = ParagraphStyle("qbh",  fontName="Helvetica-Bold", fontSize=8.5, textColor=PRIMARY,   alignment=TA_CENTER)
+    box_hdr  = ParagraphStyle("qbh",  fontName="Helvetica-Bold", fontSize=8.5, textColor=WHITE,     alignment=TA_CENTER)
     lbl_s    = ParagraphStyle("ql",   fontName="Helvetica-Bold", fontSize=8,   textColor=MED_GRAY)
     val_s    = ParagraphStyle("qv",   fontName="Helvetica",      fontSize=8.5, textColor=DARK)
     val_b    = ParagraphStyle("qvb",  fontName="Helvetica-Bold", fontSize=9,   textColor=DARK)
@@ -1050,9 +1053,9 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     ]))
     cust_box = Table([[Paragraph("CUSTOMER DETAILS", box_hdr)], [cust_inner]], colWidths=[82 * mm])
     cust_box.setStyle(TableStyle([
-        ("BOX",           (0, 0), (-1, -1), 0.8, PRIMARY),
-        ("LINEBELOW",     (0, 0), (-1, 0),  0.8, PRIMARY),
-        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#EFF6FF")),
+        ("BOX",           (0, 0), (-1, -1), 0.8, ACCENT),
+        ("LINEBELOW",     (0, 0), (-1, 0),  0.8, ACCENT),
+        ("BACKGROUND",    (0, 0), (-1, 0),  ACCENT),
         ("TOPPADDING",    (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("LEFTPADDING",   (0, 0), (-1, -1), 4),
@@ -1080,9 +1083,9 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     ]))
     info_box = Table([[Paragraph("QUOTATION DETAILS", box_hdr)], [info_inner]], colWidths=[82 * mm])
     info_box.setStyle(TableStyle([
-        ("BOX",           (0, 0), (-1, -1), 0.8, PRIMARY),
-        ("LINEBELOW",     (0, 0), (-1, 0),  0.8, PRIMARY),
-        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#EFF6FF")),
+        ("BOX",           (0, 0), (-1, -1), 0.8, ACCENT),
+        ("LINEBELOW",     (0, 0), (-1, 0),  0.8, ACCENT),
+        ("BACKGROUND",    (0, 0), (-1, 0),  ACCENT),
         ("TOPPADDING",    (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("LEFTPADDING",   (0, 0), (-1, -1), 4),
@@ -1133,7 +1136,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
 
     items_t = Table(q_data, colWidths=q_col_w)
     items_t.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0),  (-1, 0),  PRIMARY),
+        ("BACKGROUND",    (0, 0),  (-1, 0),  ACCENT),
         ("ROWBACKGROUNDS",(0, 1),  (-1, -1), [ROW_STRIPE, WHITE]),
         ("GRID",          (0, 0),  (-1, -1), 0.5, colors.HexColor("#C0C8D8")),
         ("VALIGN",        (0, 0),  (-1, -1), "MIDDLE"),
@@ -1164,8 +1167,8 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ("TOPPADDING",    (0, 0),  (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0),  (-1, -1), 3),
         ("GRID",          (0, 0),  (-1, -2), 0.3, colors.HexColor("#CBD5E1")),
-        ("LINEABOVE",     (0, -1), (-1, -1), 1, PRIMARY),
-        ("BACKGROUND",    (0, -1), (-1, -1), PRIMARY),
+        ("LINEABOVE",     (0, -1), (-1, -1), 1, ACCENT),
+        ("BACKGROUND",    (0, -1), (-1, -1), ACCENT),
     ]))
     tot_wrap_q = Table([[Spacer(1, 1), tot_t_q]], colWidths=[_CONTENT_W - 90 * mm, 90 * mm])
     tot_wrap_q.setStyle(TableStyle([
@@ -1182,7 +1185,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     _aiw_text = f"TOTAL :-   {_words_upper}   {'*' * 25}"
     _aiw_t = Table([[Paragraph(_aiw_text, _aiw_s)]], colWidths=[_CONTENT_W])
     _aiw_t.setStyle(TableStyle([
-        ("BOX",           (0, 0), (-1, -1), 0.8, PRIMARY),
+        ("BOX",           (0, 0), (-1, -1), 0.8, ACCENT),
         ("BACKGROUND",    (0, 0), (-1, -1), colors.HexColor("#EFF6FF")),
         ("TOPPADDING",    (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
@@ -1838,7 +1841,7 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     dn_table = Table(table_data, colWidths=dn_col_w,
                      rowHeights=[_HDR_H] + [_ROW_H] * MIN_ROWS)
     dn_table.setStyle(TableStyle([
-        ("BACKGROUND",     (0, 0), (-1, 0),  PRIMARY),
+        ("BACKGROUND",     (0, 0), (-1, 0),  ACCENT),
         ("FONTSIZE",       (0, 0), (-1, -1), 8),
         ("ALIGN",          (0, 0), (-1, -1), "CENTER"),
         ("ALIGN",          (1, 1), (1, -1),  "LEFT"),
@@ -1905,7 +1908,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
     title_s = ParagraphStyle("po_ti", fontName="Helvetica-Bold", fontSize=18,
                               textColor=PRIMARY, alignment=TA_CENTER)
     box_hdr = ParagraphStyle("po_bh", fontName="Helvetica-Bold", fontSize=8.5,
-                              textColor=PRIMARY, alignment=TA_CENTER)
+                              textColor=WHITE, alignment=TA_CENTER)
     lbl_s   = ParagraphStyle("po_lb", fontName="Helvetica-Bold", fontSize=8, textColor=MED_GRAY)
     val_s   = ParagraphStyle("po_vl", fontName="Helvetica",      fontSize=8.5, textColor=DARK)
     val_b   = ParagraphStyle("po_vb", fontName="Helvetica-Bold", fontSize=9,  textColor=DARK)
@@ -1960,9 +1963,9 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
     ]))
     sup_box = Table([[Paragraph("SUPPLIER DETAILS", box_hdr)], [sup_inner]], colWidths=[88 * mm])
     sup_box.setStyle(TableStyle([
-        ("BOX",        (0, 0), (-1, -1), 0.8, PRIMARY),
-        ("LINEBELOW",  (0, 0), (-1, 0),  0.8, PRIMARY),
-        ("BACKGROUND", (0, 0), (-1, 0),  colors.HexColor("#EFF6FF")),
+        ("BOX",        (0, 0), (-1, -1), 0.8, ACCENT),
+        ("LINEBELOW",  (0, 0), (-1, 0),  0.8, ACCENT),
+        ("BACKGROUND", (0, 0), (-1, 0),  ACCENT),
         ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
     ]))
@@ -1986,9 +1989,9 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
     ]))
     info_box = Table([[Paragraph("ORDER DETAILS", box_hdr)], [info_inner]], colWidths=[88 * mm])
     info_box.setStyle(TableStyle([
-        ("BOX",        (0, 0), (-1, -1), 0.8, PRIMARY),
-        ("LINEBELOW",  (0, 0), (-1, 0),  0.8, PRIMARY),
-        ("BACKGROUND", (0, 0), (-1, 0),  colors.HexColor("#EFF6FF")),
+        ("BOX",        (0, 0), (-1, -1), 0.8, ACCENT),
+        ("LINEBELOW",  (0, 0), (-1, 0),  0.8, ACCENT),
+        ("BACKGROUND", (0, 0), (-1, 0),  ACCENT),
         ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
     ]))
@@ -2038,7 +2041,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
     items_t = Table(tbl, colWidths=col_w,
                     rowHeights=[_HDR_H] + [_ROW_H] * _max)
     items_t.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0),  PRIMARY),
+        ("BACKGROUND",    (0, 0), (-1, 0),  ACCENT),
         ("ROWBACKGROUNDS",(0, 1), (-1, -1), [ROW_STRIPE, WHITE]),
         ("GRID",          (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
@@ -2068,8 +2071,8 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING",    (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LINEABOVE",     (0, -1), (-1, -1), 1, PRIMARY),
-        ("BACKGROUND",    (0, -1), (-1, -1), PRIMARY),
+        ("LINEABOVE",     (0, -1), (-1, -1), 1, ACCENT),
+        ("BACKGROUND",    (0, -1), (-1, -1), ACCENT),
     ]))
 
     align_t = Table([[Spacer(1, 1), tl_t]],
