@@ -330,7 +330,8 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
     # ── Data ─────────────────────────────────────────────────────────────────
     is_cash       = invoice_data.get("is_cash", False)
-    include_stamp = invoice_data.get("include_stamp", False)
+    # Default True: stamp renders whenever stamp file exists
+    include_stamp = invoice_data.get("include_stamp", True)
     inv_no   = invoice_data.get("invoice_number", "")
     inv_date = invoice_data.get("date", "")
     lpo_no   = invoice_data.get("lpo_no", "") or ""
@@ -347,8 +348,9 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         if not it.get("deleted_at") and (it.get("description") or "").strip()
     ]
     _dbg(f"generate_invoice_pdf: invoice={inv_no} pdf_render_count={len(actual_items)}")
-    log.info("[invoice pdf_generator] invoice=%s pdf_render_count=%s company_stamp_exists=%s",
-             inv_no, len(actual_items), bool(_comp_stamp and os.path.exists(_comp_stamp)))
+    _dbg(f"stamp_enabled={include_stamp}")
+    log.info("[invoice pdf_generator] invoice=%s pdf_render_count=%s stamp_enabled=%s",
+             inv_no, len(actual_items), include_stamp)
 
     # ── FinPilot blue palette (restored) ─────────────────────────────────────
     HDR_BG  = ACCENT                        # royal blue table header
@@ -374,10 +376,10 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=8,   textColor=DARK)
     _bh    = ParagraphStyle("_bh",   fontName="Helvetica-Bold", fontSize=8,   textColor=WHITE,  alignment=TA_CENTER)
 
-    # ── 1. TAX INVOICE title — 4mm above, 5mm below for balanced float
-    story.append(Spacer(1, 4 * mm))
+    # ── 1. TAX INVOICE title — 2mm from frame edge, 12mm clear gap below before boxes
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("TAX INVOICE", _ti))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 12 * mm))
 
     # ── 2. Bill To (left box) | Invoice Details (right box) ──────────────────
     _cn  = ParagraphStyle("_cn",  fontName="Helvetica-Bold", fontSize=10, textColor=INK)
@@ -434,12 +436,12 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     ]
     if due_date_str:
         inv_det_rows.append([Paragraph("DUE DATE:",      _slbl), Paragraph(_xe(due_date_str),      _sval)])
-    if payment_terms_str:
-        inv_det_rows.append([Paragraph("PAYMENT TERMS:", _slbl), Paragraph(_xe(payment_terms_str), _sval)])
     if lpo_no:
         inv_det_rows.append([Paragraph("LPO NO:",  _slbl), Paragraph(_xe(lpo_no), _sval)])
     if do_no:
         inv_det_rows.append([Paragraph("DO NO:",   _slbl), Paragraph(_xe(do_no),  _sval)])
+    if payment_terms_str:
+        inv_det_rows.append([Paragraph("PAYMENT TERMS:", _slbl), Paragraph(_xe(payment_terms_str), _sval)])
 
     inv_det_inner = Table(inv_det_rows, colWidths=[28 * mm, 34 * mm])
     inv_det_inner.setStyle(TableStyle([
@@ -478,6 +480,9 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
     # ── 4. Items table ────────────────────────────────────────────────────────
     stamp_path_check = _get_stamp_path(_comp_stamp) if include_stamp else ""
+    _dbg(f"resolved_stamp_path={stamp_path_check or 'none'}")
+    _dbg(f"stamp_exists={bool(stamp_path_check)}")
+    _dbg(f"stamp_rendered={bool(stamp_path_check)}")
     log.info("[invoice pdf_generator] resolved_stamp_path=%s stamp_rendered=%s",
              stamp_path_check or "none", bool(stamp_path_check))
 
@@ -1053,10 +1058,10 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     sig_sb_s = ParagraphStyle("qss",  fontName="Helvetica",      fontSize=7,   textColor=DARK,      alignment=TA_CENTER)
     ft_s     = ParagraphStyle("qft",  fontName="Helvetica",      fontSize=6.5, textColor=MED_GRAY,  alignment=TA_CENTER)
 
-    # ── 1. Title — 2mm above letterhead gap, 8mm below to breathe from boxes
+    # ── 1. Title — 2mm from frame edge, 12mm clear gap below before boxes
     story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("QUOTATION", title_s))
-    story.append(Spacer(1, 8 * mm))
+    story.append(Spacer(1, 12 * mm))
 
     # ── 2. Two bordered boxes: Customer (left) | Quotation Info (right) ───────
     cust_rows = [[Paragraph("TO:", lbl_s), Paragraph(_xe(customer.get("name", "")), val_b)]]
@@ -1133,8 +1138,14 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     story.append(Spacer(1, 4 * mm))
 
     # ── 3. Items table (5 cols: SR NO | DESCRIPTION | QTY | UNIT PRICE | AMOUNT)
-    _actual_n   = len(_raw_items_q)
-    _filler_n   = 0  # no fake filler rows — footer flows naturally below real items
+    _actual_n = len(_raw_items_q)
+    _HDR_H_Q = 8 * mm
+    _ROW_H_Q  = 8 * mm
+    _overhead_q = 116 * mm
+    _avail_q    = page_h - top_margin - 4 * mm - _overhead_q - _HDR_H_Q
+    _total_rows_q = max(_actual_n, int(_avail_q / _ROW_H_Q))
+    _filler_n     = _total_rows_q - _actual_n
+    _dbg(f"[quotation] items n={_actual_n} filler={_filler_n} total_rows={_total_rows_q} avail={_avail_q:.1f}")
 
     # 14+94+18+32+32 = 190mm
     q_col_w = [14 * mm, 94 * mm, 18 * mm, 32 * mm, 32 * mm]
@@ -1157,15 +1168,12 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     for _ in range(_filler_n):
         q_data.append(empty_row_q)
 
-    _HDR_H_Q = 8 * mm
-    _avail_q = page_h - top_margin - 4 * mm - 115 * mm - _HDR_H_Q
-    _item_row_h = min(24 * mm, max(8 * mm, _avail_q / max(_actual_n, 1)))
     items_t = Table(q_data, colWidths=q_col_w,
-                    rowHeights=[_HDR_H_Q] + [_item_row_h] * _actual_n)
+                    rowHeights=[_HDR_H_Q] + [_ROW_H_Q] * _total_rows_q)
     _style_cmds = [
-        ("BACKGROUND",    (0, 0),  (-1, 0),    ACCENT),
-        ("GRID",          (0, 0),  (-1, _actual_n), 0.5, colors.HexColor("#C0C8D8")),
-        ("GRID",          (0, _actual_n+1), (-1, -1), 0.3, colors.HexColor("#D8DDE8")),
+        ("BACKGROUND",    (0, 0),  (-1, 0),  ACCENT),
+        ("ROWBACKGROUNDS",(0, 1),  (-1, -1), [ROW_STRIPE, WHITE]),
+        ("GRID",          (0, 0),  (-1, -1), 0.5, colors.HexColor("#C0C8D8")),
         ("VALIGN",        (0, 0),  (-1, -1), "MIDDLE"),
         ("TOPPADDING",    (0, 0),  (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0),  (-1, -1), 4),
@@ -1173,12 +1181,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ("RIGHTPADDING",  (0, 0),  (-1, -1), 4),
         ("LEFTPADDING",   (1, 1),  (1, -1),  6),
         ("RIGHTPADDING",  (1, 1),  (1, -1),  6),
-        ("BACKGROUND",    (0, _actual_n+1), (-1, -1), WHITE),
     ]
-    if _actual_n > 0:
-        _style_cmds.append(
-            ("ROWBACKGROUNDS", (0, 1), (-1, _actual_n), [ROW_STRIPE, WHITE])
-        )
     items_t.setStyle(TableStyle(_style_cmds))
     story.append(items_t)
 
@@ -1236,9 +1239,13 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     if notes:
         terms_cell.append(Paragraph(f"Note: {_xe(notes)}", tc_val_s))
 
-    include_stamp_q = bool(quotation_data.get("include_stamp", False))
+    # Default True: stamp always rendered when file exists
+    include_stamp_q = bool(quotation_data.get("include_stamp", True))
     stamp_path_q = _get_stamp_path(_comp_stamp_q) if include_stamp_q else ""
-    _dbg(f"[quotation] include_stamp={include_stamp_q} stamp_path={stamp_path_q or 'none'}")
+    _dbg(f"[quotation] stamp_enabled={include_stamp_q}")
+    _dbg(f"[quotation] resolved_stamp_path={stamp_path_q or 'none'}")
+    _dbg(f"[quotation] stamp_exists={bool(stamp_path_q)}")
+    _dbg(f"[quotation] stamp_rendered={bool(stamp_path_q)}")
     sig_cell = []
     if stamp_path_q:
         try:
@@ -1791,7 +1798,7 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     # ── Title ─────────────────────────────────────────────────────────────────
     story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("DELIVERY NOTE", title_s))
-    story.append(Spacer(1, 8 * mm))
+    story.append(Spacer(1, 12 * mm))
 
     # ── Customer / DN info block ──────────────────────────────────────────────
     customer  = dn_data.get("customer") or {}
@@ -1959,7 +1966,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
 
     story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("PURCHASE ORDER", title_s))
-    story.append(Spacer(1, 8 * mm))
+    story.append(Spacer(1, 12 * mm))
 
     supplier = po_data.get("supplier") or {}
     po_no    = po_data.get("po_number", "")
