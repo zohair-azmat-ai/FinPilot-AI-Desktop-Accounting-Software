@@ -363,10 +363,10 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=8,   textColor=DARK)
     _bh    = ParagraphStyle("_bh",   fontName="Helvetica-Bold", fontSize=8,   textColor=WHITE,  alignment=TA_CENTER)
 
-    # ── 1. TAX INVOICE title — balanced: 4mm above, 5mm below for clean float
-    story.append(Spacer(1, 4 * mm))
+    # ── 1. TAX INVOICE title — 2mm above letterhead gap, 8mm below to breathe from boxes
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("TAX INVOICE", _ti))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 8 * mm))
 
     # ── 2. Bill To (left box) | Invoice Details (right box) ──────────────────
     _cn  = ParagraphStyle("_cn",  fontName="Helvetica-Bold", fontSize=10, textColor=INK)
@@ -423,12 +423,12 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     ]
     if due_date_str:
         inv_det_rows.append([Paragraph("DUE DATE:",      _slbl), Paragraph(_xe(due_date_str),      _sval)])
-    if payment_terms_str:
-        inv_det_rows.append([Paragraph("PAYMENT TERMS:", _slbl), Paragraph(_xe(payment_terms_str), _sval)])
     if lpo_no:
         inv_det_rows.append([Paragraph("LPO NO:",  _slbl), Paragraph(_xe(lpo_no), _sval)])
     if do_no:
         inv_det_rows.append([Paragraph("DO NO:",   _slbl), Paragraph(_xe(do_no),  _sval)])
+    if payment_terms_str:
+        inv_det_rows.append([Paragraph("PAYMENT TERMS:", _slbl), Paragraph(_xe(payment_terms_str), _sval)])
 
     inv_det_inner = Table(inv_det_rows, colWidths=[28 * mm, 34 * mm])
     inv_det_inner.setStyle(TableStyle([
@@ -1042,10 +1042,10 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     sig_sb_s = ParagraphStyle("qss",  fontName="Helvetica",      fontSize=7,   textColor=DARK,      alignment=TA_CENTER)
     ft_s     = ParagraphStyle("qft",  fontName="Helvetica",      fontSize=6.5, textColor=MED_GRAY,  alignment=TA_CENTER)
 
-    # ── 1. Title — 4mm above, 5mm below for balanced float
-    story.append(Spacer(1, 4 * mm))
+    # ── 1. Title — 2mm above letterhead gap, 8mm below to breathe from boxes
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("QUOTATION", title_s))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 8 * mm))
 
     # ── 2. Two bordered boxes: Customer (left) | Quotation Info (right) ───────
     cust_rows = [[Paragraph("TO:", lbl_s), Paragraph(_xe(customer.get("name", "")), val_b)]]
@@ -1148,7 +1148,13 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         q_data.append(empty_row_q)
 
     _n_data = len(q_data)  # header + actual + filler
-    items_t = Table(q_data, colWidths=q_col_w)
+    _HDR_H_Q = 8 * mm
+    # Distribute available vertical space across item rows so fewer items fill the page naturally.
+    # ~115mm covers heading + boxes + totals + amount-in-words + bottom block.
+    _avail_q = page_h - top_margin - 4 * mm - 115 * mm - _HDR_H_Q
+    _item_row_h = min(24 * mm, max(8 * mm, _avail_q / max(_actual_n, 1)))
+    items_t = Table(q_data, colWidths=q_col_w,
+                    rowHeights=[_HDR_H_Q] + [_item_row_h] * _actual_n)
     # Apply stripe ONLY to actual item rows; filler rows are plain white
     _style_cmds = [
         ("BACKGROUND",    (0, 0),  (-1, 0),    ACCENT),
@@ -1778,9 +1784,9 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         story.append(Spacer(1, 2 * mm))
 
     # ── Title ─────────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("DELIVERY NOTE", title_s))
-    story.append(Spacer(1, 6 * mm))
+    story.append(Spacer(1, 8 * mm))
 
     # ── Customer / DN info block ──────────────────────────────────────────────
     customer  = dn_data.get("customer") or {}
@@ -1946,7 +1952,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
         story.append(HRFlowable(width="100%", thickness=0.8, color=PRIMARY))
         story.append(Spacer(1, 2 * mm))
 
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("PURCHASE ORDER", title_s))
     story.append(Spacer(1, 8 * mm))
 

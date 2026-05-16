@@ -1053,10 +1053,10 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     sig_sb_s = ParagraphStyle("qss",  fontName="Helvetica",      fontSize=7,   textColor=DARK,      alignment=TA_CENTER)
     ft_s     = ParagraphStyle("qft",  fontName="Helvetica",      fontSize=6.5, textColor=MED_GRAY,  alignment=TA_CENTER)
 
-    # ── 1. Title — 4mm above, 5mm below for balanced float
-    story.append(Spacer(1, 4 * mm))
+    # ── 1. Title — 2mm above letterhead gap, 8mm below to breathe from boxes
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("QUOTATION", title_s))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 8 * mm))
 
     # ── 2. Two bordered boxes: Customer (left) | Quotation Info (right) ───────
     cust_rows = [[Paragraph("TO:", lbl_s), Paragraph(_xe(customer.get("name", "")), val_b)]]
@@ -1157,7 +1157,11 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     for _ in range(_filler_n):
         q_data.append(empty_row_q)
 
-    items_t = Table(q_data, colWidths=q_col_w)
+    _HDR_H_Q = 8 * mm
+    _avail_q = page_h - top_margin - 4 * mm - 115 * mm - _HDR_H_Q
+    _item_row_h = min(24 * mm, max(8 * mm, _avail_q / max(_actual_n, 1)))
+    items_t = Table(q_data, colWidths=q_col_w,
+                    rowHeights=[_HDR_H_Q] + [_item_row_h] * _actual_n)
     _style_cmds = [
         ("BACKGROUND",    (0, 0),  (-1, 0),    ACCENT),
         ("GRID",          (0, 0),  (-1, _actual_n), 0.5, colors.HexColor("#C0C8D8")),
@@ -1785,9 +1789,9 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         story.append(Spacer(1, 2 * mm))
 
     # ── Title ─────────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("DELIVERY NOTE", title_s))
-    story.append(Spacer(1, 6 * mm))
+    story.append(Spacer(1, 8 * mm))
 
     # ── Customer / DN info block ──────────────────────────────────────────────
     customer  = dn_data.get("customer") or {}
@@ -1953,7 +1957,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
         story.append(HRFlowable(width="100%", thickness=0.8, color=PRIMARY))
         story.append(Spacer(1, 2 * mm))
 
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("PURCHASE ORDER", title_s))
     story.append(Spacer(1, 8 * mm))
 
