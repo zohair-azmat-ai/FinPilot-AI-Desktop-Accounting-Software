@@ -363,10 +363,10 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=8,   textColor=DARK)
     _bh    = ParagraphStyle("_bh",   fontName="Helvetica-Bold", fontSize=8,   textColor=WHITE,  alignment=TA_CENTER)
 
-    # ── 1. TAX INVOICE title — centered, tight gap above (letterhead close), breathing below ─
-    story.append(Spacer(1, 2 * mm))
+    # ── 1. TAX INVOICE title — balanced: 4mm above, 5mm below for clean float
+    story.append(Spacer(1, 4 * mm))
     story.append(Paragraph("TAX INVOICE", _ti))
-    story.append(Spacer(1, 2 * mm))
+    story.append(Spacer(1, 5 * mm))
 
     # ── 2. Bill To (left box) | Invoice Details (right box) ──────────────────
     _cn  = ParagraphStyle("_cn",  fontName="Helvetica-Bold", fontSize=10, textColor=INK)
@@ -415,6 +415,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
     due_date_str      = invoice_data.get("due_date", "") or ""
     payment_terms_str = invoice_data.get("payment_terms", "") or ""
+    _dbg(f"[invoice pdf] payment_terms_received={repr(payment_terms_str)} will_render={bool(payment_terms_str)}")
     inv_det_rows = [
         [Paragraph("INVOICE NO:",    _slbl), Paragraph(_xe(inv_no),   _sval)],
         [Paragraph("INVOICE DATE:",  _slbl), Paragraph(_xe(inv_date), _sval)],
@@ -1041,10 +1042,10 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     sig_sb_s = ParagraphStyle("qss",  fontName="Helvetica",      fontSize=7,   textColor=DARK,      alignment=TA_CENTER)
     ft_s     = ParagraphStyle("qft",  fontName="Helvetica",      fontSize=6.5, textColor=MED_GRAY,  alignment=TA_CENTER)
 
-    # ── 1. Title — centered, tight to letterhead, balanced below ──────────────
-    story.append(Spacer(1, 2 * mm))
+    # ── 1. Title — 4mm above, 5mm below for balanced float
+    story.append(Spacer(1, 4 * mm))
     story.append(Paragraph("QUOTATION", title_s))
-    story.append(Spacer(1, 2 * mm))
+    story.append(Spacer(1, 5 * mm))
 
     # ── 2. Two bordered boxes: Customer (left) | Quotation Info (right) ───────
     cust_rows = [[Paragraph("TO:", lbl_s), Paragraph(_xe(customer.get("name", "")), val_b)]]
@@ -1122,12 +1123,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
 
     # ── 3. Items table (5 cols: SR NO | DESCRIPTION | QTY | UNIT PRICE | AMOUNT)
     _actual_n   = len(_raw_items_q)
-    _ROW_H_Q    = 10 * mm   # approximate row height
-    _OVERHEAD_Q = 158 * mm  # title+spacers+boxes+hdr+totals+aiw+footer overhead
-    _usable_h   = A4[1] - top_margin - 4 * mm
-    # Calculate natural filler rows needed (0-4, clean white rows to fill space)
-    _max_rows   = max(_actual_n, int((_usable_h - _OVERHEAD_Q) / _ROW_H_Q))
-    _filler_n   = min(4, max(0, _max_rows - _actual_n))
+    _filler_n   = 0  # no fake filler rows — footer flows naturally below real items
 
     # 14+94+18+32+32 = 190mm
     q_col_w = [14 * mm, 94 * mm, 18 * mm, 32 * mm, 32 * mm]
