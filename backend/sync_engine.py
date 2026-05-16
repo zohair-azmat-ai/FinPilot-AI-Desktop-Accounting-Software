@@ -381,6 +381,15 @@ class SyncEngine(threading.Thread):
                     "po_number", "bill_number", "payment_number", "expense_number",
                 )
 
+                # Parent tables for child-item tables — used for orphan detection below.
+                _CHILD_PARENT_MAP = {
+                    "invoice_items":   ("invoices",        "invoice_id"),
+                    "quotation_items": ("quotations",       "quotation_id"),
+                    "delivery_note_items": ("delivery_notes", "dn_id"),
+                    "purchase_order_items": ("purchase_orders", "po_id"),
+                    "supplier_bill_items": ("supplier_bills", "bill_id"),
+                }
+
                 for sync_uuid, cloud_row in cloud_by_uuid.items():
                     filtered = {
                         k: v for k, v in cloud_row.items()
@@ -408,6 +417,33 @@ class SyncEngine(threading.Thread):
                         # a record only to soft-delete it immediately.
                         if cloud_row.get("deleted_at"):
                             continue
+
+                        # Orphan guard for child-item tables: skip inserting a cloud item row
+                        # if the parent document was locally updated MORE RECENTLY than this
+                        # item. This prevents Supabase from resurrecting rows that were
+                        # soft/hard-deleted when the parent was locally re-saved.
+                        if table in _CHILD_PARENT_MAP:
+                            _pt, _fk = _CHILD_PARENT_MAP[table]
+                            _sb_pid = cloud_row.get(_fk)
+                            _local_pid = (
+                                id_map.get(_pt, {}).get(_sb_pid) if _sb_pid is not None else None
+                            )
+                            if _local_pid is not None:
+                                try:
+                                    _par = con.execute(
+                                        f"SELECT updated_at FROM {_pt} WHERE id=?", [_local_pid]
+                                    ).fetchone()
+                                    if _par and _par[0] and _par[0] > (cloud_row.get("updated_at") or ""):
+                                        log.warning(
+                                            "Pull [%s] ORPHAN GUARD: skipping cloud sync_uuid=%s "
+                                            "(parent %s id=%s updated_at=%s > item updated_at=%s)",
+                                            table, sync_uuid, _pt, _local_pid,
+                                            _par[0], cloud_row.get("updated_at"),
+                                        )
+                                        errors += 1  # count as skipped for visibility
+                                        continue
+                                except Exception:
+                                    pass
 
                         # New row from cloud — strip 'id' to avoid PK conflicts;
                         # SQLite auto-assigns a safe local id via rowid.

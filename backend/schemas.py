@@ -192,6 +192,7 @@ class InvoiceCreate(BaseModel):
     is_cash: Optional[bool] = False
     include_stamp: Optional[bool] = False
     require_customer_signature: Optional[bool] = False
+    payment_terms: Optional[str] = ""
     items: List[InvoiceItemCreate]
 
 class InvoiceOut(BaseModel):
@@ -215,11 +216,12 @@ class InvoiceOut(BaseModel):
     is_cash: bool = False
     include_stamp: bool = False
     require_customer_signature: bool = False
+    payment_terms: str = ""
     items: List[InvoiceItemOut]
     class Config:
         from_attributes = True
 
-    @field_validator("notes", "lpo_no", "do_no", "status", mode="before")
+    @field_validator("notes", "lpo_no", "do_no", "status", "payment_terms", mode="before")
     @classmethod
     def _str(cls, v): return _str(v)
 

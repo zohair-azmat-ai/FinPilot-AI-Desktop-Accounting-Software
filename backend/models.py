@@ -25,6 +25,7 @@ class Company(Base):
     po_prefix = Column(String, default="PO-")
     po_current_number = Column(Integer, default=0)
     show_lpo_in_statement = Column(Boolean, default=False)
+    stamp_path = Column(String, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -114,6 +115,8 @@ class QuotationItem(Base):
     vat_applicable = Column(Boolean, default=True)
     vat_amount = Column(Float, default=0.0)
     total = Column(Float, default=0.0)
+    deleted_at = Column(String, nullable=True, default=None)
+    updated_at = Column(String, nullable=True, default=None)
 
     quotation = relationship("Quotation", back_populates="items")
     item = relationship("Item")
@@ -141,6 +144,7 @@ class Invoice(Base):
     is_cash = Column(Boolean, default=False)
     include_stamp = Column(Boolean, default=False)
     require_customer_signature = Column(Boolean, default=False)
+    payment_terms = Column(String, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     deleted_at = Column(String, nullable=True, default=None)

@@ -99,6 +99,7 @@ def _company_dict(workspace_id: Optional[str]) -> dict:
         "name": c.get("name", ""), "trn": c.get("trn", ""),
         "address": c.get("address", ""), "phone": c.get("phone", ""),
         "email": c.get("email", ""),
+        "stamp_path": "",  # cloud PDF uses /tmp/assets/stamp.png via _get_stamp_path()
     }
 
 
@@ -115,6 +116,7 @@ def _customer_dict(customer_id, workspace_id: Optional[str], include_po_box=True
         "name": cust.get("name", ""), "trn": cust.get("trn", ""),
         "attn": cust.get("attn", ""), "phone": cust.get("phone", ""),
         "address": cust.get("address", ""),
+        "payment_terms": cust.get("payment_terms", "") or "",
     }
     if include_po_box:
         d["po_box"] = cust.get("po_box", "")

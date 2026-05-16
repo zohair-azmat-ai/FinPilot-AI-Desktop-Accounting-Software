@@ -56,7 +56,7 @@ def list_delivery_notes(
     q = db.query(models.DeliveryNote).filter(_active())
     if customer_id:
         q = q.filter(models.DeliveryNote.customer_id == customer_id)
-    return q.order_by(models.DeliveryNote.id.desc()).all()
+    return q.order_by(models.DeliveryNote.date.desc(), models.DeliveryNote.id.desc()).all()
 
 
 @router.get("/{dn_id}", response_model=schemas.DeliveryNoteOut)

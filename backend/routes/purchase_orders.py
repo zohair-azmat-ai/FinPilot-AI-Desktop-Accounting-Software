@@ -68,7 +68,7 @@ def list_pos(supplier_id: Optional[int] = None, db: Session = Depends(get_db)):
     q = db.query(models.PurchaseOrder).filter(_active())
     if supplier_id:
         q = q.filter(models.PurchaseOrder.supplier_id == supplier_id)
-    return q.order_by(models.PurchaseOrder.id.desc()).all()
+    return q.order_by(models.PurchaseOrder.date.desc(), models.PurchaseOrder.id.desc()).all()
 
 
 @router.get("/{po_id}", response_model=schemas.PurchaseOrderOut)

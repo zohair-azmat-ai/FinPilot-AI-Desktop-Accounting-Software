@@ -74,11 +74,18 @@ _USER_STAMP  = os.path.join(os.path.expanduser("~"), "FinPilot", "assets", "stam
 _BUNDLE_STAMP = os.path.join(_HERE, "assets", "stamp.png")
 
 
-def _get_stamp_path() -> str:
-    """Return the first existing stamp path, or empty string if none."""
-    for p in (_USER_STAMP, _BUNDLE_STAMP):
-        if os.path.exists(p):
+_TMP_STAMP = "/tmp/assets/stamp.png"
+
+
+def _get_stamp_path(company_stamp: str = "") -> str:
+    """Return the first existing stamp path, or empty string if none.
+    Priority: company_stamp → /tmp/assets (push-assets upload) → bundle assets."""
+    candidates = [p for p in (company_stamp, _TMP_STAMP, _USER_STAMP, _BUNDLE_STAMP) if p]
+    for p in candidates:
+        if os.path.exists(p) and os.path.getsize(p) > 0:
+            _dbg(f"stamp resolved: {p}")
             return p
+    _dbg(f"stamp NOT FOUND (checked {len(candidates)} paths)")
     return ""
 
 
@@ -324,7 +331,15 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     vat_amount = invoice_data.get("vat_amount", 0)
     discount   = invoice_data.get("discount",   0)
     total      = invoice_data.get("total",      0)
-    actual_items = invoice_data.get("items", [])
+    _comp_stamp = (company or {}).get("stamp_path", "") or ""
+    # Defensive: strip stale/deleted/blank items
+    actual_items = [
+        it for it in invoice_data.get("items", [])
+        if not it.get("deleted_at") and (it.get("description") or "").strip()
+    ]
+    _dbg(f"generate_invoice_pdf: invoice={inv_no} pdf_render_count={len(actual_items)}")
+    log.info("[invoice pdf_generator] invoice=%s pdf_render_count=%s company_stamp_exists=%s",
+             inv_no, len(actual_items), bool(_comp_stamp and os.path.exists(_comp_stamp)))
 
     # ── FinPilot blue palette (restored) ─────────────────────────────────────
     HDR_BG  = ACCENT                        # royal blue table header
@@ -350,10 +365,10 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=8,   textColor=DARK)
     _bh    = ParagraphStyle("_bh",   fontName="Helvetica-Bold", fontSize=8,   textColor=WHITE,  alignment=TA_CENTER)
 
-    # ── 1. TAX INVOICE title — centered, no underline, clear gap above and below ─
-    story.append(Spacer(1, 4 * mm))
+    # ── 1. TAX INVOICE title — centered, tight to letterhead ─────────────────
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("TAX INVOICE", _ti))
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 2 * mm))
 
     # ── 2. Bill To (left box) | Invoice Details (right box) ──────────────────
     _cn  = ParagraphStyle("_cn",  fontName="Helvetica-Bold", fontSize=10, textColor=INK)
@@ -452,7 +467,9 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     story.append(Spacer(1, 3 * mm))
 
     # ── 4. Items table ────────────────────────────────────────────────────────
-    stamp_path_check = _get_stamp_path() if include_stamp else ""
+    stamp_path_check = _get_stamp_path(_comp_stamp) if include_stamp else ""
+    log.info("[invoice pdf_generator] resolved_stamp_path=%s stamp_rendered=%s",
+             stamp_path_check or "none", bool(stamp_path_check))
 
     # 9 columns: SR NO | DESCRIPTION | QTY | UNIT PRICE | DISCOUNT | TAXABLE AMT | TAX RATE | TAX AMT | TOTAL
     # 8+50+18+24+16+24+11+19+20 = 190mm  (QTY=18mm so '20-NOS' never wraps)
@@ -998,7 +1015,15 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     notes         = quotation_data.get("notes",          "") or ""
     payment_terms = quotation_data.get("payment_terms",  "") or ""
     delivery      = quotation_data.get("delivery",       "") or ""
-    comp_trn      = company.get("trn", "") or ""
+    comp_trn      = (company or {}).get("trn", "") or ""
+    _comp_stamp_q = (company or {}).get("stamp_path", "") or ""
+    # Defensive item filter
+    _raw_items_q = [
+        it for it in quotation_data.get("items", [])
+        if not it.get("deleted_at") and (it.get("description") or "").strip()
+    ]
+    _dbg(f"[quotation] generate_quotation_pdf: quo={quo_no} pdf_render_count={len(_raw_items_q)}")
+    log.info("[quotation pdf_generator] quo=%s pdf_render_count=%s", quo_no, len(_raw_items_q))
 
     title_s  = ParagraphStyle("qt",   fontName="Helvetica-Bold", fontSize=18,  textColor=ACCENT,    alignment=TA_CENTER)
     box_hdr  = ParagraphStyle("qbh",  fontName="Helvetica-Bold", fontSize=8.5, textColor=WHITE,     alignment=TA_CENTER)
@@ -1018,10 +1043,10 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     sig_sb_s = ParagraphStyle("qss",  fontName="Helvetica",      fontSize=7,   textColor=DARK,      alignment=TA_CENTER)
     ft_s     = ParagraphStyle("qft",  fontName="Helvetica",      fontSize=6.5, textColor=MED_GRAY,  alignment=TA_CENTER)
 
-    # ── 1. Title — centered, no underline, clear gap above and below ──────────
-    story.append(Spacer(1, 4 * mm))
+    # ── 1. Title — centered, tight to letterhead ─────────────────────────────
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("QUOTATION", title_s))
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 2 * mm))
 
     # ── 2. Two bordered boxes: Customer (left) | Quotation Info (right) ───────
     cust_rows = [[Paragraph("TO:", lbl_s), Paragraph(_xe(customer.get("name", "")), val_b)]]
@@ -1098,20 +1123,19 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     story.append(Spacer(1, 4 * mm))
 
     # ── 3. Items table (5 cols: SR NO | DESCRIPTION | QTY | UNIT PRICE | AMOUNT)
-    _actual_n   = len(quotation_data.get("items", []))
-    _ROW_H_Q    = 10 * mm   # approximate row height (short descriptions)
-    _OVERHEAD_Q = 155 * mm  # overhead: title+spacers+boxes+hdr+totals+aiw+footer
+    _actual_n   = len(_raw_items_q)
+    _ROW_H_Q    = 10 * mm   # approximate row height
+    _OVERHEAD_Q = 158 * mm  # title+spacers+boxes+hdr+totals+aiw+footer
     _usable_h   = A4[1] - top_margin - 4 * mm
     _max_rows   = max(_actual_n, int((_usable_h - _OVERHEAD_Q) / _ROW_H_Q))
-    _filler_n   = min(5, max(0, _max_rows - _actual_n))  # up to 5 filler rows to fill page
-    MIN_ROWS_Q  = _actual_n + _filler_n
+    _filler_n   = min(4, max(0, _max_rows - _actual_n))
 
     # 14+94+18+32+32 = 190mm
     q_col_w = [14 * mm, 94 * mm, 18 * mm, 32 * mm, 32 * mm]
     q_hdrs  = ["SR\nNO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)", "AMOUNT\n(AED)"]
     q_data  = [[Paragraph(h, ih_s) for h in q_hdrs]]
 
-    for idx, item in enumerate(quotation_data.get("items", []), 1):
+    for idx, item in enumerate(_raw_items_q, 1):
         qty = item.get("quantity", 1)
         up  = item.get("unit_price", 0)
         amt = item.get("total", round(qty * up, 2))
@@ -1124,24 +1148,28 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ])
 
     empty_row_q = [Paragraph("", ir_s)] * 5
-    for _ in range(max(0, MIN_ROWS_Q - _actual_n)):
+    for _ in range(_filler_n):
         q_data.append(empty_row_q)
 
     items_t = Table(q_data, colWidths=q_col_w)
-    items_t.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0),  (-1, 0),  ACCENT),
-        ("ROWBACKGROUNDS",(0, 1),  (-1, -1), [ROW_STRIPE, WHITE]),
-        ("GRID",          (0, 0),  (-1, -1), 0.5, colors.HexColor("#C0C8D8")),
+    _style_cmds = [
+        ("BACKGROUND",    (0, 0),  (-1, 0),    ACCENT),
+        ("GRID",          (0, 0),  (-1, _actual_n), 0.5, colors.HexColor("#C0C8D8")),
+        ("GRID",          (0, _actual_n+1), (-1, -1), 0.3, colors.HexColor("#D8DDE8")),
         ("VALIGN",        (0, 0),  (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0),  (-1, 0),  4),
-        ("BOTTOMPADDING", (0, 0),  (-1, 0),  4),
-        ("TOPPADDING",    (0, 1),  (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 1),  (-1, -1), 4),
+        ("TOPPADDING",    (0, 0),  (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0),  (-1, -1), 4),
         ("LEFTPADDING",   (0, 0),  (-1, -1), 4),
         ("RIGHTPADDING",  (0, 0),  (-1, -1), 4),
         ("LEFTPADDING",   (1, 1),  (1, -1),  6),
         ("RIGHTPADDING",  (1, 1),  (1, -1),  6),
-    ]))
+        ("BACKGROUND",    (0, _actual_n+1), (-1, -1), WHITE),
+    ]
+    if _actual_n > 0:
+        _style_cmds.append(
+            ("ROWBACKGROUNDS", (0, 1), (-1, _actual_n), [ROW_STRIPE, WHITE])
+        )
+    items_t.setStyle(TableStyle(_style_cmds))
     story.append(items_t)
 
     # ── 4. Totals right-aligned (TRN · Subtotal · VAT · Discount · Grand Total)
@@ -1199,7 +1227,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         terms_cell.append(Paragraph(f"Note: {_xe(notes)}", tc_val_s))
 
     include_stamp_q = bool(quotation_data.get("include_stamp", False))
-    stamp_path_q = _get_stamp_path() if include_stamp_q else ""
+    stamp_path_q = _get_stamp_path(_comp_stamp_q) if include_stamp_q else ""
     _dbg(f"[quotation] include_stamp={include_stamp_q} stamp_path={stamp_path_q or 'none'}")
     sig_cell = []
     if stamp_path_q:

@@ -66,14 +66,21 @@ _active = lambda: models.Quotation.deleted_at.is_(None)
 
 @router.get("/", response_model=List[schemas.QuotationOut])
 def list_quotations(db: Session = Depends(get_db)):
-    return db.query(models.Quotation).filter(_active()).order_by(models.Quotation.id.desc()).all()
+    from sqlalchemy.orm.attributes import set_committed_value
+    qs = db.query(models.Quotation).filter(_active()).order_by(models.Quotation.date.desc(), models.Quotation.id.desc()).all()
+    for q in qs:
+        set_committed_value(q, 'items', [it for it in q.items if not it.deleted_at])
+    return qs
 
 
 @router.get("/{quotation_id}", response_model=schemas.QuotationOut)
 def get_quotation(quotation_id: int, db: Session = Depends(get_db)):
+    from sqlalchemy.orm.attributes import set_committed_value
     q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id, _active()).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
+    active_items = [it for it in q.items if not it.deleted_at]
+    set_committed_value(q, 'items', active_items)
     return q
 
 
@@ -107,7 +114,10 @@ def create_quotation(data: schemas.QuotationCreate, db: Session = Depends(get_db
         quotation.vat_amount = vat_total
         quotation.total = total
         quotation.status = "draft"
-        db.query(models.QuotationItem).filter(models.QuotationItem.quotation_id == quotation.id).delete(synchronize_session=False)
+        _now_q = datetime.now(timezone.utc).isoformat()
+        db.query(models.QuotationItem).filter(
+            models.QuotationItem.quotation_id == quotation.id,
+        ).update({"deleted_at": _now_q, "updated_at": _now_q}, synchronize_session=False)
     else:
         quotation = models.Quotation(
             quotation_number=q_number,
@@ -240,12 +250,13 @@ def update_quotation(quotation_id: int, data: schemas.QuotationCreate, db: Sessi
     q.vat_amount = vat_total
     q.total = total
 
-    # Hard-delete ALL existing items for this quotation, then re-insert from payload.
-    # synchronize_session=False is required to avoid stale identity-map conflicts.
+    # Soft-delete old active items so sync engine doesn't resurrect orphans from Supabase.
+    _now_upd = datetime.now(timezone.utc).isoformat()
     _del_c = db.query(models.QuotationItem).filter(
         models.QuotationItem.quotation_id == quotation_id,
-    ).delete(synchronize_session=False)
-    db.flush()   # flush the DELETE before any INSERT so no PK conflicts
+        models.QuotationItem.deleted_at.is_(None),
+    ).update({"deleted_at": _now_upd, "updated_at": _now_upd}, synchronize_session=False)
+    db.flush()   # flush before INSERT to avoid PK conflicts
 
     for item in processed_items:
         db.add(models.QuotationItem(
@@ -258,22 +269,98 @@ def update_quotation(quotation_id: int, data: schemas.QuotationCreate, db: Sessi
             vat_amount=item["vat_amount"],
             total=item["total"]
         ))
-    db.flush()
+    db.flush()   # flush new inserts before count
 
-    # Verify final row count before commit
+    # Verify final ACTIVE row count before commit
     _final_c = db.query(models.QuotationItem).filter(
-        models.QuotationItem.quotation_id == quotation_id
+        models.QuotationItem.quotation_id == quotation_id,
+        models.QuotationItem.deleted_at.is_(None),
     ).count()
     print(f"[quotation update] quotation_id={quotation_id} "
-          f"received_items={len(data.items)} "
-          f"non_blank_items={len(processed_items)} "
-          f"deleted_old={_del_c} "
-          f"inserted={len(processed_items)} "
-          f"final_db_count={_final_c}")
+          f"received_items_count={len(data.items)} "
+          f"deleted_items_count={_del_c} "
+          f"inserted_items_count={len(processed_items)} "
+          f"final_db_items_count={_final_c}")
 
     db.commit()
     db.refresh(q)
     return q
+
+
+@router.post("/{quotation_id}/cloud-cleanup")
+def cloud_cleanup_quotation_items(quotation_id: int, db: Session = Depends(get_db)):
+    """Soft-delete in Supabase any quotation_items not in the local active set."""
+    import requests as _req
+    try:
+        from sync_engine import _read_creds
+    except ImportError:
+        raise HTTPException(500, "sync_engine not available")
+
+    creds = _read_creds()
+    if not creds:
+        return {"ok": False, "reason": "Sync not configured — connect Supabase first"}
+
+    q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id).first()
+    if not q:
+        raise HTTPException(404, "Quotation not found")
+
+    active_items = db.query(models.QuotationItem).filter(
+        models.QuotationItem.quotation_id == quotation_id,
+        models.QuotationItem.deleted_at.is_(None),
+    ).all()
+    active_uuids = {it.sync_uuid for it in active_items if it.sync_uuid}
+    print(f"[cloud-cleanup quotation] id={quotation_id} num={q.quotation_number} "
+          f"local_active={len(active_items)} active_uuids={len(active_uuids)}")
+
+    hdrs = {"apikey": creds["anon_key"], "Content-Type": "application/json"}
+    if creds["anon_key"].startswith("eyJ"):
+        hdrs["Authorization"] = f"Bearer {creds['anon_key']}"
+
+    sb_url = creds["url"].rstrip("/")
+    ws = creds["workspace_id"]
+    now_ts = datetime.now(timezone.utc).isoformat()
+
+    r = _req.get(
+        f"{sb_url}/rest/v1/quotation_items",
+        params={"workspace_id": f"eq.{ws}", "quotation_id": f"eq.{quotation_id}",
+                "deleted_at": "is.null", "limit": "500"},
+        headers=hdrs, timeout=15,
+    )
+    if r.status_code not in (200, 206):
+        return {"ok": False, "reason": f"Supabase fetch error {r.status_code}: {r.text[:200]}"}
+
+    sb_active = r.json()
+    orphans = [it for it in sb_active if it.get("sync_uuid") not in active_uuids]
+    print(f"[cloud-cleanup quotation] sb_active={len(sb_active)} orphans_to_delete={len(orphans)}")
+
+    cleaned = 0
+    errors = []
+    for it in orphans:
+        suuid = it.get("sync_uuid")
+        if not suuid:
+            continue
+        patch_r = _req.patch(
+            f"{sb_url}/rest/v1/quotation_items",
+            json={"deleted_at": now_ts, "updated_at": now_ts},
+            params={"sync_uuid": f"eq.{suuid}", "workspace_id": f"eq.{ws}"},
+            headers={**hdrs, "Prefer": "return=minimal"},
+            timeout=15,
+        )
+        if patch_r.status_code in (200, 204):
+            cleaned += 1
+        else:
+            errors.append(f"sync_uuid={suuid} HTTP {patch_r.status_code}")
+
+    return {
+        "ok": True,
+        "quotation_id": quotation_id,
+        "quotation_number": q.quotation_number,
+        "local_active_count": len(active_items),
+        "sb_active_before_cleanup": len(sb_active),
+        "orphans_cleaned": cleaned,
+        "errors": errors,
+        "sb_should_now_have_active": len(active_items),
+    }
 
 
 @router.delete("/{quotation_id}")
@@ -301,7 +388,12 @@ def download_quotation_pdf(quotation_id: str, db: Session = Depends(get_db)):
         company = db.query(models.Company).first()
         comp_dict = {}
         if company:
-            comp_dict = {"name": company.name, "trn": company.trn, "address": company.address, "phone": company.phone, "email": company.email}
+            comp_dict = {
+                "name": company.name, "trn": company.trn,
+                "address": company.address, "phone": company.phone,
+                "email": company.email,
+                "stamp_path": company.stamp_path or "",
+            }
         customer = q.customer
         cust_dict = {}
         if customer:
@@ -311,7 +403,7 @@ def download_quotation_pdf(quotation_id: str, db: Session = Depends(get_db)):
             "date": q.date.strftime("%d %b %Y"),
             "valid_until": q.valid_until.strftime("%d %b %Y") if q.valid_until else "",
             "customer": cust_dict,
-            "items": [{"description": it.description, "quantity": it.quantity, "unit_price": it.unit_price, "vat_applicable": it.vat_applicable, "vat_amount": it.vat_amount, "total": it.total} for it in q.items],
+            "items": [{"description": it.description, "quantity": it.quantity, "unit_price": it.unit_price, "vat_applicable": it.vat_applicable, "vat_amount": it.vat_amount, "total": it.total} for it in q.items if not it.deleted_at and (it.description or "").strip()],
             "subtotal": q.subtotal,
             "vat_amount": q.vat_amount,
             "discount": q.discount,

@@ -112,7 +112,7 @@ def list_invoices(status: Optional[str] = None, customer_id: Optional[int] = Non
         q = q.filter(models.Invoice.status == status)
     if customer_id:
         q = q.filter(models.Invoice.customer_id == customer_id)
-    invoices = q.order_by(models.Invoice.id.desc()).all()
+    invoices = q.order_by(models.Invoice.date.desc(), models.Invoice.id.desc()).all()
     for inv in invoices:
         active = [it for it in inv.items if it.deleted_at is None]
         set_committed_value(inv, 'items', active)
@@ -138,6 +138,8 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
     company = db.query(models.Company).first()
     vat_rate = company.vat_rate if company else 5.0
 
+    # Filter out blank rows — never save items with no description
+    data.items = [it for it in data.items if it.description.strip()]
     processed_items, subtotal, vat_total = _calculate_items(data.items, vat_rate)
     total = round(subtotal + vat_total - (data.discount or 0), 2)
     balance_due = total
@@ -147,6 +149,8 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
         models.Invoice.invoice_number == inv_number,
         models.Invoice.deleted_at.isnot(None)
     ).first()
+
+    _now_ts = datetime.now(timezone.utc).isoformat()
 
     if existing_deleted:
         invoice = existing_deleted
@@ -163,16 +167,19 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
         invoice.is_cash = data.is_cash or False
         invoice.include_stamp = data.include_stamp or False
         invoice.require_customer_signature = data.require_customer_signature or False
+        invoice.payment_terms = data.payment_terms or ""
         invoice.subtotal = subtotal
         invoice.vat_amount = vat_total
         invoice.total = total
         invoice.amount_paid = 0.0
         invoice.balance_due = balance_due
         invoice.status = "unpaid"
+        # Soft-delete old items so sync engine doesn't resurrect them from Supabase
         _del_c = db.query(models.InvoiceItem).filter(
             models.InvoiceItem.invoice_id == invoice.id,
-        ).delete(synchronize_session=False)
-        print(f"[invoice create restore] invoice_id={invoice.id} num={inv_number} deleted={_del_c} old items")
+            models.InvoiceItem.deleted_at.is_(None),
+        ).update({"deleted_at": _now_ts, "updated_at": _now_ts}, synchronize_session=False)
+        print(f"[invoice create restore] invoice_id={invoice.id} num={inv_number} soft_deleted={_del_c} old items")
         db.flush()
     else:
         invoice = models.Invoice(
@@ -189,6 +196,7 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
             is_cash=data.is_cash or False,
             include_stamp=data.include_stamp or False,
             require_customer_signature=data.require_customer_signature or False,
+            payment_terms=data.payment_terms or "",
             subtotal=subtotal,
             vat_amount=vat_total,
             total=total,
@@ -213,7 +221,11 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
         db.add(db_item)
 
     db.flush()
-    print(f"[invoice create] num={inv_number} received={len(data.items)} inserted={len(processed_items)}")
+    _final_c = db.query(models.InvoiceItem).filter(
+        models.InvoiceItem.invoice_id == invoice.id,
+        models.InvoiceItem.deleted_at.is_(None),
+    ).count()
+    print(f"[invoice create] num={inv_number} received={len(data.items)} inserted={len(processed_items)} final_active={_final_c}")
     if not invoice.is_cash:
         _update_ledger(db, invoice)
     db.commit()
@@ -232,6 +244,8 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
 
     company = db.query(models.Company).first()
     vat_rate = company.vat_rate if company else 5.0
+    # Filter blank rows before processing
+    data.items = [it for it in data.items if it.description.strip()]
     processed_items, subtotal, vat_total = _calculate_items(data.items, vat_rate)
     total = round(subtotal + vat_total - (data.discount or 0), 2)
 
@@ -247,6 +261,7 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
     inv.is_cash = data.is_cash or False
     inv.include_stamp = data.include_stamp or False
     inv.require_customer_signature = data.require_customer_signature or False
+    inv.payment_terms = data.payment_terms or ""
     inv.subtotal = subtotal
     inv.vat_amount = vat_total
     inv.total = total
@@ -258,10 +273,12 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
     else:
         inv.status = "unpaid"
 
+    # Soft-delete old active items so sync engine doesn't resurrect orphans from Supabase
     _del_c = db.query(models.InvoiceItem).filter(
-        models.InvoiceItem.invoice_id == invoice_id,
-    ).delete(synchronize_session=False)
-    print(f"[invoice update] invoice_id={invoice_id} received={len(data.items)} deleted={_del_c} old items")
+        models.InvoiceItem.invoice_id == inv.id,
+        models.InvoiceItem.deleted_at.is_(None),
+    ).update({"deleted_at": now, "updated_at": now}, synchronize_session=False)
+    print(f"[invoice update] invoice_id={inv.id} received={len(data.items)} soft_deleted={_del_c} old items")
     db.flush()
 
     for item in processed_items:
@@ -277,16 +294,100 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
         )
         db.add(db_item)
 
+    db.flush()   # flush new inserts before count
     _final_c = db.query(models.InvoiceItem).filter(
-        models.InvoiceItem.invoice_id == invoice_id,
+        models.InvoiceItem.invoice_id == inv.id,
         models.InvoiceItem.deleted_at.is_(None),
     ).count()
-    print(f"[invoice update] invoice_id={invoice_id} inserted={len(processed_items)} final_active={_final_c}")
+    print(f"[invoice update] invoice_id={inv.id} "
+          f"received_items_count={len(data.items)} "
+          f"deleted_items_count={_del_c} "
+          f"inserted_items_count={len(processed_items)} "
+          f"final_db_items_count={_final_c}")
     if not inv.is_cash:
         _update_ledger(db, inv)
     db.commit()
     db.refresh(inv)
     return inv
+
+
+@router.post("/{invoice_id}/cloud-cleanup")
+def cloud_cleanup_invoice_items(invoice_id: int, db: Session = Depends(get_db)):
+    """Soft-delete in Supabase any invoice_items that are not in the local active set.
+    Fixes ghost/orphan items from mobile that were never pulled to local DB."""
+    import requests as _req
+    try:
+        from sync_engine import _read_creds
+    except ImportError:
+        raise HTTPException(500, "sync_engine not available")
+
+    creds = _read_creds()
+    if not creds:
+        return {"ok": False, "reason": "Sync not configured — connect Supabase first"}
+
+    inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+
+    # Collect local active sync_uuids for this invoice
+    active_items = db.query(models.InvoiceItem).filter(
+        models.InvoiceItem.invoice_id == invoice_id,
+        models.InvoiceItem.deleted_at.is_(None),
+    ).all()
+    active_uuids = {it.sync_uuid for it in active_items if it.sync_uuid}
+    print(f"[cloud-cleanup invoice] id={invoice_id} num={inv.invoice_number} "
+          f"local_active={len(active_items)} active_uuids={len(active_uuids)}")
+
+    hdrs = {"apikey": creds["anon_key"], "Content-Type": "application/json"}
+    if creds["anon_key"].startswith("eyJ"):
+        hdrs["Authorization"] = f"Bearer {creds['anon_key']}"
+
+    sb_url = creds["url"].rstrip("/")
+    ws = creds["workspace_id"]
+    now_ts = datetime.now(timezone.utc).isoformat()
+
+    # Fetch ALL active Supabase items for this invoice
+    r = _req.get(
+        f"{sb_url}/rest/v1/invoice_items",
+        params={"workspace_id": f"eq.{ws}", "invoice_id": f"eq.{invoice_id}",
+                "deleted_at": "is.null", "limit": "500"},
+        headers=hdrs, timeout=15,
+    )
+    if r.status_code not in (200, 206):
+        return {"ok": False, "reason": f"Supabase fetch error {r.status_code}: {r.text[:200]}"}
+
+    sb_active = r.json()
+    orphans = [it for it in sb_active if it.get("sync_uuid") not in active_uuids]
+    print(f"[cloud-cleanup invoice] sb_active={len(sb_active)} orphans_to_delete={len(orphans)}")
+
+    cleaned = 0
+    errors = []
+    for it in orphans:
+        suuid = it.get("sync_uuid")
+        if not suuid:
+            continue
+        patch_r = _req.patch(
+            f"{sb_url}/rest/v1/invoice_items",
+            json={"deleted_at": now_ts, "updated_at": now_ts},
+            params={"sync_uuid": f"eq.{suuid}", "workspace_id": f"eq.{ws}"},
+            headers={**hdrs, "Prefer": "return=minimal"},
+            timeout=15,
+        )
+        if patch_r.status_code in (200, 204):
+            cleaned += 1
+        else:
+            errors.append(f"sync_uuid={suuid} HTTP {patch_r.status_code}")
+
+    return {
+        "ok": True,
+        "invoice_id": invoice_id,
+        "invoice_number": inv.invoice_number,
+        "local_active_count": len(active_items),
+        "sb_active_before_cleanup": len(sb_active),
+        "orphans_cleaned": cleaned,
+        "errors": errors,
+        "sb_should_now_have_active": len(active_items),
+    }
 
 
 @router.delete("/{invoice_id}")
@@ -304,13 +405,14 @@ def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{invoice_id}/pdf")
 def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
-    inv = None
-    try:
-        inv = db.query(models.Invoice).filter(models.Invoice.id == int(invoice_id)).first()
-    except (ValueError, TypeError):
-        pass
+    # Always try invoice_number first — the URL typically carries the number, not the local DB id.
+    # Numeric id lookup is kept as fallback for legacy callers.
+    inv = db.query(models.Invoice).filter(models.Invoice.invoice_number == invoice_id).first()
     if not inv:
-        inv = db.query(models.Invoice).filter(models.Invoice.invoice_number == invoice_id).first()
+        try:
+            inv = db.query(models.Invoice).filter(models.Invoice.id == int(invoice_id)).first()
+        except (ValueError, TypeError):
+            pass
 
     if inv:
         company = db.query(models.Company).first()
@@ -320,6 +422,7 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
                 "name": company.name, "trn": company.trn,
                 "address": company.address, "phone": company.phone,
                 "email": company.email,
+                "stamp_path": company.stamp_path or "",
             }
         customer = inv.customer
         cust_dict = {}
@@ -329,12 +432,15 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
                 "attn": customer.attn, "phone": customer.phone,
                 "address": customer.address,
                 "po_box": customer.po_box or "",
+                "payment_terms": customer.payment_terms or "",
             }
         active_items = db.query(models.InvoiceItem).filter(
             models.InvoiceItem.invoice_id == inv.id,
             models.InvoiceItem.deleted_at.is_(None),
         ).all()
         print(f"[invoice pdf] invoice_id={inv.id} num={inv.invoice_number} active_items={len(active_items)}")
+        # payment_terms: invoice-level value takes precedence; fallback to customer's
+        _pt = (inv.payment_terms or "") or (cust_dict.get("payment_terms") or "")
         invoice_data = {
             "invoice_number": inv.invoice_number,
             "date": inv.date.strftime("%d %b %Y"),
@@ -349,12 +455,14 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
                     "vat_amount": it.vat_amount,
                     "total": it.total,
                 } for it in active_items
+                if it.description and it.description.strip()  # extra guard: skip blank items
             ],
             "subtotal": inv.subtotal,
             "vat_amount": inv.vat_amount,
             "discount": inv.discount,
             "total": inv.total,
             "notes": inv.notes,
+            "payment_terms": _pt,
             "letterhead": inv.letterhead if inv.letterhead is not None else True,
             "lpo_no": inv.lpo_no or "",
             "do_no": inv.do_no or "",
