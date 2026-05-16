@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_BUILD = "FP_NAVY_V13"
+_BUILD = "FP_NAVY_V14"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -274,6 +274,8 @@ def _build_top(story, company, title, doc_number, doc_date, due_date=None):
 def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     from reportlab.platypus import KeepTogether
 
+    _CW = A4[0] - 20 * mm   # V14: 10 mm margins each side → ≈ 190 mm content width
+
     filename = f"Invoice_{invoice_data['invoice_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath = os.path.join(EXPORT_DIR, filename)
 
@@ -305,7 +307,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
     doc = SimpleDocTemplate(
         filepath, pagesize=A4,
-        leftMargin=15 * mm, rightMargin=15 * mm,
+        leftMargin=10 * mm, rightMargin=10 * mm,
         topMargin=top_margin, bottomMargin=4 * mm,
     )
     story = []
@@ -349,9 +351,9 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _bh    = ParagraphStyle("_bh",   fontName="Helvetica-Bold", fontSize=8,   textColor=WHITE,  alignment=TA_CENTER)
 
     # ── 1. TAX INVOICE title — centered, no underline, clear gap above and below ─
-    story.append(Spacer(1, 8 * mm))
+    story.append(Spacer(1, 4 * mm))
     story.append(Paragraph("TAX INVOICE", _ti))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 3 * mm))
 
     # ── 2. Bill To (left box) | Invoice Details (right box) ──────────────────
     _cn  = ParagraphStyle("_cn",  fontName="Helvetica-Bold", fontSize=10, textColor=INK)
@@ -376,7 +378,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     if not cust_rows_inner:
         cust_rows_inner = [[Paragraph("—", _sub2)]]
 
-    cust_inner_t = Table(cust_rows_inner, colWidths=[84 * mm])
+    cust_inner_t = Table(cust_rows_inner, colWidths=[96 * mm])
     cust_inner_t.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING",    (0, 0), (-1, -1), 2),
@@ -385,7 +387,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
     ]))
 
-    bill_to_box = Table([[Paragraph("BILL TO", _bh)], [cust_inner_t]], colWidths=[96 * mm])
+    bill_to_box = Table([[Paragraph("BILL TO", _bh)], [cust_inner_t]], colWidths=[110 * mm])
     bill_to_box.setStyle(TableStyle([
         ("BOX",           (0, 0), (-1, -1), 0.8, ACCENT),
         ("LINEBELOW",     (0, 0), (-1, 0),  0.8, ACCENT),
@@ -414,7 +416,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     if do_no:
         inv_det_rows.append([Paragraph("DO NO:",   _slbl), Paragraph(_xe(do_no),  _sval)])
 
-    inv_det_inner = Table(inv_det_rows, colWidths=[28 * mm, 40 * mm])
+    inv_det_inner = Table(inv_det_rows, colWidths=[28 * mm, 34 * mm])
     inv_det_inner.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING",    (0, 0), (-1, -1), 2),
@@ -423,7 +425,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
     ]))
 
-    inv_det_box = Table([[Paragraph("INVOICE DETAILS", _bh)], [inv_det_inner]], colWidths=[80 * mm])
+    inv_det_box = Table([[Paragraph("INVOICE DETAILS", _bh)], [inv_det_inner]], colWidths=[76 * mm])
     inv_det_box.setStyle(TableStyle([
         ("BOX",           (0, 0), (-1, -1), 0.8, ACCENT),
         ("LINEBELOW",     (0, 0), (-1, 0),  0.8, ACCENT),
@@ -436,9 +438,9 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
     ]))
 
-    # 96 + 4 + 80 = 180mm = _CONTENT_W
+    # 110 + 4 + 76 = 190mm = _CW
     info_wrap = Table([[bill_to_box, Spacer(4 * mm, 1), inv_det_box]],
-                      colWidths=[96 * mm, 4 * mm, 80 * mm])
+                      colWidths=[110 * mm, 4 * mm, 76 * mm])
     info_wrap.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
@@ -453,8 +455,8 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     stamp_path_check = _get_stamp_path() if include_stamp else ""
 
     # 9 columns: SR NO | DESCRIPTION | QTY | UNIT PRICE | DISCOUNT | TAXABLE AMT | TAX RATE | TAX AMT | TOTAL
-    # 8+44+18+22+16+22+11+19+20 = 180mm  (QTY=18mm so '20-NOS' never wraps)
-    col_w = [8*mm, 44*mm, 18*mm, 22*mm, 16*mm, 22*mm, 11*mm, 19*mm, 20*mm]
+    # 8+50+18+24+16+24+11+19+20 = 190mm  (QTY=18mm so '20-NOS' never wraps)
+    col_w = [8*mm, 50*mm, 18*mm, 24*mm, 16*mm, 24*mm, 11*mm, 19*mm, 20*mm]
     hdrs  = ["SR\nNO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)",
              "DISCOUNT\n(AED)", "TAXABLE\nAMT (AED)", "TAX\nRATE", "TAX AMT\n(AED)", "TOTAL\n(AED)"]
 
@@ -497,14 +499,14 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ]))
         return t
 
-    # Footer budget: totals + bank + terms + sig ≈ 78 mm
-    _FOOTER_H      = 78 * mm
+    # Single-page budget: ~55mm pre-items (spacers+title+boxes), ~105mm footer (sig 30mm, tight spacers)
+    _FOOTER_H      = 105 * mm
     _usable_h      = A4[1] - top_margin - 4 * mm
-    _max_tbl_h     = max(55 * mm, _usable_h - _FOOTER_H)
-    _MIN_VISUAL_H  = 28 * mm   # minimum visual table area height (reduced to shrink bottom whitespace)
+    _max_tbl_h     = max(50 * mm, _usable_h - 55 * mm - _FOOTER_H)
+    _MIN_VISUAL_H  = 20 * mm   # minimum visual table area height
 
     items_tbl = _make_items_tbl(base_rows)
-    items_h   = items_tbl.wrap(_CONTENT_W, 9999 * mm)[1]
+    items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
     cap_h     = 0.0
 
     if items_h <= _max_tbl_h:
@@ -516,7 +518,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         items_tbl = None
         for _pt, _pb in [(5, 4), (4, 3), (3, 2), (2, 2)]:
             _t = _make_items_tbl(base_rows, _pt, _pb)
-            _h = _t.wrap(_CONTENT_W, 9999 * mm)[1]
+            _h = _t.wrap(_CW, 9999 * mm)[1]
             if _h <= _max_tbl_h:
                 items_tbl = _t
                 _dbg(f"invoice items: compressed pad={_pt}/{_pb} n={len(actual_items)} h={_h:.1f}")
@@ -543,7 +545,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
                 c.setStrokeColor(GRID_C)
                 c.setLineWidth(0.5)
                 c.rect(0, 0, self.width, self._h, fill=1, stroke=1)
-        story.append(_EndCap(_CONTENT_W, cap_h))
+        story.append(_EndCap(_CW, cap_h))
 
     # ── 6. Totals | Bank Details | Terms | Signature — KeepTogether ──────────
     # Wrapping everything in one KeepTogether guarantees footer stays on same
@@ -568,7 +570,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ("LINEABOVE",     (0, -1), (-1, -1), 1,   HDR_BG),
         ("BACKGROUND",    (0, -1), (-1, -1), HDR_BG),
     ]))
-    tot_wrap = Table([[Spacer(1, 1), tot_t]], colWidths=[_CONTENT_W - 90 * mm, 90 * mm])
+    tot_wrap = Table([[Spacer(1, 1), tot_t]], colWidths=[_CW - 90 * mm, 90 * mm])
     tot_wrap.setStyle(TableStyle([
         ("VALIGN",       (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING",  (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -595,7 +597,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         Paragraph("Currency: AED  |  Swift: ADCBAEAA",                bk_val),
     ]
 
-    wb_t = Table([[words_items, bank_items]], colWidths=[90 * mm, 90 * mm])
+    wb_t = Table([[words_items, bank_items]], colWidths=[95 * mm, 95 * mm])
     wb_t.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING",   (0, 0), (-1, -1), 0), ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
@@ -628,7 +630,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
             with PILImage.open(stamp_path_check) as img:
                 sw, sh = img.size
             STAMP_W = 38 * mm
-            STAMP_H = min(STAMP_W * sh / sw, 20 * mm)
+            STAMP_H = min(STAMP_W * sh / sw, 16 * mm)
             auth_sig.append(Image(stamp_path_check, width=STAMP_W, height=STAMP_H))
             auth_sig.append(Spacer(1, 0.5 * mm))
             _dbg(f"stamp rendered: {STAMP_W:.1f}x{STAMP_H:.1f} from {stamp_path_check}")
@@ -641,7 +643,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
     auth_sig += [
         Paragraph("________________________", sig_ln),
-        Spacer(1, 4 * mm),
+        Spacer(1, 2 * mm),
         Paragraph("Authorized Signature", sig_sub),
     ]
 
@@ -650,7 +652,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
                     Paragraph("________________________", sig_ln),
                     Spacer(1, 4 * mm),
                     Paragraph("Receiver's Name &amp; Signature", sig_lbl)]
-        sig_t = Table([[recv_sig, auth_sig]], colWidths=[90 * mm, 90 * mm], rowHeights=[34 * mm])
+        sig_t = Table([[recv_sig, auth_sig]], colWidths=[95 * mm, 95 * mm], rowHeights=[30 * mm])
         sig_t.setStyle(TableStyle([
             ("VALIGN",       (0, 0), (-1, -1), "BOTTOM"), ("ALIGN",  (0, 0), (-1, -1), "CENTER"),
             ("LEFTPADDING",  (0, 0), (-1, -1), 4),        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
@@ -658,7 +660,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
             ("LINEAFTER",    (0, 0), (0, 0),   0.3, GRID_C),
         ]))
     else:
-        sig_t = Table([[[], auth_sig]], colWidths=[90 * mm, 90 * mm], rowHeights=[34 * mm])
+        sig_t = Table([[[], auth_sig]], colWidths=[95 * mm, 95 * mm], rowHeights=[30 * mm])
         sig_t.setStyle(TableStyle([
             ("VALIGN",       (0, 0), (-1, -1), "BOTTOM"), ("ALIGN",  (0, 0), (-1, -1), "CENTER"),
             ("LEFTPADDING",  (0, 0), (-1, -1), 4),        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
@@ -666,13 +668,13 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ]))
 
     footer_block = [
-        Spacer(1, 3 * mm),
+        Spacer(1, 2 * mm),
         tot_wrap,
-        Spacer(1, 2 * mm),
+        Spacer(1, 1 * mm),
         HRFlowable(width="100%", thickness=0.4, color=GRID_C),
-        Spacer(1, 2 * mm),
+        Spacer(1, 1 * mm),
         wb_t,
-        Spacer(1, 2 * mm),
+        Spacer(1, 1 * mm),
         HRFlowable(width="100%", thickness=0.4, color=GRID_C),
     ] + terms_block + [
         Spacer(1, 0.5 * mm),
@@ -952,6 +954,8 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
 def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     from reportlab.platypus import KeepTogether
 
+    _CW = A4[0] - 20 * mm   # V14: 10 mm margins each side → ≈ 190 mm content width
+
     filename  = f"Quotation_{quotation_data['quotation_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath  = os.path.join(EXPORT_DIR, filename)
 
@@ -978,7 +982,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
 
     doc = SimpleDocTemplate(
         filepath, pagesize=A4,
-        leftMargin=15 * mm, rightMargin=15 * mm,
+        leftMargin=10 * mm, rightMargin=10 * mm,
         topMargin=top_margin, bottomMargin=4 * mm,
     )
     story = []
@@ -1015,9 +1019,9 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     ft_s     = ParagraphStyle("qft",  fontName="Helvetica",      fontSize=6.5, textColor=MED_GRAY,  alignment=TA_CENTER)
 
     # ── 1. Title — centered, no underline, clear gap above and below ──────────
-    story.append(Spacer(1, 8 * mm))
+    story.append(Spacer(1, 4 * mm))
     story.append(Paragraph("QUOTATION", title_s))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 3 * mm))
 
     # ── 2. Two bordered boxes: Customer (left) | Quotation Info (right) ───────
     cust_rows = [[Paragraph("TO:", lbl_s), Paragraph(_xe(customer.get("name", "")), val_b)]]
@@ -1031,8 +1035,8 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         cust_rows.append([Paragraph("ADD:", lbl_s),
                           Paragraph(_xe(customer["address"].replace("\n", ", ")), val_s)])
 
-    # inner table fits inside 82mm box with 4mm l+r padding → 74mm wide
-    cust_inner = Table(cust_rows, colWidths=[10 * mm, 64 * mm])
+    # inner table fits inside 90mm box with 4mm l+r padding → 82mm wide
+    cust_inner = Table(cust_rows, colWidths=[10 * mm, 72 * mm])
     cust_inner.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING",    (0, 0), (-1, -1), 2),
@@ -1040,7 +1044,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ("LEFTPADDING",   (0, 0), (-1, -1), 2),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 2),
     ]))
-    cust_box = Table([[Paragraph("CUSTOMER DETAILS", box_hdr)], [cust_inner]], colWidths=[82 * mm])
+    cust_box = Table([[Paragraph("CUSTOMER DETAILS", box_hdr)], [cust_inner]], colWidths=[90 * mm])
     cust_box.setStyle(TableStyle([
         ("BOX",           (0, 0), (-1, -1), 0.8, ACCENT),
         ("LINEBELOW",     (0, 0), (-1, 0),  0.8, ACCENT),
@@ -1062,7 +1066,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     if delivery:
         info_rows.append([Paragraph("DELIVERY:", lbl_s), Paragraph(_xe(delivery), val_s)])
 
-    info_inner = Table(info_rows, colWidths=[18 * mm, 56 * mm])
+    info_inner = Table(info_rows, colWidths=[18 * mm, 64 * mm])
     info_inner.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING",    (0, 0), (-1, -1), 2),
@@ -1070,7 +1074,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ("LEFTPADDING",   (0, 0), (-1, -1), 2),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 2),
     ]))
-    info_box = Table([[Paragraph("QUOTATION DETAILS", box_hdr)], [info_inner]], colWidths=[82 * mm])
+    info_box = Table([[Paragraph("QUOTATION DETAILS", box_hdr)], [info_inner]], colWidths=[90 * mm])
     info_box.setStyle(TableStyle([
         ("BOX",           (0, 0), (-1, -1), 0.8, ACCENT),
         ("LINEBELOW",     (0, 0), (-1, 0),  0.8, ACCENT),
@@ -1081,8 +1085,8 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
     ]))
 
-    # 82 + 16 + 82 = 180mm = _CONTENT_W
-    top_t = Table([[cust_box, Spacer(16 * mm, 1), info_box]], colWidths=[82 * mm, 16 * mm, 82 * mm])
+    # 90 + 10 + 90 = 190mm = _CW
+    top_t = Table([[cust_box, Spacer(10 * mm, 1), info_box]], colWidths=[90 * mm, 10 * mm, 90 * mm])
     top_t.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
@@ -1095,15 +1099,15 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
 
     # ── 3. Items table (5 cols: SR NO | DESCRIPTION | QTY | UNIT PRICE | AMOUNT)
     _actual_n   = len(quotation_data.get("items", []))
-    _ROW_H_Q    = 10 * mm   # tighter: short descriptions fit in 10mm; long ones expand naturally
-    _OVERHEAD_Q = 160 * mm  # conservative overhead: title+spacers+boxes+hdr+totals+footer
+    _ROW_H_Q    = 10 * mm   # approximate row height (short descriptions)
+    _OVERHEAD_Q = 155 * mm  # overhead: title+spacers+boxes+hdr+totals+aiw+footer
     _usable_h   = A4[1] - top_margin - 4 * mm
     _max_rows   = max(_actual_n, int((_usable_h - _OVERHEAD_Q) / _ROW_H_Q))
-    _filler_n   = min(1, max(0, _max_rows - _actual_n))  # at most 1 filler row
+    _filler_n   = min(5, max(0, _max_rows - _actual_n))  # up to 5 filler rows to fill page
     MIN_ROWS_Q  = _actual_n + _filler_n
 
-    # 14+86+18+31+31 = 180mm
-    q_col_w = [14 * mm, 86 * mm, 18 * mm, 31 * mm, 31 * mm]
+    # 14+94+18+32+32 = 190mm
+    q_col_w = [14 * mm, 94 * mm, 18 * mm, 32 * mm, 32 * mm]
     q_hdrs  = ["SR\nNO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)", "AMOUNT\n(AED)"]
     q_data  = [[Paragraph(h, ih_s) for h in q_hdrs]]
 
@@ -1159,7 +1163,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ("LINEABOVE",     (0, -1), (-1, -1), 1, ACCENT),
         ("BACKGROUND",    (0, -1), (-1, -1), ACCENT),
     ]))
-    tot_wrap_q = Table([[Spacer(1, 1), tot_t_q]], colWidths=[_CONTENT_W - 90 * mm, 90 * mm])
+    tot_wrap_q = Table([[Spacer(1, 1), tot_t_q]], colWidths=[_CW - 90 * mm, 90 * mm])
     tot_wrap_q.setStyle(TableStyle([
         ("VALIGN",       (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING",  (0, 0), (-1, -1), 0),
@@ -1172,7 +1176,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     _words_upper = (_words_raw[4:] if _words_raw.startswith("AED ") else _words_raw).upper()
     _aiw_s = ParagraphStyle("qaiw", fontName="Helvetica-Bold", fontSize=8, textColor=DARK)
     _aiw_text = f"TOTAL :-   {_words_upper}   {'*' * 25}"
-    _aiw_t = Table([[Paragraph(_aiw_text, _aiw_s)]], colWidths=[_CONTENT_W])
+    _aiw_t = Table([[Paragraph(_aiw_text, _aiw_s)]], colWidths=[_CW])
     _aiw_t.setStyle(TableStyle([
         ("BOX",           (0, 0), (-1, -1), 0.8, ACCENT),
         ("BACKGROUND",    (0, 0), (-1, -1), colors.HexColor("#EFF6FF")),
@@ -1220,8 +1224,8 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         Paragraph("Authorized Signature", sig_sb_s),
     ]
 
-    # 100 + 80 = 180mm — no fixed rowHeights so table auto-sizes to content
-    bottom_t = Table([[terms_cell, sig_cell]], colWidths=[100 * mm, 80 * mm])
+    # 105 + 85 = 190mm — no fixed rowHeights so table auto-sizes to content
+    bottom_t = Table([[terms_cell, sig_cell]], colWidths=[105 * mm, 85 * mm])
     bottom_t.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
         ("ALIGN",         (1, 0), (1, 0),   "CENTER"),

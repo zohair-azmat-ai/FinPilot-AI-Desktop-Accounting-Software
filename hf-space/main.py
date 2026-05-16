@@ -220,6 +220,7 @@ def invoice_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "discount": float(inv.get("discount", 0)),
         "total": float(inv.get("total", 0)),
         "notes": inv.get("notes", "") or "",
+        "payment_terms": inv.get("payment_terms", "") or "",
         "letterhead": inv.get("letterhead", 1),
         "lpo_no": inv.get("lpo_no", "") or "",
         "do_no": inv.get("do_no", "") or "",
