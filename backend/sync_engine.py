@@ -259,19 +259,34 @@ class SyncEngine(threading.Thread):
             client.upsert(table, rows)
         except IOError as e:
             err_str = str(e)
-            # Supabase rejects columns that don't exist in its schema yet (e.g. deleted_at
-            # before the migration SQL is run). Strip the offending column and retry once.
-            if "HTTP 400" in err_str and ("does not exist" in err_str or "42703" in err_str):
+            # Supabase rejects columns that don't exist in its schema yet.
+            # Handles both PostgREST 42703 format and "schema cache" format.
+            is_col_error = (
+                "HTTP 400" in err_str and (
+                    "does not exist" in err_str or
+                    "42703" in err_str or
+                    "schema cache" in err_str or
+                    "Could not find" in err_str
+                )
+            )
+            if is_col_error:
                 import re as _re
                 bad_cols: set = set()
+                # Format 1: "column_name" of relation
                 for m in _re.finditer(r'"([^"]+)" of relation', err_str):
+                    bad_cols.add(m.group(1))
+                # Format 2: Could not find the column_name column of table in the schema cache
+                for m in _re.finditer(r'Could not find the (\w+) column', err_str):
+                    bad_cols.add(m.group(1))
+                # Format 3: column "col" does not exist
+                for m in _re.finditer(r'column "([^"]+)" does not exist', err_str):
                     bad_cols.add(m.group(1))
                 if not bad_cols:
                     bad_cols = {"deleted_at"}  # safe fallback
                 rows_clean = [{k: v for k, v in r.items() if k not in bad_cols} for r in rows]
                 log.warning(
                     "Push [%s]: Supabase missing column(s) %s — retrying without. "
-                    "Run migration SQL to add these columns permanently.", table, bad_cols
+                    "Add these columns in Supabase dashboard to sync them.", table, bad_cols
                 )
                 client.upsert(table, rows_clean)
             else:
