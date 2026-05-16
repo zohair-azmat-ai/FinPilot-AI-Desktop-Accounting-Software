@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_BUILD = "FP_BLUE_V12"
+_BUILD = "FP_NAVY_V13"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -87,12 +87,12 @@ def _qty_label(qty: float) -> str:
     n = int(qty) if qty == float(int(qty)) else qty
     return f"{n}-NO" if qty <= 1.0 else f"{n}-NOS"
 
-# Royal blue palette matching letterhead visual appearance
-PRIMARY    = colors.HexColor("#1E3A8A")   # dark navy — borders, text accents
-ACCENT     = colors.HexColor("#1E40AF")   # royal blue — all headers, titles, totals
+# Letterhead-matched navy blue palette (sampled from letterhead.jpg TRN box: #1B35A0)
+PRIMARY    = colors.HexColor("#1B35A0")   # letterhead navy blue — all headers, titles, borders
+ACCENT     = colors.HexColor("#1B35A0")   # same — used everywhere for consistent branding
 LIGHT_GRAY = colors.HexColor("#F8FAFC")
-LIGHT_BLUE = colors.HexColor("#EFF6FF")   # soft blue tint for cell fill
-ROW_STRIPE = colors.HexColor("#EEF4FF")   # very light blue row stripe
+LIGHT_BLUE = colors.HexColor("#E8F0FF")   # soft navy tint for cell fill
+ROW_STRIPE = colors.HexColor("#EBF2FF")   # very light navy row stripe
 MED_GRAY   = colors.HexColor("#94A3B8")
 DARK       = colors.HexColor("#0F172A")
 WHITE      = colors.white
@@ -298,10 +298,6 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
                        width=page_w, height=lh_draw_h,
                        preserveAspectRatio=False, mask='auto')
-        canv.setStrokeColor(colors.HexColor("#BBBBBB"))
-        canv.setLineWidth(0.4)
-        canv.line(0, page_h - lh_draw_h - 0.5 * mm,
-                  page_w, page_h - lh_draw_h - 0.5 * mm)
         canv.restoreState()
 
     def _draw_later(_canv, _doc):
@@ -352,10 +348,10 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=8,   textColor=DARK)
     _bh    = ParagraphStyle("_bh",   fontName="Helvetica-Bold", fontSize=8,   textColor=WHITE,  alignment=TA_CENTER)
 
-    # ── 1. TAX INVOICE title — clean spacing below letterhead, no underline ───
-    story.append(Spacer(1, 6 * mm))
+    # ── 1. TAX INVOICE title — centered, no underline, clear gap above and below ─
+    story.append(Spacer(1, 8 * mm))
     story.append(Paragraph("TAX INVOICE", _ti))
-    story.append(Spacer(1, 6 * mm))
+    story.append(Spacer(1, 5 * mm))
 
     # ── 2. Bill To (left box) | Invoice Details (right box) ──────────────────
     _cn  = ParagraphStyle("_cn",  fontName="Helvetica-Bold", fontSize=10, textColor=INK)
@@ -654,7 +650,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
                     Paragraph("________________________", sig_ln),
                     Spacer(1, 4 * mm),
                     Paragraph("Receiver's Name &amp; Signature", sig_lbl)]
-        sig_t = Table([[recv_sig, auth_sig]], colWidths=[90 * mm, 90 * mm], rowHeights=[24 * mm])
+        sig_t = Table([[recv_sig, auth_sig]], colWidths=[90 * mm, 90 * mm], rowHeights=[34 * mm])
         sig_t.setStyle(TableStyle([
             ("VALIGN",       (0, 0), (-1, -1), "BOTTOM"), ("ALIGN",  (0, 0), (-1, -1), "CENTER"),
             ("LEFTPADDING",  (0, 0), (-1, -1), 4),        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
@@ -662,7 +658,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
             ("LINEAFTER",    (0, 0), (0, 0),   0.3, GRID_C),
         ]))
     else:
-        sig_t = Table([[[], auth_sig]], colWidths=[90 * mm, 90 * mm], rowHeights=[24 * mm])
+        sig_t = Table([[[], auth_sig]], colWidths=[90 * mm, 90 * mm], rowHeights=[34 * mm])
         sig_t.setStyle(TableStyle([
             ("VALIGN",       (0, 0), (-1, -1), "BOTTOM"), ("ALIGN",  (0, 0), (-1, -1), "CENTER"),
             ("LEFTPADDING",  (0, 0), (-1, -1), 4),        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
@@ -744,10 +740,6 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
             canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
                            width=page_w, height=lh_draw_h,
                            preserveAspectRatio=False, mask='auto')
-            canv.setStrokeColor(colors.HexColor("#D0D7DE"))
-            canv.setLineWidth(0.4)
-            canv.line(0, page_h - lh_draw_h - 0.5 * mm,
-                      page_w, page_h - lh_draw_h - 0.5 * mm)
         canv.restoreState()
 
     doc = SimpleDocTemplate(
@@ -982,9 +974,6 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
                        width=page_w, height=lh_draw_h,
                        preserveAspectRatio=False, mask='auto')
-        canv.setStrokeColor(colors.HexColor("#D0D7DE"))
-        canv.setLineWidth(0.4)
-        canv.line(0, page_h - lh_draw_h - 0.5 * mm, page_w, page_h - lh_draw_h - 0.5 * mm)
         canv.restoreState()
 
     doc = SimpleDocTemplate(
@@ -1025,10 +1014,10 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     sig_sb_s = ParagraphStyle("qss",  fontName="Helvetica",      fontSize=7,   textColor=DARK,      alignment=TA_CENTER)
     ft_s     = ParagraphStyle("qft",  fontName="Helvetica",      fontSize=6.5, textColor=MED_GRAY,  alignment=TA_CENTER)
 
-    # ── 1. Title ──────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 6 * mm))
+    # ── 1. Title — centered, no underline, clear gap above and below ──────────
+    story.append(Spacer(1, 8 * mm))
     story.append(Paragraph("QUOTATION", title_s))
-    story.append(Spacer(1, 6 * mm))
+    story.append(Spacer(1, 5 * mm))
 
     # ── 2. Two bordered boxes: Customer (left) | Quotation Info (right) ───────
     cust_rows = [[Paragraph("TO:", lbl_s), Paragraph(_xe(customer.get("name", "")), val_b)]]
@@ -1356,9 +1345,6 @@ def generate_receipt_voucher_pdf(payment_data: dict, company: dict) -> str:
         canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
                        width=page_w, height=lh_draw_h,
                        preserveAspectRatio=False, mask='auto')
-        canv.setStrokeColor(colors.HexColor("#D0D7DE"))
-        canv.setLineWidth(0.4)
-        canv.line(0, page_h - lh_draw_h - 0.5 * mm, page_w, page_h - lh_draw_h - 0.5 * mm)
         canv.restoreState()
 
     doc = SimpleDocTemplate(
@@ -1671,10 +1657,6 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
             canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
                            width=page_w, height=lh_draw_h,
                            preserveAspectRatio=False, mask='auto')
-            canv.setStrokeColor(colors.HexColor("#D0D7DE"))
-            canv.setLineWidth(0.4)
-            canv.line(0, page_h - lh_draw_h - 0.5 * mm,
-                      page_w, page_h - lh_draw_h - 0.5 * mm)
 
         # Footer text
         footer_y = 11 * mm
@@ -1888,10 +1870,6 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
             canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
                            width=page_w, height=lh_draw_h,
                            preserveAspectRatio=False, mask='auto')
-            canv.setStrokeColor(colors.HexColor("#D0D7DE"))
-            canv.setLineWidth(0.4)
-            canv.line(0, page_h - lh_draw_h - 0.5 * mm,
-                      page_w, page_h - lh_draw_h - 0.5 * mm)
         canv.setFont("Helvetica", 7)
         canv.setFillColor(MED_GRAY)
         canv.drawCentredString(page_w / 2, 8 * mm,
