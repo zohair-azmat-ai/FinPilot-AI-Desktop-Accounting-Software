@@ -8,15 +8,24 @@ from reportlab.pdfgen import canvas
 from datetime import datetime
 from xml.sax.saxutils import escape as _xe   # XML-escape dynamic values inside Paragraph markup
 import os
+import logging
+
+log = logging.getLogger("finpilot_pdf")
 
 # ── Runtime debug log — confirms which pdf_generator is actually loaded ───────
-_DBG_LOG = os.path.join(os.path.expanduser("~"), "FinPilot", "pdf_debug.log")
-os.makedirs(os.path.dirname(_DBG_LOG), exist_ok=True)
+_IS_HF = os.environ.get("SPACE_ID") is not None  # True when running on HF Space
+_DBG_LOG = "/tmp/pdf_debug.log" if _IS_HF else os.path.join(os.path.expanduser("~"), "FinPilot", "pdf_debug.log")
+if not _IS_HF:
+    os.makedirs(os.path.dirname(_DBG_LOG), exist_ok=True)
 
 def _dbg(msg: str) -> None:
     from datetime import datetime as _dt
-    with open(_DBG_LOG, "a", encoding="utf-8") as _f:
-        _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
+    try:
+        with open(_DBG_LOG, "a", encoding="utf-8") as _f:
+            _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+    log.info(msg)
 
 _BUILD = "FP_NAVY_V14"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
@@ -57,7 +66,7 @@ def _amount_in_words(amount: float) -> str:
         result = f'AED {words} and {below_1000(fils)} Fils Only'
     return result
 
-EXPORT_DIR = os.path.join(os.path.expanduser("~"), "FinPilot", "exports")
+EXPORT_DIR = "/tmp/exports" if _IS_HF else os.path.join(os.path.expanduser("~"), "FinPilot", "exports")
 os.makedirs(EXPORT_DIR, exist_ok=True)
 
 # Resolve assets/ relative to this file (works both from source and PyInstaller bundle)
