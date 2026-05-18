@@ -10,6 +10,12 @@ from pdf_generator import generate_bank_statement_pdf
 router = APIRouter(prefix="/api/bank-transactions", tags=["bank-transactions"])
 
 
+def _parse_dt(s: str) -> datetime:
+    """Parse ISO string as naive datetime (strips Z/timezone so it compares with DB datetimes)."""
+    dt = datetime.fromisoformat(s)
+    return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
+
+
 def _next_txn_number(db: Session) -> str:
     last = db.query(models.BankTransaction).order_by(models.BankTransaction.id.desc()).first()
     if not last:
@@ -130,8 +136,8 @@ def get_bank_statement(
         .all()
     )
 
-    dt_from = datetime.fromisoformat(date_from) if date_from else None
-    dt_to = datetime.fromisoformat(date_to) if date_to else None
+    dt_from = _parse_dt(date_from) if date_from else None
+    dt_to = _parse_dt(date_to) if date_to else None
 
     opening_balance = acct.opening_balance
     if dt_from:
@@ -170,6 +176,8 @@ def get_bank_statement(
             "transaction_type": t.transaction_type
         })
 
+    print(f"[bank_statement] statement_type=bank account={acct.name!r} "
+          f"date_from={date_from!r} date_to={date_to!r} rows_count={len(entries)}")
     return {
         "account": {
             "id": acct.id,
@@ -202,7 +210,15 @@ def download_bank_statement_pdf(
     if company:
         comp_dict = {"name": company.name, "trn": company.trn, "address": company.address, "phone": company.phone, "email": company.email}
 
-    filepath = generate_bank_statement_pdf(stmt, comp_dict)
     acct = stmt["account"]
+    print(f"[bank_statement] statement_type=bank_pdf account={acct['name']!r} "
+          f"date_from={date_from!r} date_to={date_to!r} rows_count={len(stmt['entries'])} "
+          f"pdf_generated=starting")
+    try:
+        filepath = generate_bank_statement_pdf(stmt, comp_dict)
+        print(f"[bank_statement] pdf_generated=True path={filepath}")
+    except Exception as _e:
+        print(f"[bank_statement] pdf_generated=False error={_e}")
+        raise
     fname = f"BankStatement_{acct['name'].replace(' ', '_')}.pdf"
     return FileResponse(filepath, media_type="application/pdf", filename=fname)

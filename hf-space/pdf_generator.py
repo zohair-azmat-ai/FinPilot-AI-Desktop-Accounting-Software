@@ -1636,7 +1636,7 @@ def generate_bank_statement_pdf(stmt: dict, company: dict) -> str:
     style_red   = ParagraphStyle("rr", fontName="Helvetica",      fontSize=8, textColor=colors.HexColor("#EF4444"), alignment=TA_RIGHT)
 
     headers    = ["Date", "Description", "Party", "Method", "Money In", "Money Out", "Balance"]
-    col_widths = [22 * mm, 52 * mm, 30 * mm, 22 * mm, 20 * mm, 20 * mm, 20 * mm]
+    col_widths = [20 * mm, 52 * mm, 28 * mm, 22 * mm, 20 * mm, 18 * mm, 20 * mm]  # sum=180mm=_CONTENT_W
     data = [[Paragraph(h, style_h) for h in headers]]
 
     data.append([

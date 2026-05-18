@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
 import { getBankAccounts, getBankStatement, downloadBankStatementPDF } from "@/lib/api";
 import { Wallet, FileDown, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import toast from "react-hot-toast";
 
 interface BankAccount { id: number; name: string; bank_name: string; account_type: string; }
 interface StmtEntry {
@@ -33,18 +34,19 @@ function BankStatementContent() {
     if (!selectedId) return;
     setLoading(true);
     const p: Record<string, string> = {};
-    if (dateFrom) p.date_from = new Date(dateFrom).toISOString();
-    if (dateTo) p.date_to = new Date(dateTo).toISOString();
+    if (dateFrom) p.date_from = dateFrom + "T00:00:00";
+    if (dateTo) p.date_to = dateTo + "T23:59:59";
     getBankStatement(parseInt(selectedId), p)
       .then((r) => setStmt(r.data))
+      .catch(() => toast.error("Failed to load bank statement. Please try again."))
       .finally(() => setLoading(false));
   };
 
   const handleDownload = () => {
     if (!selectedId) return;
     const p: Record<string, string> = {};
-    if (dateFrom) p.date_from = new Date(dateFrom).toISOString();
-    if (dateTo) p.date_to = new Date(dateTo).toISOString();
+    if (dateFrom) p.date_from = dateFrom + "T00:00:00";
+    if (dateTo) p.date_to = dateTo + "T23:59:59";
     window.open(downloadBankStatementPDF(parseInt(selectedId), p), "_blank");
   };
 

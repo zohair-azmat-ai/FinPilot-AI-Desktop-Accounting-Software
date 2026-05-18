@@ -161,15 +161,23 @@ def download_statement_pdf(
                 e["description"] = f"{e['description']} / LPO: {inv.lpo_no}"
         enriched_entries.append(e)
 
-    filepath = generate_statement_pdf(
-        stmt["customer"],
-        enriched_entries,
-        date_from, date_to,
-        stmt["opening_balance"],
-        stmt["closing_balance"],
-        comp_dict,
-        show_lpo=show_lpo,
-        lpo_number=lpo_number or "",
-    )
+    print(f"[account_statement] statement_type=customer_pdf customer={stmt['customer']['name']!r} "
+          f"date_from={date_from!r} date_to={date_to!r} rows_count={len(enriched_entries)} "
+          f"pdf_generated=starting")
+    try:
+        filepath = generate_statement_pdf(
+            stmt["customer"],
+            enriched_entries,
+            date_from, date_to,
+            stmt["opening_balance"],
+            stmt["closing_balance"],
+            comp_dict,
+            show_lpo=show_lpo,
+            lpo_number=lpo_number or "",
+        )
+        print(f"[account_statement] pdf_generated=True path={filepath}")
+    except Exception as _e:
+        print(f"[account_statement] pdf_generated=False error={_e}")
+        raise
     customer = db.query(models.Customer).filter(models.Customer.id == customer_id).first()
     return FileResponse(filepath, media_type="application/pdf", filename=f"Statement_{customer.name.replace(' ', '_')}.pdf")
