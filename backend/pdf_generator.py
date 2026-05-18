@@ -1127,16 +1127,8 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
 
     # ── 3. Items table (5 cols: SR NO | DESCRIPTION | QTY | UNIT PRICE | AMOUNT)
     _actual_n = len(_raw_items_q)
-    # Fixed row height for all rows — uniform look for both real and filler rows
-    _HDR_H_Q = 8 * mm
-    _ROW_H_Q  = 8 * mm
-    # Overhead: heading(2+8+12) + boxes(~26) + spacer(4) + totals(~22) + spacer(1) + aiw(8) + bottom(~33) ≈ 116mm
-    _overhead_q = 116 * mm
-    _avail_q    = page_h - top_margin - 4 * mm - _overhead_q - _HDR_H_Q
-    # Fill table to use available space: actual rows + filler rows
-    _total_rows_q = max(_actual_n, int(_avail_q / _ROW_H_Q))
-    _filler_n     = _total_rows_q - _actual_n
-    _dbg(f"[quotation] items n={_actual_n} filler={_filler_n} total_rows={_total_rows_q} avail={_avail_q:.1f}")
+    _HDR_H_Q  = 8 * mm
+    _FILLER_H = 8 * mm
 
     # 14+94+18+32+32 = 190mm
     q_col_w = [14 * mm, 94 * mm, 18 * mm, 32 * mm, 32 * mm]
@@ -1155,14 +1147,6 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
             Paragraph(f"{amt:.2f}", irc_s),
         ])
 
-    # Filler rows look identical to real rows (same grid, alternating stripe continues)
-    empty_row_q = [Paragraph("", ir_s)] * 5
-    for _ in range(_filler_n):
-        q_data.append(empty_row_q)
-
-    items_t = Table(q_data, colWidths=q_col_w,
-                    rowHeights=[_HDR_H_Q] + [_ROW_H_Q] * _total_rows_q)
-    # Uniform stripe across ALL data rows (actual + filler) — filler rows look natural
     _style_cmds = [
         ("BACKGROUND",    (0, 0),  (-1, 0),  ACCENT),
         ("ROWBACKGROUNDS",(0, 1),  (-1, -1), [ROW_STRIPE, WHITE]),
@@ -1175,6 +1159,27 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ("LEFTPADDING",   (1, 1),  (1, -1),  6),
         ("RIGHTPADDING",  (1, 1),  (1, -1),  6),
     ]
+
+    # Measure actual rows with auto-heights so long descriptions wrap freely (no clipping)
+    _temp_t = Table(q_data, colWidths=q_col_w)
+    _temp_t.setStyle(TableStyle(_style_cmds))
+    _, _real_h = _temp_t.wrap(_CW, 9999 * mm)
+    _real_row_heights = list(_temp_t._rowHeights)
+    _real_row_heights[0] = max(_real_row_heights[0], _HDR_H_Q)  # enforce min header height
+
+    # Conservative overhead estimates — generous to prevent page overflow
+    _above_h  = 60 * mm   # heading(22) + boxes(~30) + spacer(4)
+    _below_h  = 72 * mm   # totals(23) + spacer(2) + aiw(8) + bottom_block(37) + safety
+    _content_h = page_h - top_margin - 4 * mm
+    _remaining = max(0.0, _content_h - _above_h - _real_h - _below_h)
+    _filler_n  = int(_remaining / _FILLER_H)
+    _dbg(f"[quotation] items n={_actual_n} real_h={_real_h:.1f} remaining={_remaining:.1f} filler_n={_filler_n}")
+
+    empty_row_q = [Paragraph("", ir_s)] * 5
+    for _ in range(_filler_n):
+        q_data.append(empty_row_q)
+    _final_row_heights = _real_row_heights + [_FILLER_H] * _filler_n
+    items_t = Table(q_data, colWidths=q_col_w, rowHeights=_final_row_heights)
     items_t.setStyle(TableStyle(_style_cmds))
     story.append(items_t)
 
