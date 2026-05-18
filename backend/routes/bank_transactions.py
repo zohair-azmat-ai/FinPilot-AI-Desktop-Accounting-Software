@@ -211,6 +211,8 @@ def download_bank_statement_pdf(
         comp_dict = {"name": company.name, "trn": company.trn, "address": company.address, "phone": company.phone, "email": company.email}
 
     acct = stmt["account"]
+    import re
+    _safe = lambda n: re.sub(r'[\\/:*?"<>|]', '_', n).replace(' ', '_')
     print(f"[bank_statement] statement_type=bank_pdf account={acct['name']!r} "
           f"date_from={date_from!r} date_to={date_to!r} rows_count={len(stmt['entries'])} "
           f"pdf_generated=starting")
@@ -220,5 +222,5 @@ def download_bank_statement_pdf(
     except Exception as _e:
         print(f"[bank_statement] pdf_generated=False error={_e}")
         raise
-    fname = f"BankStatement_{acct['name'].replace(' ', '_')}.pdf"
+    fname = f"BankStatement_{_safe(acct['name'])}.pdf"
     return FileResponse(filepath, media_type="application/pdf", filename=fname)

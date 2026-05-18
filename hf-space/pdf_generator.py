@@ -751,7 +751,7 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
             return d1.strftime("%B %Y")
         return f"{_fmt_d(d1)} to {_fmt_d(d2)}"
 
-    filename = (f"Statement_{customer.get('name', 'Customer').replace(' ', '_')}_"
+    filename = (f"Statement_{_safe_fn(customer.get('name', 'Customer'))}_"
                 f"{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
     filepath = os.path.join(EXPORT_DIR, filename)
 
@@ -1574,9 +1574,15 @@ def generate_receipt_voucher_pdf(payment_data: dict, company: dict) -> str:
 
 
 # ── Bank Statement ────────────────────────────────────────────────────────────
+def _safe_fn(name: str) -> str:
+    """Strip characters invalid in Windows filenames from a name string."""
+    import re
+    return re.sub(r'[\\/:*?"<>|]', '_', name).replace(' ', '_')
+
+
 def generate_bank_statement_pdf(stmt: dict, company: dict) -> str:
     acct = stmt["account"]
-    filename = f"BankStatement_{acct['name'].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
+    filename = f"BankStatement_{_safe_fn(acct['name'])}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath = os.path.join(EXPORT_DIR, filename)
 
     top_margin = 5 * mm if os.path.exists(LETTERHEAD_PATH) else 15 * mm
