@@ -411,7 +411,7 @@ def download_quotation_pdf(quotation_id: str, db: Session = Depends(get_db)):
             "notes": q.notes,
             "payment_terms": q.payment_terms or "",
             "delivery": q.delivery or "",
-            "include_stamp": q.include_stamp if q.include_stamp is not None else False,
+            "include_stamp": q.include_stamp if q.include_stamp is not None else True,
             "letterhead": q.letterhead if q.letterhead is not None else True,
         }
         doc_number = q.quotation_number

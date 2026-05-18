@@ -227,7 +227,7 @@ def invoice_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "lpo_no": inv.get("lpo_no", "") or "",
         "do_no": inv.get("do_no", "") or "",
         "is_cash": bool(inv.get("is_cash", False)),
-        "include_stamp": bool(inv.get("include_stamp", False)),
+        "include_stamp": inv.get("include_stamp") is not False,
         "require_customer_signature": bool(inv.get("require_customer_signature", False)),
     }
     path = generate_invoice_pdf(data, comp)
@@ -273,7 +273,7 @@ def quotation_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "notes": q.get("notes", "") or "",
         "payment_terms": q.get("payment_terms", "") or "",
         "delivery": q.get("delivery", "") or "",
-        "include_stamp": bool(q.get("include_stamp", False)),
+        "include_stamp": q.get("include_stamp") is not False,
         "letterhead": q.get("letterhead", 1),
     }
     path = generate_quotation_pdf(data, comp)
@@ -364,7 +364,7 @@ def po_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "subtotal": float(po.get("subtotal", 0)),
         "vat_amount": float(po.get("vat_amount", 0)),
         "total": float(po.get("total", 0)),
-        "include_stamp": bool(po.get("include_stamp", False)),
+        "include_stamp": po.get("include_stamp") is not False,
         "letterhead": po.get("letterhead", 1),
         "supplier": sup, "items": items,
     }

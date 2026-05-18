@@ -318,8 +318,8 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
     # ── Data ─────────────────────────────────────────────────────────────────
     is_cash       = invoice_data.get("is_cash", False)
-    # Default True: stamp renders whenever stamp file exists (can be disabled by explicit False)
-    include_stamp = invoice_data.get("include_stamp", True)
+    # Stamp shows unless EXPLICITLY set to False — None/absent/True all show stamp
+    include_stamp = invoice_data.get("include_stamp") is not False
     inv_no   = invoice_data.get("invoice_number", "")
     inv_date = invoice_data.get("date", "")
     lpo_no   = invoice_data.get("lpo_no", "") or ""
@@ -1232,8 +1232,8 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     if notes:
         terms_cell.append(Paragraph(f"Note: {_xe(notes)}", tc_val_s))
 
-    # Default True: stamp always rendered when file exists
-    include_stamp_q = bool(quotation_data.get("include_stamp", True))
+    # Stamp shows unless EXPLICITLY set to False — None/absent/True all show stamp
+    include_stamp_q = quotation_data.get("include_stamp") is not False
     stamp_path_q = _get_stamp_path(_comp_stamp_q) if include_stamp_q else ""
     _dbg(f"[quotation] stamp_enabled={include_stamp_q}")
     _dbg(f"[quotation] resolved_stamp_path={stamp_path_q or 'none'}")
