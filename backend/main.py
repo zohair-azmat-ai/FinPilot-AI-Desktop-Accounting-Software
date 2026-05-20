@@ -84,6 +84,8 @@ def _run_migrations():
         ("suppliers",       "deleted_at", "TEXT DEFAULT NULL"),
         ("payments",        "deleted_at", "TEXT DEFAULT NULL"),
         ("supplier_bills",  "deleted_at", "TEXT DEFAULT NULL"),
+        # Expense party name — added for party/supplier name saving on expenses
+        ("expenses",        "party_name", "TEXT DEFAULT ''"),
         # Cloud sync columns — added to all tables
         *[col for tbl in [
             "companies", "bank_accounts", "customers", "suppliers", "items",

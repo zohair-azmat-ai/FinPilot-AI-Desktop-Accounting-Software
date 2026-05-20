@@ -163,6 +163,7 @@ export const getExpenses = (params?: Record<string, unknown>) => api.get("/api/e
 export const getExpenseSummary = (params?: Record<string, unknown>) =>
   api.get("/api/expenses/summary", { params });
 export const getExpenseCategories = () => api.get("/api/expenses/categories");
+export const getExpenseParties = () => api.get("/api/expenses/parties");
 export const createExpense = (data: unknown) => api.post("/api/expenses/", data);
 export const updateExpense = (id: number, data: unknown) => api.put(`/api/expenses/${id}`, data);
 export const deleteExpense = (id: number) => api.delete(`/api/expenses/${id}`);

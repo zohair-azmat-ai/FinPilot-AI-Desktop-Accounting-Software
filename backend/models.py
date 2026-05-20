@@ -435,9 +435,10 @@ class Expense(Base):
     category = Column(String, nullable=False)  # office_expense, rent, salary, fuel, maintenance, custom
     description = Column(String, nullable=False)
     amount = Column(Float, default=0.0)
-    payment_method = Column(String, default="cash")  # cash, bank_transfer, cheque
+    payment_method = Column(String, default="cash")  # cash, bank_transfer, cheque, online
     bank_account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True)
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
+    party_name = Column(String, default="")           # free-text party / supplier name
     reference = Column(String, default="")
     notes = Column(Text, default="")
     expense_type = Column(String, default="general")  # general, daily

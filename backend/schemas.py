@@ -451,6 +451,7 @@ class ExpenseCreate(BaseModel):
     payment_method: Optional[str] = "cash"
     bank_account_id: Optional[int] = None
     supplier_id: Optional[int] = None
+    party_name: Optional[str] = ""
     reference: Optional[str] = ""
     notes: Optional[str] = ""
     expense_type: Optional[str] = "general"
@@ -466,6 +467,7 @@ class ExpenseOut(BaseModel):
     bank_account_id: Optional[int] = None
     bank_account: Optional[BankAccountOut] = None
     supplier_id: Optional[int] = None
+    party_name: str = ""
     reference: str
     notes: str
     expense_type: str = "general"
