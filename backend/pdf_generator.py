@@ -295,7 +295,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     LH_MIN_H  = 62 * mm
     raw_lh_h  = _lh_page_height() if use_letterhead else 0.0
     lh_draw_h = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
-    top_margin = (lh_draw_h + 6 * mm) if lh_draw_h else 63 * mm
+    top_margin = (lh_draw_h + 2 * mm) if lh_draw_h else 63 * mm   # 2mm gap: heading closer to letterhead
 
     def _draw_header(canv, _doc):
         if not lh_draw_h:
@@ -365,8 +365,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=8,   textColor=DARK)
     _bh    = ParagraphStyle("_bh",   fontName="Helvetica-Bold", fontSize=8,   textColor=WHITE,  alignment=TA_CENTER)
 
-    # ── 1. TAX INVOICE title — 2mm from frame edge, 12mm clear gap below before boxes
-    story.append(Spacer(1, 2 * mm))
+    # ── 1. TAX INVOICE title — _lh_gap(2mm) above, 12mm below keeps BILL TO in place
     story.append(Paragraph("TAX INVOICE", _ti))
     story.append(Spacer(1, 12 * mm))
 
@@ -530,8 +529,26 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     cap_h     = 0.0
 
     if items_h <= _max_tbl_h:
-        # Fits with room for footer — compute clean end-cap height
-        cap_h = max(0.0, _MIN_VISUAL_H - items_h)
+        # Fits — add blank filler rows for sparse invoices so table looks filled
+        if len(actual_items) < 8:
+            _blank = [Paragraph("", _icc), Paragraph("", _ir),  Paragraph("", _icc),
+                      Paragraph("", _irc), Paragraph("", _irc), Paragraph("", _irc),
+                      Paragraph("", _icc), Paragraph("", _irc), Paragraph("", _irc)]
+            _hdr_t = _make_items_tbl([base_rows[0]])
+            _hdr_h = _hdr_t.wrap(_CW, 9999 * mm)[1]
+            _probe = _make_items_tbl([base_rows[0], _blank])
+            _row_h = max(1, _probe.wrap(_CW, 9999 * mm)[1] - _hdr_h)
+            _filler_space = _max_tbl_h - items_h - 1 * mm
+            _filler_n = min(10, max(0, int(_filler_space / _row_h)))
+            if _filler_n >= 2:
+                items_tbl = _make_items_tbl(base_rows + [_blank] * _filler_n)
+                items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
+                cap_h = 0.0
+                _dbg(f"invoice filler: added {_filler_n} empty rows h={items_h/mm:.1f}mm")
+            else:
+                cap_h = max(0.0, _MIN_VISUAL_H - items_h)
+        else:
+            cap_h = max(0.0, _MIN_VISUAL_H - items_h)
         _dbg(f"invoice items: fit n={len(actual_items)} h={items_h:.1f} cap={cap_h:.1f}")
     else:
         # Try progressively tighter padding to fit within footer budget
