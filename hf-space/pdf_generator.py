@@ -1220,7 +1220,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     for idx, item in enumerate(_raw_items_q, 1):
         qty = item.get("quantity", 1)
         up  = item.get("unit_price", 0)
-        amt = item.get("total", round(qty * up, 2))
+        amt = round(qty * up, 2)
         q_data.append([
             Paragraph(str(idx), icc_s),
             Paragraph(_xe(item.get("description", "")), ir_s),
