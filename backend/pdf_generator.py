@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_BUILD = "FP_NAVY_V14"
+_BUILD = "FP_NAVY_V15"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -518,76 +518,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ]))
         return t
 
-    # Single-page budget: ~55mm pre-items (spacers+title+boxes), ~105mm footer (sig 30mm, tight spacers)
-    _FOOTER_H      = 105 * mm
-    _usable_h      = A4[1] - top_margin - 4 * mm
-    _max_tbl_h     = max(50 * mm, _usable_h - 55 * mm - _FOOTER_H)
-    _MIN_VISUAL_H  = 20 * mm   # minimum visual table area height
-
-    items_tbl = _make_items_tbl(base_rows)
-    items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
-    cap_h     = 0.0
-
-    if items_h <= _max_tbl_h:
-        # Fits — add blank filler rows for sparse invoices so table looks filled
-        if len(actual_items) < 8:
-            _blank = [Paragraph("", _icc), Paragraph("", _ir),  Paragraph("", _icc),
-                      Paragraph("", _irc), Paragraph("", _irc), Paragraph("", _irc),
-                      Paragraph("", _icc), Paragraph("", _irc), Paragraph("", _irc)]
-            _hdr_t = _make_items_tbl([base_rows[0]])
-            _hdr_h = _hdr_t.wrap(_CW, 9999 * mm)[1]
-            _probe = _make_items_tbl([base_rows[0], _blank])
-            _row_h = max(1, _probe.wrap(_CW, 9999 * mm)[1] - _hdr_h)
-            _filler_space = _max_tbl_h - items_h - 1 * mm
-            _filler_n = min(10, max(0, int(_filler_space / _row_h)))
-            if _filler_n >= 2:
-                items_tbl = _make_items_tbl(base_rows + [_blank] * _filler_n)
-                items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
-                cap_h = 0.0
-                _dbg(f"invoice filler: added {_filler_n} empty rows h={items_h/mm:.1f}mm")
-            else:
-                cap_h = max(0.0, _MIN_VISUAL_H - items_h)
-        else:
-            cap_h = max(0.0, _MIN_VISUAL_H - items_h)
-        _dbg(f"invoice items: fit n={len(actual_items)} h={items_h:.1f} cap={cap_h:.1f}")
-    else:
-        # Try progressively tighter padding to fit within footer budget
-        items_tbl = None
-        for _pt, _pb in [(5, 4), (4, 3), (3, 2), (2, 2)]:
-            _t = _make_items_tbl(base_rows, _pt, _pb)
-            _h = _t.wrap(_CW, 9999 * mm)[1]
-            if _h <= _max_tbl_h:
-                items_tbl = _t
-                _dbg(f"invoice items: compressed pad={_pt}/{_pb} n={len(actual_items)} h={_h:.1f}")
-                break
-        if items_tbl is None:
-            # Multi-page: render at min padding, let ReportLab flow naturally
-            items_tbl = _make_items_tbl(base_rows, 2, 2)
-            _dbg(f"invoice items: overflow/multi-page n={len(actual_items)} h={items_h:.1f}")
-
-    story.append(items_tbl)
-
-    # Clean end-cap fills visual table area — no bordered empty rows
-    if cap_h > 3 * mm:
-        class _EndCap(Flowable):
-            def __init__(self, w, h):
-                super().__init__()
-                self.width = w
-                self._h = h
-            def wrap(self, aw, ah):
-                return self.width, self._h
-            def draw(self):
-                c = self.canv
-                c.setFillColor(CAP_BG)
-                c.setStrokeColor(GRID_C)
-                c.setLineWidth(0.5)
-                c.rect(0, 0, self.width, self._h, fill=1, stroke=1)
-        story.append(_EndCap(_CW, cap_h))
-
-    # ── 6. Totals | Bank Details | Terms | Signature — KeepTogether ──────────
-    # Wrapping everything in one KeepTogether guarantees footer stays on same
-    # page as the last item row (won't split across pages for small invoices).
-
+    # ── 5. Build footer elements first to measure actual height ──────────────
     tl_s = ParagraphStyle("_tl", fontName="Helvetica",      fontSize=8.5, textColor=INK,          alignment=TA_RIGHT)
     tv_s = ParagraphStyle("_tv", fontName="Helvetica",      fontSize=8.5, textColor=INK,          alignment=TA_RIGHT)
     tb_s = ParagraphStyle("_tb", fontName="Helvetica-Bold", fontSize=10,  textColor=colors.white, alignment=TA_RIGHT)
@@ -721,6 +652,75 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         Spacer(1, 0.5 * mm),
         Paragraph("This is a computer generated TAX INVOICE. Thank you for your business.", ft_s),
     ]
+
+    # ── 4. Items table with dynamic filler rows ───────────────────────────────
+    # Measure actual footer and pre-items heights for an accurate filler budget
+    _footer_h_actual = sum(f.wrap(_CW, 9999 * mm)[1] for f in footer_block)
+    _title_h_inv     = Paragraph("TAX INVOICE", _ti).wrap(_CW, 9999 * mm)[1]
+    _info_wrap_h     = info_wrap.wrap(_CW, 9999 * mm)[1]
+    _pre_items_h     = _title_h_inv + 12 * mm + _info_wrap_h + 3 * mm
+    _usable_h        = A4[1] - top_margin - 4 * mm
+    _max_tbl_h       = max(50 * mm, _usable_h - _pre_items_h - _footer_h_actual - 2 * mm)
+    _MIN_VISUAL_H    = 20 * mm
+
+    items_tbl = _make_items_tbl(base_rows)
+    items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
+    cap_h     = 0.0
+
+    if items_h <= _max_tbl_h:
+        if len(actual_items) < 8:
+            _blank = [Paragraph("", _icc), Paragraph("", _ir),  Paragraph("", _icc),
+                      Paragraph("", _irc), Paragraph("", _irc), Paragraph("", _irc),
+                      Paragraph("", _icc), Paragraph("", _irc), Paragraph("", _irc)]
+            _hdr_t = _make_items_tbl([base_rows[0]])
+            _hdr_h = _hdr_t.wrap(_CW, 9999 * mm)[1]
+            _probe = _make_items_tbl([base_rows[0], _blank])
+            _row_h = max(1, _probe.wrap(_CW, 9999 * mm)[1] - _hdr_h)
+            _filler_space = _max_tbl_h - items_h - 1 * mm
+            _filler_n = min(12, max(0, int(_filler_space / _row_h)))
+            if _filler_n >= 1:
+                items_tbl = _make_items_tbl(base_rows + [_blank] * _filler_n)
+                items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
+                cap_h = 0.0
+                _dbg(f"invoice filler: added {_filler_n} rows h={items_h/mm:.1f}mm footer={_footer_h_actual/mm:.1f}mm pre={_pre_items_h/mm:.1f}mm")
+            else:
+                cap_h = max(0.0, _MIN_VISUAL_H - items_h)
+        else:
+            cap_h = max(0.0, _MIN_VISUAL_H - items_h)
+        _dbg(f"invoice items: fit n={len(actual_items)} h={items_h:.1f} cap={cap_h:.1f}")
+    else:
+        items_tbl = None
+        for _pt, _pb in [(5, 4), (4, 3), (3, 2), (2, 2)]:
+            _t = _make_items_tbl(base_rows, _pt, _pb)
+            _h = _t.wrap(_CW, 9999 * mm)[1]
+            if _h <= _max_tbl_h:
+                items_tbl = _t
+                _dbg(f"invoice items: compressed pad={_pt}/{_pb} n={len(actual_items)} h={_h:.1f}")
+                break
+        if items_tbl is None:
+            items_tbl = _make_items_tbl(base_rows, 2, 2)
+            _dbg(f"invoice items: overflow/multi-page n={len(actual_items)} h={items_h:.1f}")
+
+    story.append(items_tbl)
+
+    # Clean end-cap fills visual table area — no bordered empty rows
+    if cap_h > 3 * mm:
+        class _EndCap(Flowable):
+            def __init__(self, w, h):
+                super().__init__()
+                self.width = w
+                self._h = h
+            def wrap(self, aw, ah):
+                return self.width, self._h
+            def draw(self):
+                c = self.canv
+                c.setFillColor(CAP_BG)
+                c.setStrokeColor(GRID_C)
+                c.setLineWidth(0.5)
+                c.rect(0, 0, self.width, self._h, fill=1, stroke=1)
+        story.append(_EndCap(_CW, cap_h))
+
+    # ── 6. Totals | Bank Details | Terms | Signature — KeepTogether ──────────
     story.append(KeepTogether(footer_block))
 
     doc.build(story, onFirstPage=_draw_header, onLaterPages=_draw_later)
@@ -1184,31 +1184,13 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     _real_row_heights = list(_temp_t._rowHeights)
     _real_row_heights[0] = max(_real_row_heights[0], _HDR_H_Q)  # enforce min header height
 
-    # Conservative overhead estimates — generous to prevent page overflow
-    _above_h  = 60 * mm   # heading(22) + boxes(~30) + spacer(4)
-    _below_h  = 72 * mm   # totals(23) + spacer(2) + aiw(8) + bottom_block(37) + safety
-    _content_h = page_h - top_margin - 4 * mm
-    _remaining = max(0.0, _content_h - _above_h - _real_h - _below_h)
-    _filler_n  = int(_remaining / _FILLER_H)
-    _dbg(f"[quotation] items n={_actual_n} real_h={_real_h:.1f} remaining={_remaining:.1f} filler_n={_filler_n}")
-
-    empty_row_q = [Paragraph("", ir_s)] * 5
-    for _ in range(_filler_n):
-        q_data.append(empty_row_q)
-    _final_row_heights = _real_row_heights + [_FILLER_H] * _filler_n
-    items_t = Table(q_data, colWidths=q_col_w, rowHeights=_final_row_heights)
-    items_t.setStyle(TableStyle(_style_cmds))
-    story.append(items_t)
-
-    # ── 4. Totals right-aligned (TRN · Subtotal · VAT · Discount · Grand Total)
-    story.append(Spacer(1, 0.5 * mm))
+    # ── 3b. Build footer first to measure actual height for filler budget ──────
     tot_rows_q = []
     tot_rows_q.append([Paragraph("Subtotal (AED):", tl_s), Paragraph(f"{subtotal:.2f}", tv_s)])
     tot_rows_q.append([Paragraph("VAT 5% (AED):",   tl_s), Paragraph(f"{vat_amount:.2f}", tv_s)])
     if discount > 0:
         tot_rows_q.append([Paragraph("Discount (AED):", tl_s), Paragraph(f"- {discount:.2f}", tv_s)])
     tot_rows_q.append([Paragraph("GRAND TOTAL (AED):", tb_s), Paragraph(f"{total:.2f}", tb_s)])
-
     tot_t_q = Table(tot_rows_q, colWidths=[55 * mm, 35 * mm])
     tot_t_q.setStyle(TableStyle([
         ("ALIGN",         (0, 0),  (-1, -1), "RIGHT"),
@@ -1225,9 +1207,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ("LEFTPADDING",  (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
-    story.append(tot_wrap_q)
 
-    # ── 4b. Amount in Words row ───────────────────────────────────────────────
     _words_raw   = _amount_in_words(total)
     _words_upper = (_words_raw[4:] if _words_raw.startswith("AED ") else _words_raw).upper()
     _aiw_s = ParagraphStyle("qaiw", fontName="Helvetica-Bold", fontSize=8, textColor=DARK)
@@ -1241,10 +1221,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ("LEFTPADDING",   (0, 0), (-1, -1), 8),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
     ]))
-    story.append(Spacer(1, 1 * mm))
-    story.append(_aiw_t)
 
-    # ── 5. Bottom: Terms (left) | Sig/Stamp (right) ──────────────────────────
     terms_cell = [Paragraph("Terms &amp; Conditions:", tc_hdr_s)]
     terms_cell += [
         Paragraph("1) Delivery as agreed.", tc_val_s),
@@ -1306,6 +1283,31 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         Spacer(1, 0.5 * mm),
         Paragraph("This is a computer generated quotation. Thank you for the opportunity to be of service.", ft_s),
     ]
+
+    # Measure actual heights to compute exact filler budget
+    _post_measure   = [Spacer(1, 0.5 * mm), tot_wrap_q, Spacer(1, 1 * mm), _aiw_t] + bottom_block
+    _below_h_actual = sum(f.wrap(_CW, 9999 * mm)[1] for f in _post_measure)
+    _title_h_q      = Paragraph("QUOTATION", title_s).wrap(_CW, 9999 * mm)[1]
+    _top_t_h        = top_t.wrap(_CW, 9999 * mm)[1]
+    _above_h_actual = 2 * mm + _title_h_q + 12 * mm + _top_t_h + 4 * mm
+    _content_h      = page_h - top_margin - 4 * mm
+    _max_items_h    = max(20 * mm, _content_h - _above_h_actual - _below_h_actual - 2 * mm)
+    _filler_n       = max(0, int((_max_items_h - _real_h) / _FILLER_H))
+    _dbg(f"[quotation] items n={_actual_n} real_h={_real_h/mm:.1f}mm above={_above_h_actual/mm:.1f}mm below={_below_h_actual/mm:.1f}mm max={_max_items_h/mm:.1f}mm filler_n={_filler_n}")
+
+    empty_row_q = [Paragraph("", ir_s)] * 5
+    for _ in range(_filler_n):
+        q_data.append(empty_row_q)
+    _final_row_heights = _real_row_heights + [_FILLER_H] * _filler_n
+    items_t = Table(q_data, colWidths=q_col_w, rowHeights=_final_row_heights)
+    items_t.setStyle(TableStyle(_style_cmds))
+    story.append(items_t)
+
+    # ── 4. Totals | Amount in Words | Terms | Signature ───────────────────────
+    story.append(Spacer(1, 0.5 * mm))
+    story.append(tot_wrap_q)
+    story.append(Spacer(1, 1 * mm))
+    story.append(_aiw_t)
     story.append(KeepTogether(bottom_block))
 
     doc.build(story, onFirstPage=_draw_lh_q, onLaterPages=lambda c, d: None)
