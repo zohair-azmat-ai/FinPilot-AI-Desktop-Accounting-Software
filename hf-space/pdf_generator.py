@@ -27,7 +27,7 @@ def _dbg(msg: str) -> None:
         pass
     log.info(msg)
 
-_BUILD = "FP_NAVY_V16"
+_BUILD = "FP_NAVY_V17"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -528,9 +528,10 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     for i, item in enumerate(actual_items, 1):
         base_rows.append(_item_row(i, item))
 
-    def _make_items_tbl(rows, pad_t=8, pad_b=8):
+    def _make_items_tbl(rows, pad_t=8, pad_b=8, n_filler=0, filler_pad=6):
+        """n_filler: last N rows are filler — override their padding to filler_pad (pt)."""
         t = Table(rows, colWidths=col_w)
-        t.setStyle(TableStyle([
+        cmds = [
             ("BACKGROUND",    (0, 0),  (-1, 0),  HDR_BG),
             ("ROWBACKGROUNDS",(0, 1),  (-1, -1), [ROW_A, ROW_B]),
             ("GRID",          (0, 0),  (-1, -1), 0.5, GRID_C),
@@ -541,7 +542,14 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
             ("BOTTOMPADDING", (0, 1),  (-1, -1), pad_b),
             ("LEFTPADDING",   (0, 0),  (-1, -1), 4),
             ("RIGHTPADDING",  (0, 0),  (-1, -1), 4),
-        ]))
+        ]
+        if n_filler > 0 and len(rows) > 0:
+            fs = max(1, len(rows) - n_filler)   # filler start row (never row 0/header)
+            cmds += [
+                ("TOPPADDING",    (0, fs), (-1, -1), filler_pad),
+                ("BOTTOMPADDING", (0, fs), (-1, -1), filler_pad),
+            ]
+        t.setStyle(TableStyle(cmds))
         return t
 
     _stamp_active = bool(include_stamp and stamp_path_check)
@@ -684,7 +692,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         Paragraph("This is a computer generated TAX INVOICE. Thank you for your business.", ft_s),
     ]
 
-    # ── 4. Items table with dynamic filler rows (V16: exact budget + verification)
+    # ── 4. Items table with dynamic filler rows (V17: compact fillers + render-safe buffer)
     _footer_h_actual     = sum(f.wrap(_CW, 9999 * mm)[1] for f in footer_block)
     _title_h_inv         = Paragraph("TAX INVOICE", _ti).wrap(_CW, 9999 * mm)[1]
     _info_wrap_h         = info_wrap.wrap(_CW, 9999 * mm)[1]
@@ -694,7 +702,16 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _usable_h            = A4[1] - top_margin - 4 * mm
     _available_for_items = _usable_h - _pre_items_h - _footer_h_actual
 
-    _dbg(f"invoice layout V16: pre={_pre_items_h/mm:.1f}mm footer={_footer_h_actual/mm:.1f}mm available_items={_available_for_items/mm:.1f}mm usable={_usable_h/mm:.1f}mm compact={_compact}")
+    # Compact mode: ≤3 items use smaller filler padding so footer always fits
+    _is_compact  = len(actual_items) <= 3
+    _FILLER_PAD  = 6 if _is_compact else 8     # pt — 6pt each side ≈ 4.2 mm/row
+    _MAX_FILLERS = 8 if _is_compact else 12
+    # Render-safe buffer: 8 mm accounts for RL frame padding (~4 mm) + rounding variance
+    _RENDER_SAFE = 8 * mm
+
+    _dbg(f"invoice layout V17: pre={_pre_items_h/mm:.1f}mm footer={_footer_h_actual/mm:.1f}mm "
+         f"available={_available_for_items/mm:.1f}mm usable={_usable_h/mm:.1f}mm "
+         f"compact_mode={_compact} is_compact_items={_is_compact}")
 
     _init_pt, _init_pb = (6, 5) if len(actual_items) >= 5 else (8, 8)
     items_tbl = _make_items_tbl(base_rows, _init_pt, _init_pb)
@@ -708,46 +725,59 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _filler_n = 0
     if items_h <= _available_for_items:
         if len(actual_items) < 8:
+            # Probe: single filler row at the compact padding
             _hdr_t = _make_items_tbl([base_rows[0]], _init_pt, _init_pb)
             _hdr_h = _hdr_t.wrap(_CW, 9999 * mm)[1]
-            _probe = _make_items_tbl([base_rows[0], _blank], _init_pt, _init_pb)
+            _probe = _make_items_tbl([base_rows[0], _blank], _init_pt, _init_pb,
+                                     n_filler=1, filler_pad=_FILLER_PAD)
             _row_h = max(1, _probe.wrap(_CW, 9999 * mm)[1] - _hdr_h)
-            # Initial estimate — leave 2 mm breathing room
-            _filler_n = min(12, max(0, int((_available_for_items - items_h - 2 * mm) / _row_h)))
+            _dbg(f"invoice filler_probe: filler_pad={_FILLER_PAD}pt row_h={_row_h/mm:.2f}mm")
+
+            # Conservative budget: available minus render-safe margin
+            _safe_budget = _available_for_items - items_h - _RENDER_SAFE
+            _filler_n    = min(_MAX_FILLERS, max(0, int(_safe_budget / _row_h)))
+
             if _filler_n >= 1:
-                _candidate   = _make_items_tbl(base_rows + [_blank] * _filler_n, _init_pt, _init_pb)
+                _candidate = _make_items_tbl(base_rows + [_blank] * _filler_n, _init_pt, _init_pb,
+                                             n_filler=_filler_n, filler_pad=_FILLER_PAD)
                 _candidate_h = _candidate.wrap(_CW, 9999 * mm)[1]
-                # Verification loop: shed one filler at a time until everything fits
-                # 3 mm safety: measured heights undercount by ~2-3 mm due to RL rounding
-                while _filler_n > 0 and (_pre_items_h + _candidate_h + _footer_h_actual > _usable_h - 3 * mm):
+                # Verification: shed one filler at a time until within safe threshold
+                while _filler_n > 0 and (
+                        _pre_items_h + _candidate_h + _footer_h_actual > _usable_h - _RENDER_SAFE):
                     _filler_n   -= 1
-                    _candidate   = _make_items_tbl(base_rows + [_blank] * _filler_n, _init_pt, _init_pb) if _filler_n > 0 else items_tbl
+                    _candidate   = (_make_items_tbl(base_rows + [_blank] * _filler_n, _init_pt, _init_pb,
+                                                   n_filler=_filler_n, filler_pad=_FILLER_PAD)
+                                    if _filler_n > 0 else items_tbl)
                     _candidate_h = _candidate.wrap(_CW, 9999 * mm)[1]
                 if _filler_n > 0:
                     items_tbl = _candidate
                     items_h   = _candidate_h
-            _dbg(f"invoice filler: n={_filler_n} items_h={items_h/mm:.1f}mm total={(_pre_items_h+items_h+_footer_h_actual)/mm:.1f}mm usable={_usable_h/mm:.1f}mm")
+
+            _dbg(f"invoice filler: n={_filler_n} compact={_is_compact} "
+                 f"items_h={items_h/mm:.1f}mm total={(_pre_items_h+items_h+_footer_h_actual)/mm:.1f}mm "
+                 f"usable={_usable_h/mm:.1f}mm")
         else:
             _dbg(f"invoice filler: skipped (>=8 items) h={items_h/mm:.1f}mm")
     else:
-        # Compression: try progressively tighter paddings, always verify against exact budget
+        # Compression: progressively tighter paddings; each verified against safe budget
         items_tbl = None
-        for _pt, _pb in [(6, 5), (5, 4), (4, 3), (3, 2), (2, 2)]:
-            _t = _make_items_tbl(base_rows, _pt, _pb)
+        for _cpt, _cpb in [(6, 5), (5, 4), (4, 3), (3, 2), (2, 2)]:
+            _t = _make_items_tbl(base_rows, _cpt, _cpb)
             _h = _t.wrap(_CW, 9999 * mm)[1]
-            if _h <= _available_for_items:
+            if _h <= _available_for_items - _RENDER_SAFE:
                 items_tbl = _t
                 items_h   = _h
-                _dbg(f"invoice compressed: pad={_pt}/{_pb} h={_h/mm:.1f}mm budget={_available_for_items/mm:.1f}mm")
+                _dbg(f"invoice compressed: pad={_cpt}/{_cpb} h={_h/mm:.1f}mm")
                 break
         if items_tbl is None:
-            # Dense fallback — may overflow to page 2 for very long invoices (correct behaviour)
             items_tbl = _make_items_tbl(base_rows, 2, 2)
             items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
-            _dbg(f"invoice dense_fallback: h={items_h/mm:.1f}mm budget={_available_for_items/mm:.1f}mm")
+            _dbg(f"invoice dense_fallback: h={items_h/mm:.1f}mm")
 
     _remaining = _usable_h - _pre_items_h - items_h
-    _dbg(f"invoice footer_fit: remaining={_remaining/mm:.1f}mm needed={_footer_h_actual/mm:.1f}mm {'OK' if _remaining >= _footer_h_actual else 'OVERFLOW-WILL-PAGE2'}")
+    _footer_fits = _remaining >= _footer_h_actual + _RENDER_SAFE
+    _dbg(f"invoice footer_fit: remaining={_remaining/mm:.1f}mm needed={_footer_h_actual/mm:.1f}mm "
+         f"safe_margin={_RENDER_SAFE/mm:.0f}mm {'SAFE' if _footer_fits else 'TIGHT-RISK'}")
 
     story.append(items_tbl)
 
@@ -756,15 +786,15 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
     # Debug layout measurements
     try:
-        log.info("[invoice_layout V16] invoice_no=%s item_count=%s stamp=%s compact=%s",
+        log.info("[invoice_layout V17] invoice_no=%s item_count=%s stamp=%s compact_mode=%s",
                  inv_no, len(actual_items), include_stamp, _compact)
-        log.info("[invoice_layout V16] pre=%.1fmm footer=%.1fmm available_items=%.1fmm usable=%.1fmm",
+        log.info("[invoice_layout V17] pre=%.1fmm footer=%.1fmm available=%.1fmm usable=%.1fmm",
                  _pre_items_h / mm, _footer_h_actual / mm, _available_for_items / mm, _usable_h / mm)
-        log.info("[invoice_layout V16] items_h=%.1fmm filler_n=%s remaining=%.1fmm footer_fit=%s",
+        log.info("[invoice_layout V17] items_h=%.1fmm filler_n=%s remaining=%.1fmm footer_fit=%s",
                  items_h / mm, _filler_n, _remaining / mm,
-                 "OK" if _remaining >= _footer_h_actual else "OVERFLOW")
+                 "SAFE" if _footer_fits else "TIGHT-RISK")
     except Exception as _le:
-        log.warning("[invoice_layout V16] measure error: %s", _le)
+        log.warning("[invoice_layout V17] measure error: %s", _le)
 
     doc.build(story, onFirstPage=_draw_header, onLaterPages=_draw_later)
     return filepath
