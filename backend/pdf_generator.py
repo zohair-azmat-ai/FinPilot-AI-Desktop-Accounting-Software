@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_BUILD = "FP_NAVY_V15"
+_BUILD = "FP_NAVY_V16"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -653,72 +653,69 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         Paragraph("This is a computer generated TAX INVOICE. Thank you for your business.", ft_s),
     ]
 
-    # ── 4. Items table with dynamic filler rows ───────────────────────────────
-    # Measure actual footer and pre-items heights for an accurate filler budget
-    _footer_h_actual = sum(f.wrap(_CW, 9999 * mm)[1] for f in footer_block)
-    _title_h_inv     = Paragraph("TAX INVOICE", _ti).wrap(_CW, 9999 * mm)[1]
-    _info_wrap_h     = info_wrap.wrap(_CW, 9999 * mm)[1]
-    _pre_items_h     = _title_h_inv + 12 * mm + _info_wrap_h + 3 * mm
-    _usable_h        = A4[1] - top_margin - 4 * mm
-    _max_tbl_h       = max(50 * mm, _usable_h - _pre_items_h - _footer_h_actual - 2 * mm)
-    _MIN_VISUAL_H    = 20 * mm
+    # ── 4. Items table with dynamic filler rows (V16: exact budget + verification)
+    _footer_h_actual      = sum(f.wrap(_CW, 9999 * mm)[1] for f in footer_block)
+    _title_h_inv          = Paragraph("TAX INVOICE", _ti).wrap(_CW, 9999 * mm)[1]
+    _info_wrap_h          = info_wrap.wrap(_CW, 9999 * mm)[1]
+    _pre_items_h          = _title_h_inv + 12 * mm + _info_wrap_h + 3 * mm
+    _usable_h             = A4[1] - top_margin - 4 * mm
+    _available_for_items  = _usable_h - _pre_items_h - _footer_h_actual
+
+    _dbg(f"invoice layout V16: pre={_pre_items_h/mm:.1f}mm footer={_footer_h_actual/mm:.1f}mm available_items={_available_for_items/mm:.1f}mm usable={_usable_h/mm:.1f}mm")
 
     items_tbl = _make_items_tbl(base_rows)
     items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
-    cap_h     = 0.0
+    _dbg(f"invoice items_base: n={len(actual_items)} h={items_h/mm:.1f}mm")
 
-    if items_h <= _max_tbl_h:
+    _blank = [Paragraph("", _icc), Paragraph("", _ir),  Paragraph("", _icc),
+              Paragraph("", _irc), Paragraph("", _irc), Paragraph("", _irc),
+              Paragraph("", _icc), Paragraph("", _irc), Paragraph("", _irc)]
+
+    _filler_n = 0
+    if items_h <= _available_for_items:
         if len(actual_items) < 8:
-            _blank = [Paragraph("", _icc), Paragraph("", _ir),  Paragraph("", _icc),
-                      Paragraph("", _irc), Paragraph("", _irc), Paragraph("", _irc),
-                      Paragraph("", _icc), Paragraph("", _irc), Paragraph("", _irc)]
             _hdr_t = _make_items_tbl([base_rows[0]])
             _hdr_h = _hdr_t.wrap(_CW, 9999 * mm)[1]
             _probe = _make_items_tbl([base_rows[0], _blank])
             _row_h = max(1, _probe.wrap(_CW, 9999 * mm)[1] - _hdr_h)
-            _filler_space = _max_tbl_h - items_h - 1 * mm
-            _filler_n = min(12, max(0, int(_filler_space / _row_h)))
+            # Initial estimate — leave 2 mm breathing room
+            _filler_n = min(12, max(0, int((_available_for_items - items_h - 2 * mm) / _row_h)))
             if _filler_n >= 1:
-                items_tbl = _make_items_tbl(base_rows + [_blank] * _filler_n)
-                items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
-                cap_h = 0.0
-                _dbg(f"invoice filler: added {_filler_n} rows h={items_h/mm:.1f}mm footer={_footer_h_actual/mm:.1f}mm pre={_pre_items_h/mm:.1f}mm")
-            else:
-                cap_h = max(0.0, _MIN_VISUAL_H - items_h)
+                _candidate   = _make_items_tbl(base_rows + [_blank] * _filler_n)
+                _candidate_h = _candidate.wrap(_CW, 9999 * mm)[1]
+                # Verification loop: shed one filler at a time until everything fits
+                # 3 mm safety: measured heights undercount by ~2-3 mm due to RL rounding
+                while _filler_n > 0 and (_pre_items_h + _candidate_h + _footer_h_actual > _usable_h - 3 * mm):
+                    _filler_n   -= 1
+                    _candidate   = _make_items_tbl(base_rows + [_blank] * _filler_n) if _filler_n > 0 else items_tbl
+                    _candidate_h = _candidate.wrap(_CW, 9999 * mm)[1]
+                if _filler_n > 0:
+                    items_tbl = _candidate
+                    items_h   = _candidate_h
+            _dbg(f"invoice filler: n={_filler_n} items_h={items_h/mm:.1f}mm total={(_pre_items_h+items_h+_footer_h_actual)/mm:.1f}mm usable={_usable_h/mm:.1f}mm")
         else:
-            cap_h = max(0.0, _MIN_VISUAL_H - items_h)
-        _dbg(f"invoice items: fit n={len(actual_items)} h={items_h:.1f} cap={cap_h:.1f}")
+            _dbg(f"invoice filler: skipped (>=8 items) h={items_h/mm:.1f}mm")
     else:
+        # Compression: try progressively tighter paddings, always verify against exact budget
         items_tbl = None
-        for _pt, _pb in [(5, 4), (4, 3), (3, 2), (2, 2)]:
+        for _pt, _pb in [(6, 5), (5, 4), (4, 3), (3, 2), (2, 2)]:
             _t = _make_items_tbl(base_rows, _pt, _pb)
             _h = _t.wrap(_CW, 9999 * mm)[1]
-            if _h <= _max_tbl_h:
+            if _h <= _available_for_items:
                 items_tbl = _t
-                _dbg(f"invoice items: compressed pad={_pt}/{_pb} n={len(actual_items)} h={_h:.1f}")
+                items_h   = _h
+                _dbg(f"invoice compressed: pad={_pt}/{_pb} h={_h/mm:.1f}mm budget={_available_for_items/mm:.1f}mm")
                 break
         if items_tbl is None:
+            # Dense fallback — may overflow to page 2 for very long invoices (correct behaviour)
             items_tbl = _make_items_tbl(base_rows, 2, 2)
-            _dbg(f"invoice items: overflow/multi-page n={len(actual_items)} h={items_h:.1f}")
+            items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
+            _dbg(f"invoice dense_fallback: h={items_h/mm:.1f}mm budget={_available_for_items/mm:.1f}mm")
+
+    _remaining = _usable_h - _pre_items_h - items_h
+    _dbg(f"invoice footer_fit: remaining={_remaining/mm:.1f}mm needed={_footer_h_actual/mm:.1f}mm {'OK' if _remaining >= _footer_h_actual else 'OVERFLOW-WILL-PAGE2'}")
 
     story.append(items_tbl)
-
-    # Clean end-cap fills visual table area — no bordered empty rows
-    if cap_h > 3 * mm:
-        class _EndCap(Flowable):
-            def __init__(self, w, h):
-                super().__init__()
-                self.width = w
-                self._h = h
-            def wrap(self, aw, ah):
-                return self.width, self._h
-            def draw(self):
-                c = self.canv
-                c.setFillColor(CAP_BG)
-                c.setStrokeColor(GRID_C)
-                c.setLineWidth(0.5)
-                c.rect(0, 0, self.width, self._h, fill=1, stroke=1)
-        story.append(_EndCap(_CW, cap_h))
 
     # ── 6. Totals | Bank Details | Terms | Signature — KeepTogether ──────────
     story.append(KeepTogether(footer_block))
