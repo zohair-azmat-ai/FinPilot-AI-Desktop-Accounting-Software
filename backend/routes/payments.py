@@ -11,14 +11,17 @@ router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 
 def _next_payment_number(db: Session) -> str:
-    last = db.query(models.Payment).order_by(models.Payment.id.desc()).first()
-    if not last:
-        return "PMT-0001"
-    try:
-        num = int(last.payment_number.split("-")[-1]) + 1
-    except Exception:
-        num = 1
-    return f"PMT-{num:04d}"
+    rows = db.query(models.Payment.payment_number).all()
+    max_num = 0
+    for (pnum,) in rows:
+        if pnum:
+            try:
+                n = int(pnum.split("-")[-1])
+                if n > max_num:
+                    max_num = n
+            except Exception:
+                pass
+    return f"PMT-{max_num + 1:04d}"
 
 
 def _recalc_ledger_for_customer(db: Session, customer_id: int):

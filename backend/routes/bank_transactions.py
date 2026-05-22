@@ -17,14 +17,17 @@ def _parse_dt(s: str) -> datetime:
 
 
 def _next_txn_number(db: Session) -> str:
-    last = db.query(models.BankTransaction).order_by(models.BankTransaction.id.desc()).first()
-    if not last:
-        return "BTX-0001"
-    try:
-        num = int(last.transaction_number.split("-")[-1]) + 1
-    except Exception:
-        num = 1
-    return f"BTX-{num:04d}"
+    rows = db.query(models.BankTransaction.transaction_number).all()
+    max_num = 0
+    for (tnum,) in rows:
+        if tnum:
+            try:
+                n = int(tnum.split("-")[-1])
+                if n > max_num:
+                    max_num = n
+            except Exception:
+                pass
+    return f"BTX-{max_num + 1:04d}"
 
 
 def _recalc_balances(db: Session, account_id: int):

@@ -1297,7 +1297,8 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         terms_cell.append(Paragraph(f"Note: {_xe(notes)}", tc_val_s))
 
     # Stamp shows unless EXPLICITLY set to False — None/absent/True all show stamp
-    include_stamp_q = quotation_data.get("include_stamp") is not False
+    _stamp_raw_q    = quotation_data.get("include_stamp")
+    include_stamp_q = True if _stamp_raw_q is None else bool(_stamp_raw_q)
     stamp_path_q = _get_stamp_path(_comp_stamp_q) if include_stamp_q else ""
     _dbg(f"[quotation] stamp_enabled={include_stamp_q}")
     _dbg(f"[quotation] resolved_stamp_path={stamp_path_q or 'none'}")
@@ -2922,4 +2923,105 @@ def generate_pl_pdf(report: dict, company: dict) -> str:
     ]))
 
     doc.build(story, onFirstPage=_draw_pl_page, onLaterPages=_draw_pl_page)
+    return filepath
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VAT Report PDF
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_vat_report_pdf(data: dict, company: dict) -> str:
+    """UAE FTA-friendly VAT Return Report PDF."""
+    ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filepath = os.path.join(EXPORT_DIR, f"VAT_Report_{ts}.pdf")
+
+    doc = SimpleDocTemplate(
+        filepath, pagesize=A4,
+        leftMargin=15*mm, rightMargin=15*mm,
+        topMargin=15*mm, bottomMargin=15*mm,
+    )
+    story = []
+
+    lh = _letterhead_flowable()
+    if lh:
+        story.append(lh)
+        story.append(Spacer(1, 4*mm))
+
+    title_s = ParagraphStyle("vt",  fontName="Helvetica-Bold", fontSize=16, textColor=PRIMARY, alignment=TA_CENTER)
+    sub_s   = ParagraphStyle("vs",  fontName="Helvetica",      fontSize=9,  textColor=MED_GRAY, alignment=TA_CENTER)
+    story.append(Paragraph("VAT RETURN REPORT", title_s))
+    story.append(Spacer(1, 2*mm))
+
+    period_from = (data.get("period") or {}).get("from") or ""
+    period_to   = (data.get("period") or {}).get("to")   or ""
+    if period_from or period_to:
+        story.append(Paragraph(f"Period: {period_from or 'All'} — {period_to or 'All'}", sub_s))
+    comp_trn = company.get("trn", "")
+    if comp_trn:
+        story.append(Paragraph(f"Supplier TRN: {comp_trn}", sub_s))
+    story.append(Spacer(1, 4*mm))
+
+    sl_s = ParagraphStyle("sl", fontName="Helvetica-Bold", fontSize=9,  textColor=DARK)
+    sv_s = ParagraphStyle("sv", fontName="Helvetica-Bold", fontSize=12, textColor=PRIMARY, alignment=TA_RIGHT)
+    total_taxable = data.get("total_taxable", 0)
+    total_vat     = data.get("total_vat", 0)
+    sum_rows = [
+        [Paragraph("Taxable Sales (AED)",            sl_s), Paragraph(f"{total_taxable:,.2f}", sv_s)],
+        [Paragraph("VAT Collected — 5% (AED)",       sl_s), Paragraph(f"{total_vat:,.2f}",     sv_s)],
+        [Paragraph("Total Invoiced incl. VAT (AED)", sl_s), Paragraph(f"{total_taxable + total_vat:,.2f}", sv_s)],
+    ]
+    sum_t = Table(sum_rows, colWidths=[_CONTENT_W * 0.62, _CONTENT_W * 0.38])
+    sum_t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), LIGHT_BLUE),
+        ("BOX",           (0, 0), (-1, -1), 1,   PRIMARY),
+        ("LINEBELOW",     (0, 0), (-1, -2), 0.3, colors.HexColor("#CBD5E1")),
+        ("TOPPADDING",    (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
+    ]))
+    story.append(sum_t)
+    story.append(Spacer(1, 5*mm))
+
+    h_s  = ParagraphStyle("vh",  fontName="Helvetica-Bold", fontSize=7.5, textColor=WHITE)
+    r_s  = ParagraphStyle("vr",  fontName="Helvetica",      fontSize=7.5, textColor=DARK)
+    rr_s = ParagraphStyle("vrr", fontName="Helvetica",      fontSize=7.5, textColor=DARK, alignment=TA_RIGHT)
+
+    col_w = [25*mm, 22*mm, 48*mm, 28*mm, 25*mm, 23*mm, 24*mm]
+    hdrs  = ["Invoice #", "Date", "Customer", "Customer TRN", "Taxable (AED)", "VAT 5% (AED)", "Total (AED)"]
+    tbl_data = [[Paragraph(h, h_s) for h in hdrs]]
+    for inv in data.get("invoices", []):
+        tbl_data.append([
+            Paragraph(_xe(str(inv.get("invoice_number", ""))), r_s),
+            Paragraph(str(inv.get("date", "")), r_s),
+            Paragraph(_xe(str(inv.get("customer_name", "CASH SALE"))), r_s),
+            Paragraph(_xe(str(inv.get("customer_trn") or "—")), r_s),
+            Paragraph(f"{inv.get('subtotal', 0):,.2f}", rr_s),
+            Paragraph(f"{inv.get('vat_amount', 0):,.2f}", rr_s),
+            Paragraph(f"{inv.get('total', 0):,.2f}", rr_s),
+        ])
+
+    tbl = Table(tbl_data, colWidths=col_w, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0), PRIMARY),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, ROW_STRIPE]),
+        ("GRID",          (0, 0), (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 6*mm))
+
+    note_s = ParagraphStyle("vn", fontName="Helvetica", fontSize=7.5, textColor=MED_GRAY, alignment=TA_CENTER)
+    story.append(Paragraph(
+        "This report is generated for UAE Federal Tax Authority (FTA) filing purposes. "
+        "Please verify all figures with your accountant before submission.",
+        note_s,
+    ))
+    story.append(Paragraph(f"Generated: {datetime.now().strftime('%d %b %Y  %H:%M')}", note_s))
+
+    doc.build(story)
     return filepath

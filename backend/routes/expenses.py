@@ -51,14 +51,17 @@ CATEGORY_LABELS = {
 
 
 def _next_expense_number(db: Session) -> str:
-    last = db.query(models.Expense).order_by(models.Expense.id.desc()).first()
-    if not last:
-        return "EXP-0001"
-    try:
-        num = int(last.expense_number.split("-")[-1]) + 1
-    except Exception:
-        num = 1
-    return f"EXP-{num:04d}"
+    rows = db.query(models.Expense.expense_number).all()
+    max_num = 0
+    for (enum,) in rows:
+        if enum:
+            try:
+                n = int(enum.split("-")[-1])
+                if n > max_num:
+                    max_num = n
+            except Exception:
+                pass
+    return f"EXP-{max_num + 1:04d}"
 
 
 @router.get("/categories")
