@@ -109,6 +109,15 @@ export const getSalesReport = (params?: Record<string, unknown>) => api.get("/ap
 export const getOutstandingReport = () => api.get("/api/reports/outstanding");
 export const getVATReport = (params?: Record<string, unknown>) => api.get("/api/reports/vat", { params });
 export const getCustomerBalanceReport = () => api.get("/api/reports/customer-balance");
+export const getPLReport = (params?: Record<string, unknown>) => api.get("/api/reports/profit-loss", { params });
+export const downloadVATPDF = (params?: Record<string, string>) => {
+  const p = { ...(params || {}), ts: String(Date.now()) };
+  return `${API_URL}/api/reports/vat/pdf?${new URLSearchParams(p).toString()}`;
+};
+export const downloadPLPDF = (params?: Record<string, string>) => {
+  const p = { ...(params || {}), ts: String(Date.now()) };
+  return `${API_URL}/api/reports/profit-loss/pdf?${new URLSearchParams(p).toString()}`;
+};
 
 // AI
 export const processAICommand = (command: string) => api.post("/api/ai/command", { command });

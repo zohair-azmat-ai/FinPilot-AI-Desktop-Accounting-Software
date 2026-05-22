@@ -3,26 +3,35 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
-import { getSalesReport, getOutstandingReport, getVATReport, getCustomerBalanceReport } from "@/lib/api";
-import { BarChart3, TrendingUp, AlertCircle, Users, Receipt } from "lucide-react";
+import {
+  getSalesReport, getOutstandingReport, getVATReport,
+  getCustomerBalanceReport, getPLReport,
+  downloadVATPDF, downloadPLPDF,
+} from "@/lib/api";
+import { BarChart3, TrendingUp, AlertCircle, Users, Receipt, FileText } from "lucide-react";
 
 const TABS = [
-  { id: "sales", label: "Sales Report", icon: TrendingUp },
-  { id: "outstanding", label: "Outstanding", icon: AlertCircle },
-  { id: "vat", label: "VAT Report", icon: Receipt },
-  { id: "balance", label: "Customer Balance", icon: Users },
+  { id: "pl",          label: "Profit & Loss", icon: BarChart3 },
+  { id: "sales",       label: "Sales Report",  icon: TrendingUp },
+  { id: "outstanding", label: "Outstanding",   icon: AlertCircle },
+  { id: "vat",         label: "VAT Report",    icon: Receipt },
+  { id: "balance",     label: "Customer Balance", icon: Users },
 ];
 
-const safe = (v: unknown): number => Number(v ?? 0);
+const safe    = (v: unknown): number => Number(v ?? 0);
 const safeArr = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
+
+function openPdf(url: string) {
+  window.open(url, "_blank");
+}
 
 function ReportsContent() {
   const params = useSearchParams();
-  const [tab, setTab] = useState(params.get("tab") || "sales");
+  const [tab, setTab]         = useState(params.get("tab") || "pl");
   const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [data, setData] = useState<Record<string, unknown> | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [dateTo, setDateTo]     = useState("");
+  const [data, setData]         = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading]   = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
 
   const loadReport = () => {
@@ -31,30 +40,37 @@ function ReportsContent() {
     setReportError(null);
     const p: Record<string, unknown> = {};
     if (dateFrom) p.date_from = new Date(dateFrom).toISOString();
-    if (dateTo) p.date_to = new Date(dateTo).toISOString();
+    if (dateTo)   p.date_to   = new Date(dateTo).toISOString();
 
-    const fetcher = tab === "sales" ? getSalesReport(p)
-      : tab === "outstanding" ? getOutstandingReport()
-      : tab === "vat" ? getVATReport(p)
-      : getCustomerBalanceReport();
+    const fetcher =
+      tab === "pl"          ? getPLReport(p) :
+      tab === "sales"       ? getSalesReport(p) :
+      tab === "outstanding" ? getOutstandingReport() :
+      tab === "vat"         ? getVATReport(p) :
+      getCustomerBalanceReport();
 
     fetcher
-      .then((r) => {
-        if (r.data && typeof r.data === "object") setData(r.data);
-        else setData({});
-      })
+      .then((r) => { if (r.data && typeof r.data === "object") setData(r.data); else setData({}); })
       .catch(() => setReportError("Unable to load report. Please try again."))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => { loadReport(); }, [tab]);
 
+  const pdfParams = () => {
+    const p: Record<string, string> = {};
+    if (dateFrom) p.date_from = new Date(dateFrom).toISOString();
+    if (dateTo)   p.date_to   = new Date(dateTo).toISOString();
+    return p;
+  };
+
   return (
     <div>
       <Header title="Reports" />
       <div className="p-6 space-y-5">
+
         {/* Tab bar */}
-        <div className="flex gap-2 border-b border-bg-border pb-0">
+        <div className="flex gap-2 border-b border-bg-border pb-0 flex-wrap">
           {TABS.map((t) => {
             const Icon = t.icon;
             return (
@@ -62,7 +78,9 @@ function ReportsContent() {
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px ${
-                  tab === t.id ? "border-brand-indigo text-brand-indigo" : "border-transparent text-text-secondary hover:text-text-primary"
+                  tab === t.id
+                    ? "border-brand-indigo text-brand-indigo"
+                    : "border-transparent text-text-secondary hover:text-text-primary"
                 }`}
               >
                 <Icon size={15} /> {t.label}
@@ -71,9 +89,9 @@ function ReportsContent() {
           })}
         </div>
 
-        {/* Date filters for applicable reports */}
-        {(tab === "sales" || tab === "vat") && (
-          <div className="flex items-end gap-4">
+        {/* Date filters */}
+        {(tab === "pl" || tab === "sales" || tab === "vat") && (
+          <div className="flex items-end gap-4 flex-wrap">
             <div>
               <label className="label">From Date</label>
               <input className="input w-40" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
@@ -83,6 +101,22 @@ function ReportsContent() {
               <input className="input w-40" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </div>
             <button className="btn-primary" onClick={loadReport}>Refresh</button>
+            {tab === "vat" && (
+              <button
+                className="btn-secondary flex items-center gap-2"
+                onClick={() => openPdf(downloadVATPDF(pdfParams()))}
+              >
+                <FileText size={15} /> Generate VAT PDF
+              </button>
+            )}
+            {tab === "pl" && (
+              <button
+                className="btn-secondary flex items-center gap-2"
+                onClick={() => openPdf(downloadPLPDF(pdfParams()))}
+              >
+                <FileText size={15} /> Download P&amp;L PDF
+              </button>
+            )}
           </div>
         )}
 
@@ -94,15 +128,136 @@ function ReportsContent() {
           </div>
         )}
 
-        {/* Sales Report */}
+        {/* ── Profit & Loss ──────────────────────────────────────────────── */}
+        {tab === "pl" && data && !reportError && (
+          <>
+            {/* KPI cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: "Total Sales",    value: safe(data.total_sales),         color: "text-brand-indigo" },
+                { label: "Total Expenses", value: safe(data.total_expenses),      color: "text-red-400" },
+                { label: "Net Profit",     value: safe(data.net_profit),
+                  color: safe(data.net_profit) >= 0 ? "text-emerald-400" : "text-red-400" },
+                { label: "VAT Collected",  value: safe(data.total_vat_collected), color: "text-amber-400" },
+              ].map((s) => (
+                <div key={s.label} className="card">
+                  <p className="text-text-muted text-xs uppercase tracking-wide">{s.label}</p>
+                  <p className={`text-xl font-bold mt-1 ${s.color}`}>AED {safe(s.value).toFixed(2)}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* P&L Statement */}
+            <div className="card p-0 overflow-hidden">
+              <div className="px-4 py-3 bg-brand-indigo/10 border-b border-bg-border">
+                <h3 className="font-semibold text-text-primary text-sm">Profit & Loss Statement</h3>
+              </div>
+              <table className="w-full">
+                <tbody>
+                  {[
+                    { label: "INCOME", isHeader: true },
+                    { label: "Total Sales (excl. VAT)", value: safe(data.total_sales), indent: true },
+                    { label: "EXPENSES", isHeader: true },
+                    { label: "Daily / Operating Expenses", value: safe(data.total_daily_expenses), indent: true },
+                    { label: "Supplier Bills / Purchases",  value: safe(data.total_supplier_bills), indent: true },
+                    { label: "Total Expenses", value: safe(data.total_expenses), indent: true, bold: true },
+                    { label: "NET PROFIT / (LOSS)", value: safe(data.net_profit),
+                      isHeader: true, profit: true },
+                    { label: "VAT Collected (5%)", value: safe(data.total_vat_collected), indent: true, amber: true },
+                  ].map((row, i) => (
+                    <tr key={i} className={row.isHeader && !row.profit ? "bg-brand-indigo/10" : row.profit ? "bg-brand-indigo text-white" : i % 2 === 0 ? "bg-transparent" : "bg-bg-card/30"}>
+                      <td className={`px-4 py-2.5 text-sm ${row.indent ? "pl-8" : "font-semibold"} ${row.profit ? "text-white font-bold" : ""}`}>
+                        {row.label}
+                      </td>
+                      {row.value !== undefined ? (
+                        <td className={`px-4 py-2.5 text-sm text-right font-${row.bold ? "bold" : "medium"} ${
+                          row.profit
+                            ? row.value >= 0 ? "text-emerald-300" : "text-red-300"
+                            : row.amber ? "text-amber-400"
+                            : row.value < 0 ? "text-red-400" : "text-text-primary"
+                        }`}>
+                          AED {row.value.toFixed(2)}
+                        </td>
+                      ) : (
+                        <td />
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Monthly Breakdown */}
+            {safeArr(data.monthly_breakdown).length > 0 && (
+              <div className="card p-0 overflow-hidden">
+                <div className="px-4 py-3 bg-brand-indigo/10 border-b border-bg-border">
+                  <h3 className="font-semibold text-text-primary text-sm">Monthly Breakdown</h3>
+                </div>
+                <table className="w-full">
+                  <thead className="table-head">
+                    <tr>
+                      <th>Month</th>
+                      <th className="text-right">Sales (AED)</th>
+                      <th className="text-right">Expenses (AED)</th>
+                      <th className="text-right">Net Profit (AED)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {safeArr(data.monthly_breakdown).map((row) => {
+                      const r = row as Record<string, unknown>;
+                      const net = safe(r.net);
+                      return (
+                        <tr key={String(r.month)} className="table-row">
+                          <td className="font-medium">{String(r.month)}</td>
+                          <td className="text-right text-brand-indigo">{safe(r.sales).toFixed(2)}</td>
+                          <td className="text-right text-red-400">{safe(r.expenses).toFixed(2)}</td>
+                          <td className={`text-right font-bold ${net >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {net.toFixed(2)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Expense Categories */}
+            {safeArr(data.expense_categories).length > 0 && (
+              <div className="card p-0 overflow-hidden">
+                <div className="px-4 py-3 bg-brand-indigo/10 border-b border-bg-border">
+                  <h3 className="font-semibold text-text-primary text-sm">Expense by Category</h3>
+                </div>
+                <table className="w-full">
+                  <thead className="table-head">
+                    <tr><th>Category</th><th className="text-right">Amount (AED)</th></tr>
+                  </thead>
+                  <tbody>
+                    {safeArr(data.expense_categories).map((cat) => {
+                      const c = cat as Record<string, unknown>;
+                      return (
+                        <tr key={String(c.category)} className="table-row">
+                          <td className="capitalize">{String(c.category).replace(/_/g, " ")}</td>
+                          <td className="text-right text-red-400">{safe(c.total).toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── Sales Report ─────────────────────────────────────────────────── */}
         {tab === "sales" && data && !reportError && (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: "Net Sales", value: `AED ${safe(data.total_net).toFixed(2)}`, color: "text-brand-indigo" },
-                { label: "Taxable Amount", value: `AED ${safe(data.total_sales).toFixed(2)}`, color: "text-text-primary" },
-                { label: "VAT Collected", value: `AED ${safe(data.total_vat).toFixed(2)}`, color: "text-amber-400" },
-                { label: "Discount Given", value: `AED ${safe(data.total_discount).toFixed(2)}`, color: "text-text-secondary" },
+                { label: "Net Sales",       value: `AED ${safe(data.total_net).toFixed(2)}`,      color: "text-brand-indigo" },
+                { label: "Taxable Amount",  value: `AED ${safe(data.total_sales).toFixed(2)}`,    color: "text-text-primary" },
+                { label: "VAT Collected",   value: `AED ${safe(data.total_vat).toFixed(2)}`,      color: "text-amber-400" },
+                { label: "Discount Given",  value: `AED ${safe(data.total_discount).toFixed(2)}`, color: "text-text-secondary" },
               ].map((s) => (
                 <div key={s.label} className="card">
                   <p className="text-text-muted text-xs uppercase tracking-wide">{s.label}</p>
@@ -138,7 +293,7 @@ function ReportsContent() {
           </>
         )}
 
-        {/* Outstanding Report */}
+        {/* ── Outstanding ──────────────────────────────────────────────────── */}
         {tab === "outstanding" && data && !reportError && (
           <>
             <div className="grid grid-cols-2 gap-4">
@@ -180,7 +335,7 @@ function ReportsContent() {
           </>
         )}
 
-        {/* VAT Report */}
+        {/* ── VAT Report ───────────────────────────────────────────────────── */}
         {tab === "vat" && data && !reportError && (
           <>
             <div className="grid grid-cols-2 gap-4">
@@ -221,7 +376,7 @@ function ReportsContent() {
           </>
         )}
 
-        {/* Customer Balance */}
+        {/* ── Customer Balance ─────────────────────────────────────────────── */}
         {tab === "balance" && data && !reportError && (
           <>
             <div className="card">

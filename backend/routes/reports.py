@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
 from datetime import datetime
+from collections import defaultdict
 from database import get_db
 import models
 
@@ -151,6 +153,131 @@ def vat_report(
             } for inv in invoices
         ]
     }
+
+
+@router.get("/vat/pdf")
+def vat_report_pdf(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    from pdf_generator import generate_vat_report_pdf
+    q = db.query(models.Invoice).filter(models.Invoice.deleted_at == None)
+    if date_from:
+        q = q.filter(models.Invoice.date >= datetime.fromisoformat(date_from))
+    if date_to:
+        q = q.filter(models.Invoice.date <= datetime.fromisoformat(date_to))
+    invoices = q.order_by(models.Invoice.date).all()
+    total_taxable = sum(inv.subtotal for inv in invoices)
+    total_vat     = sum(inv.vat_amount for inv in invoices)
+    company = db.query(models.Company).first()
+    comp_dict = {}
+    if company:
+        comp_dict = {"name": company.name, "trn": company.trn or "", "address": company.address or ""}
+    data = {
+        "total_taxable": round(total_taxable, 2),
+        "total_vat":     round(total_vat, 2),
+        "period":        {"from": date_from, "to": date_to},
+        "invoices": [
+            {
+                "invoice_number": inv.invoice_number,
+                "date":           inv.date.strftime("%d %b %Y"),
+                "customer_name":  inv.customer.name if inv.customer else "",
+                "customer_trn":   (inv.customer.trn if inv.customer else "") or "",
+                "subtotal":       inv.subtotal,
+                "vat_amount":     inv.vat_amount,
+                "total":          inv.total,
+            } for inv in invoices
+        ],
+    }
+    path = generate_vat_report_pdf(data, comp_dict)
+    return FileResponse(path, media_type="application/pdf", filename="VAT_Report.pdf")
+
+
+@router.get("/profit-loss")
+def profit_loss_report(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    q_inv  = db.query(models.Invoice).filter(models.Invoice.deleted_at == None)
+    q_exp  = db.query(models.Expense)
+    q_bill = db.query(models.SupplierBill).filter(models.SupplierBill.deleted_at == None)
+
+    if date_from:
+        df = datetime.fromisoformat(date_from)
+        q_inv  = q_inv.filter(models.Invoice.date >= df)
+        q_exp  = q_exp.filter(models.Expense.date >= df)
+        q_bill = q_bill.filter(models.SupplierBill.date >= df)
+    if date_to:
+        dt = datetime.fromisoformat(date_to)
+        q_inv  = q_inv.filter(models.Invoice.date <= dt)
+        q_exp  = q_exp.filter(models.Expense.date <= dt)
+        q_bill = q_bill.filter(models.SupplierBill.date <= dt)
+
+    invoices = q_inv.all()
+    expenses = q_exp.all()
+    bills    = q_bill.all()
+
+    total_sales          = sum(inv.subtotal   for inv in invoices)
+    total_vat_collected  = sum(inv.vat_amount for inv in invoices)
+    total_daily_expenses = sum(exp.amount     for exp in expenses)
+    total_supplier_bills = sum(b.subtotal     for b in bills)
+    total_expenses       = total_daily_expenses + total_supplier_bills
+    net_profit           = total_sales - total_expenses
+
+    monthly = defaultdict(lambda: {"sales": 0.0, "expenses": 0.0})
+    for inv in invoices:
+        monthly[inv.date.strftime("%Y-%m")]["sales"] += inv.subtotal
+    for exp in expenses:
+        monthly[exp.date.strftime("%Y-%m")]["expenses"] += exp.amount
+    for b in bills:
+        monthly[b.date.strftime("%Y-%m")]["expenses"] += b.subtotal
+
+    cat_totals = defaultdict(float)
+    for exp in expenses:
+        cat_totals[exp.category] += exp.amount
+
+    return {
+        "period":               {"from": date_from, "to": date_to},
+        "total_sales":          round(total_sales, 2),
+        "total_vat_collected":  round(total_vat_collected, 2),
+        "total_daily_expenses": round(total_daily_expenses, 2),
+        "total_supplier_bills": round(total_supplier_bills, 2),
+        "total_expenses":       round(total_expenses, 2),
+        "net_profit":           round(net_profit, 2),
+        "invoice_count":        len(invoices),
+        "expense_count":        len(expenses),
+        "monthly_breakdown": sorted([
+            {
+                "month":    k,
+                "sales":    round(v["sales"], 2),
+                "expenses": round(v["expenses"], 2),
+                "net":      round(v["sales"] - v["expenses"], 2),
+            }
+            for k, v in monthly.items()
+        ], key=lambda x: x["month"]),
+        "expense_categories": [
+            {"category": k, "total": round(v, 2)}
+            for k, v in sorted(cat_totals.items())
+        ],
+    }
+
+
+@router.get("/profit-loss/pdf")
+def profit_loss_pdf(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    from pdf_generator import generate_pl_pdf
+    pl = profit_loss_report(date_from=date_from, date_to=date_to, db=db)
+    company = db.query(models.Company).first()
+    comp_dict = {}
+    if company:
+        comp_dict = {"name": company.name, "trn": company.trn or "", "address": company.address or ""}
+    path = generate_pl_pdf(pl, comp_dict)
+    return FileResponse(path, media_type="application/pdf", filename="PL_Report.pdf")
 
 
 @router.get("/customer-balance")

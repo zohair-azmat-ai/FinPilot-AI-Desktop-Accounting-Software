@@ -2469,3 +2469,281 @@ def generate_supplier_payment_pdf(pay_data: dict, company: dict) -> str:
 
     doc.build(story, onFirstPage=_draw_page, onLaterPages=_draw_page)
     return filepath
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VAT Report PDF
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_vat_report_pdf(data: dict, company: dict) -> str:
+    """UAE FTA-friendly VAT Return Report PDF."""
+    ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filepath = os.path.join(EXPORT_DIR, f"VAT_Report_{ts}.pdf")
+
+    doc = SimpleDocTemplate(
+        filepath, pagesize=A4,
+        leftMargin=15*mm, rightMargin=15*mm,
+        topMargin=15*mm, bottomMargin=15*mm,
+    )
+    story = []
+
+    lh = _letterhead_flowable()
+    if lh:
+        story.append(lh)
+        story.append(Spacer(1, 4*mm))
+
+    title_s  = ParagraphStyle("vt",  fontName="Helvetica-Bold", fontSize=16, textColor=PRIMARY, alignment=TA_CENTER)
+    sub_s    = ParagraphStyle("vs",  fontName="Helvetica",      fontSize=9,  textColor=MED_GRAY, alignment=TA_CENTER)
+    story.append(Paragraph("VAT RETURN REPORT", title_s))
+    story.append(Spacer(1, 2*mm))
+
+    period_from = (data.get("period") or {}).get("from") or ""
+    period_to   = (data.get("period") or {}).get("to")   or ""
+    if period_from or period_to:
+        story.append(Paragraph(f"Period: {period_from or 'All'} — {period_to or 'All'}", sub_s))
+    comp_trn = company.get("trn", "")
+    if comp_trn:
+        story.append(Paragraph(f"Supplier TRN: {comp_trn}", sub_s))
+    story.append(Spacer(1, 4*mm))
+
+    # Summary box
+    sl_s = ParagraphStyle("sl", fontName="Helvetica-Bold", fontSize=9,  textColor=DARK)
+    sv_s = ParagraphStyle("sv", fontName="Helvetica-Bold", fontSize=12, textColor=PRIMARY, alignment=TA_RIGHT)
+    total_taxable = data.get("total_taxable", 0)
+    total_vat     = data.get("total_vat", 0)
+    sum_rows = [
+        [Paragraph("Taxable Sales (AED)",            sl_s), Paragraph(f"{total_taxable:,.2f}", sv_s)],
+        [Paragraph("VAT Collected — 5% (AED)",       sl_s), Paragraph(f"{total_vat:,.2f}",     sv_s)],
+        [Paragraph("Total Invoiced incl. VAT (AED)", sl_s), Paragraph(f"{total_taxable + total_vat:,.2f}", sv_s)],
+    ]
+    sum_t = Table(sum_rows, colWidths=[_CONTENT_W * 0.62, _CONTENT_W * 0.38])
+    sum_t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), LIGHT_BLUE),
+        ("BOX",           (0, 0), (-1, -1), 1,   PRIMARY),
+        ("LINEBELOW",     (0, 0), (-1, -2), 0.3, colors.HexColor("#CBD5E1")),
+        ("TOPPADDING",    (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
+    ]))
+    story.append(sum_t)
+    story.append(Spacer(1, 5*mm))
+
+    # Invoice detail table
+    h_s  = ParagraphStyle("vh",  fontName="Helvetica-Bold", fontSize=7.5, textColor=WHITE)
+    r_s  = ParagraphStyle("vr",  fontName="Helvetica",      fontSize=7.5, textColor=DARK)
+    rr_s = ParagraphStyle("vrr", fontName="Helvetica",      fontSize=7.5, textColor=DARK,  alignment=TA_RIGHT)
+
+    col_w = [25*mm, 22*mm, 48*mm, 28*mm, 25*mm, 23*mm, 24*mm]
+    hdrs  = ["Invoice #", "Date", "Customer", "Customer TRN", "Taxable (AED)", "VAT 5% (AED)", "Total (AED)"]
+    tbl_data = [[Paragraph(h, h_s) for h in hdrs]]
+    for inv in data.get("invoices", []):
+        tbl_data.append([
+            Paragraph(_xe(str(inv.get("invoice_number", ""))), r_s),
+            Paragraph(str(inv.get("date", "")), r_s),
+            Paragraph(_xe(str(inv.get("customer_name", "CASH SALE"))), r_s),
+            Paragraph(_xe(str(inv.get("customer_trn") or "—")), r_s),
+            Paragraph(f"{inv.get('subtotal', 0):,.2f}", rr_s),
+            Paragraph(f"{inv.get('vat_amount', 0):,.2f}", rr_s),
+            Paragraph(f"{inv.get('total', 0):,.2f}", rr_s),
+        ])
+
+    tbl = Table(tbl_data, colWidths=col_w, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0), PRIMARY),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, ROW_STRIPE]),
+        ("GRID",          (0, 0), (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(tbl)
+    story.append(Spacer(1, 6*mm))
+
+    note_s = ParagraphStyle("vn", fontName="Helvetica", fontSize=7.5, textColor=MED_GRAY, alignment=TA_CENTER)
+    story.append(Paragraph(
+        "This report is generated for UAE Federal Tax Authority (FTA) filing purposes. "
+        "Please verify all figures with your accountant before submission.",
+        note_s,
+    ))
+    story.append(Paragraph(f"Generated: {datetime.now().strftime('%d %b %Y  %H:%M')}", note_s))
+
+    doc.build(story)
+    return filepath
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Profit & Loss Report PDF
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_pl_pdf(data: dict, company: dict) -> str:
+    """Professional UAE-style Profit & Loss Report PDF."""
+    ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filepath = os.path.join(EXPORT_DIR, f"PL_Report_{ts}.pdf")
+
+    RED   = colors.HexColor("#EF4444")
+    GREEN = colors.HexColor("#059669")
+    AMBER = colors.HexColor("#D97706")
+
+    doc = SimpleDocTemplate(
+        filepath, pagesize=A4,
+        leftMargin=15*mm, rightMargin=15*mm,
+        topMargin=15*mm, bottomMargin=15*mm,
+    )
+    story = []
+
+    lh = _letterhead_flowable()
+    if lh:
+        story.append(lh)
+        story.append(Spacer(1, 4*mm))
+
+    title_s = ParagraphStyle("pt", fontName="Helvetica-Bold", fontSize=16, textColor=PRIMARY, alignment=TA_CENTER)
+    sub_s   = ParagraphStyle("ps", fontName="Helvetica",      fontSize=9,  textColor=MED_GRAY, alignment=TA_CENTER)
+    story.append(Paragraph("PROFIT & LOSS REPORT", title_s))
+    story.append(Spacer(1, 2*mm))
+
+    period_from = (data.get("period") or {}).get("from") or ""
+    period_to   = (data.get("period") or {}).get("to")   or ""
+    if period_from or period_to:
+        story.append(Paragraph(f"Period: {period_from or 'All'} — {period_to or 'All'}", sub_s))
+    story.append(Paragraph(f"Generated: {datetime.now().strftime('%d %b %Y  %H:%M')}", sub_s))
+    story.append(Spacer(1, 5*mm))
+
+    # ── KPI summary cards (2×2) ──────────────────────────────────────────────
+    net_profit = data.get("net_profit", 0)
+    net_color  = GREEN if net_profit >= 0 else RED
+
+    cl_s = ParagraphStyle("cl", fontName="Helvetica", fontSize=8, textColor=MED_GRAY)
+
+    def _card_cell(label: str, value: float, val_color):
+        vs = ParagraphStyle("cv_", fontName="Helvetica-Bold", fontSize=13, textColor=val_color)
+        return [Paragraph(label, cl_s), Paragraph(f"AED {value:,.2f}", vs)]
+
+    cards = Table([
+        [_card_cell("TOTAL SALES",    data.get("total_sales", 0),         PRIMARY),
+         _card_cell("TOTAL EXPENSES", data.get("total_expenses", 0),      RED)],
+        [_card_cell("NET PROFIT",     net_profit,                         net_color),
+         _card_cell("VAT COLLECTED",  data.get("total_vat_collected", 0), AMBER)],
+    ], colWidths=[_CONTENT_W / 2 - 2*mm, _CONTENT_W / 2 - 2*mm])
+    cards.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), LIGHT_BLUE),
+        ("BOX",           (0, 0), (-1, -1), 1,   PRIMARY),
+        ("INNERGRID",     (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ("TOPPADDING",    (0, 0), (-1, -1), 9),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+    ]))
+    story.append(cards)
+    story.append(Spacer(1, 5*mm))
+
+    # ── P&L statement table ──────────────────────────────────────────────────
+    h_s    = ParagraphStyle("ph",   fontName="Helvetica-Bold", fontSize=9, textColor=WHITE)
+    r_s    = ParagraphStyle("pr",   fontName="Helvetica",      fontSize=9, textColor=DARK)
+    rr_s   = ParagraphStyle("prr",  fontName="Helvetica",      fontSize=9, textColor=DARK,  alignment=TA_RIGHT)
+    rb_s   = ParagraphStyle("prb",  fontName="Helvetica-Bold", fontSize=9, textColor=DARK,  alignment=TA_RIGHT)
+    hw_s   = ParagraphStyle("phw",  fontName="Helvetica-Bold", fontSize=9, textColor=WHITE, alignment=TA_RIGHT)
+
+    COL_DARK2 = colors.HexColor("#1e3a8a")
+    pl_rows = [
+        [Paragraph("INCOME",                        h_s),  Paragraph("AED",  h_s)],
+        [Paragraph("  Total Sales (excl. VAT)",      r_s),  Paragraph(f"{data.get('total_sales', 0):,.2f}", rr_s)],
+        [Paragraph("",                               r_s),  Paragraph("", r_s)],
+        [Paragraph("EXPENSES",                       h_s),  Paragraph("", h_s)],
+        [Paragraph("  Daily / Operating Expenses",   r_s),  Paragraph(f"{data.get('total_daily_expenses', 0):,.2f}", rr_s)],
+        [Paragraph("  Supplier Bills / Purchases",   r_s),  Paragraph(f"{data.get('total_supplier_bills', 0):,.2f}", rr_s)],
+        [Paragraph("  Total Expenses",               r_s),  Paragraph(f"{data.get('total_expenses', 0):,.2f}", rb_s)],
+        [Paragraph("",                               r_s),  Paragraph("", r_s)],
+        [Paragraph("NET PROFIT / (LOSS)",            h_s),  Paragraph(f"{net_profit:,.2f}", hw_s)],
+        [Paragraph("VAT Collected (5%)",             r_s),  Paragraph(f"{data.get('total_vat_collected', 0):,.2f}", rr_s)],
+    ]
+
+    pl_tbl = Table(pl_rows, colWidths=[_CONTENT_W * 0.65, _CONTENT_W * 0.35])
+    pl_cmds = [
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [LIGHT_BLUE, WHITE]),
+        ("GRID",           (0, 0), (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
+        ("TOPPADDING",     (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING",  (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",    (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING",   (0, 0), (-1, -1), 10),
+        ("BACKGROUND",     (0, 0), (-1, 0), PRIMARY),
+        ("BACKGROUND",     (0, 3), (-1, 3), PRIMARY),
+        ("BACKGROUND",     (0, 8), (-1, 8), COL_DARK2),
+        ("TEXTCOLOR",      (0, 0), (-1, 0), WHITE),
+        ("TEXTCOLOR",      (0, 3), (-1, 3), WHITE),
+        ("TEXTCOLOR",      (0, 8), (-1, 8), WHITE),
+    ]
+    pl_tbl.setStyle(TableStyle(pl_cmds))
+    story.append(pl_tbl)
+
+    # ── Monthly breakdown ────────────────────────────────────────────────────
+    monthly = data.get("monthly_breakdown", [])
+    if monthly:
+        story.append(Spacer(1, 6*mm))
+        story.append(Paragraph(
+            "Monthly Breakdown",
+            ParagraphStyle("mh", fontName="Helvetica-Bold", fontSize=10, textColor=PRIMARY),
+        ))
+        story.append(Spacer(1, 2*mm))
+
+        m_hdrs = ["Month", "Sales (AED)", "Expenses (AED)", "Net Profit (AED)"]
+        m_data = [[Paragraph(h, h_s) for h in m_hdrs]]
+        for row in monthly:
+            net = row.get("net", 0)
+            ns  = ParagraphStyle("mn", fontName="Helvetica", fontSize=8.5,
+                                 textColor=GREEN if net >= 0 else RED, alignment=TA_RIGHT)
+            m_data.append([
+                Paragraph(row.get("month", ""), r_s),
+                Paragraph(f"{row.get('sales', 0):,.2f}", rr_s),
+                Paragraph(f"{row.get('expenses', 0):,.2f}", rr_s),
+                Paragraph(f"{net:,.2f}", ns),
+            ])
+
+        m_tbl = Table(m_data, colWidths=[40*mm, 47*mm, 47*mm, 44*mm], repeatRows=1)
+        m_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0), PRIMARY),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, ROW_STRIPE]),
+            ("GRID",          (0, 0), (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
+            ("TOPPADDING",    (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(m_tbl)
+
+    # ── Expense categories ───────────────────────────────────────────────────
+    cats = data.get("expense_categories", [])
+    if cats:
+        story.append(Spacer(1, 6*mm))
+        story.append(Paragraph(
+            "Expense Breakdown by Category",
+            ParagraphStyle("ch", fontName="Helvetica-Bold", fontSize=10, textColor=PRIMARY),
+        ))
+        story.append(Spacer(1, 2*mm))
+
+        c_data = [[Paragraph("Category", h_s), Paragraph("Amount (AED)", h_s)]]
+        for cat in cats:
+            c_data.append([
+                Paragraph(cat.get("category", "").replace("_", " ").title(), r_s),
+                Paragraph(f"{cat.get('total', 0):,.2f}", rr_s),
+            ])
+
+        c_tbl = Table(c_data, colWidths=[_CONTENT_W * 0.6, _CONTENT_W * 0.4], repeatRows=1)
+        c_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0), PRIMARY),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, ROW_STRIPE]),
+            ("GRID",          (0, 0), (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
+            ("TOPPADDING",    (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(c_tbl)
+
+    doc.build(story)
+    return filepath
