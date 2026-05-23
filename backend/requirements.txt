@@ -6,3 +6,4 @@ python-multipart>=0.0.12
 reportlab>=4.2.5
 python-dateutil>=2.9.0
 aiofiles>=24.1.0
+requests>=2.32.0
