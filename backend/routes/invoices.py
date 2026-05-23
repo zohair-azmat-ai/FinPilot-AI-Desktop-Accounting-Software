@@ -106,12 +106,19 @@ _active = lambda: models.Invoice.deleted_at.is_(None)
 
 
 @router.get("/", response_model=List[schemas.InvoiceOut])
-def list_invoices(status: Optional[str] = None, customer_id: Optional[int] = None, db: Session = Depends(get_db)):
+def list_invoices(
+    status: Optional[str] = None,
+    customer_id: Optional[int] = None,
+    is_cash: Optional[bool] = None,
+    db: Session = Depends(get_db)
+):
     q = db.query(models.Invoice).filter(_active())
     if status:
         q = q.filter(models.Invoice.status == status)
     if customer_id:
         q = q.filter(models.Invoice.customer_id == customer_id)
+    if is_cash is not None:
+        q = q.filter(models.Invoice.is_cash == is_cash)
     invoices = q.order_by(models.Invoice.date.desc(), models.Invoice.id.desc()).all()
     for inv in invoices:
         active = [it for it in inv.items if it.deleted_at is None]
@@ -390,6 +397,62 @@ def cloud_cleanup_invoice_items(invoice_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.post("/{invoice_id}/quick-pay", response_model=schemas.PaymentOut)
+def quick_pay_invoice(invoice_id: int, db: Session = Depends(get_db)):
+    """Mark an invoice as fully paid with a single cash receipt — works for both regular and cash-sale invoices."""
+    inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id, _active()).first()
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv.balance_due <= 0:
+        raise HTTPException(400, "Invoice is already fully paid")
+
+    from routes.payments import _next_payment_number, _recalc_ledger_for_customer
+
+    amount = round(inv.balance_due, 2)
+    payment = models.Payment(
+        payment_number=_next_payment_number(db),
+        payment_direction="received",
+        customer_id=inv.customer_id,
+        is_advance=False,
+        date=datetime.utcnow(),
+        amount=amount,
+        method="cash",
+        reference="",
+        notes=f"Cash received for Invoice {inv.invoice_number}"
+    )
+    db.add(payment)
+    db.flush()
+
+    db.add(models.PaymentAllocation(
+        payment_id=payment.id,
+        invoice_id=inv.id,
+        amount=amount
+    ))
+
+    inv.amount_paid = round(inv.amount_paid + amount, 2)
+    inv.balance_due = 0.0
+    inv.status = "paid"
+
+    if inv.customer_id:
+        entry = models.LedgerEntry(
+            date=payment.date,
+            customer_id=inv.customer_id,
+            payment_id=payment.id,
+            description=f"Receipt {payment.payment_number} — Invoice {inv.invoice_number}",
+            debit=0.0,
+            credit=amount,
+            balance=0.0,
+            entry_type="receipt"
+        )
+        db.add(entry)
+        db.flush()
+        _recalc_ledger_for_customer(db, inv.customer_id)
+
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
 @router.delete("/{invoice_id}")
 def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
     inv = db.query(models.Invoice).filter(models.Invoice.id == invoice_id, _active()).first()
@@ -467,7 +530,7 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
             "lpo_no": inv.lpo_no or "",
             "do_no": inv.do_no or "",
             "is_cash": inv.is_cash,
-            "include_stamp": inv.include_stamp if inv.include_stamp is not None else True,
+            "include_stamp": bool(inv.include_stamp) if inv.include_stamp is not None else False,
             "require_customer_signature": inv.require_customer_signature,
         }
         doc_number = inv.invoice_number

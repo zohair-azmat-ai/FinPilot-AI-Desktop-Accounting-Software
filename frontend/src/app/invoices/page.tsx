@@ -3,14 +3,15 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
-import { getInvoices, deleteInvoice, downloadInvoicePDF, getCustomers } from "@/lib/api";
+import { getInvoices, deleteInvoice, downloadInvoicePDF, getCustomers, quickPayInvoice } from "@/lib/api";
 import toast from "react-hot-toast";
-import { Plus, Receipt, Edit2, Trash2, FileDown, Filter, Search, DollarSign, MessageCircle } from "lucide-react";
+import { Plus, Receipt, Edit2, Trash2, FileDown, Search, DollarSign, MessageCircle, CheckCircle } from "lucide-react";
 
 interface Invoice {
   id: number; invoice_number: string; customer?: { name: string };
+  customer_id?: number;
   date: string; total: number; balance_due: number; status: string;
-  amount_paid: number; vat_amount: number; discount: number;
+  amount_paid: number; vat_amount: number; discount: number; is_cash?: boolean;
 }
 
 const statusConfig: Record<string, string> = {
@@ -52,6 +53,18 @@ function InvoicesContent() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       toast.error(msg || "Failed to delete invoice.");
+    }
+  };
+
+  const handleQuickPay = async (inv: Invoice) => {
+    if (!confirm(`Mark Invoice ${inv.invoice_number} as fully paid (AED ${inv.balance_due.toFixed(2)})?`)) return;
+    try {
+      await quickPayInvoice(inv.id);
+      toast.success(`Invoice ${inv.invoice_number} marked as paid.`);
+      load();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg || "Failed to record payment.");
     }
   };
 
@@ -147,13 +160,23 @@ function InvoicesContent() {
                         >
                           <Edit2 size={14} />
                         </button>
-                        <button
-                          onClick={() => router.push(`/payments?new=1&invoice_id=${inv.id}&customer_id=${inv.customer ? "" : ""}`)}
-                          className="text-text-muted hover:text-emerald-400 transition-colors"
-                          title="Add Payment"
-                        >
-                          <DollarSign size={14} />
-                        </button>
+                        {inv.status !== "paid" && inv.is_cash ? (
+                          <button
+                            onClick={() => handleQuickPay(inv)}
+                            className="text-text-muted hover:text-emerald-400 transition-colors"
+                            title="Mark as Cash Received"
+                          >
+                            <CheckCircle size={14} />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => router.push(`/payments?new=1&customer_id=${inv.customer_id || ""}`)}
+                            className="text-text-muted hover:text-emerald-400 transition-colors"
+                            title="Add Payment"
+                          >
+                            <DollarSign size={14} />
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             const msg = encodeURIComponent(`Dear ${inv.customer?.name || "Customer"},\n\nPlease find attached Invoice ${inv.invoice_number} for AED ${inv.total.toFixed(2)}.\n\nKind regards`);

@@ -4,8 +4,8 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
 import {
-  getPayments, getCustomers, getSuppliers, getInvoices, getBankAccounts,
-  createPayment, deletePayment, downloadPaymentPDF
+  getPayments, getCustomers, getSuppliers, getInvoices, getCashInvoices,
+  getBankAccounts, createPayment, deletePayment, downloadPaymentPDF
 } from "@/lib/api";
 import toast from "react-hot-toast";
 import {
@@ -77,10 +77,18 @@ function PaymentsContent() {
   useEffect(() => { load(); }, [tab]);
 
   useEffect(() => {
-    if (form.customer_id && form.payment_direction === "received") {
-      getInvoices({ customer_id: parseInt(form.customer_id) })
-        .then((r) => setInvoices(r.data.filter((inv: Invoice) => inv.balance_due > 0)))
-        .catch(() => setInvoices([]));
+    if (form.payment_direction === "received") {
+      if (form.customer_id === "cash_sale") {
+        getCashInvoices("unpaid")
+          .then((r) => setInvoices(r.data.filter((inv: Invoice) => inv.balance_due > 0)))
+          .catch(() => setInvoices([]));
+      } else if (form.customer_id) {
+        getInvoices({ customer_id: parseInt(form.customer_id) })
+          .then((r) => setInvoices(r.data.filter((inv: Invoice) => inv.balance_due > 0)))
+          .catch(() => setInvoices([]));
+      } else {
+        setInvoices([]);
+      }
     } else {
       setInvoices([]);
     }
@@ -114,6 +122,7 @@ function PaymentsContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const direction = form.payment_direction;
+    const isCashSale = form.customer_id === "cash_sale";
     if (direction === "received" && !form.customer_id) return toast.error("Select a customer");
     if (direction === "paid" && !form.supplier_id) return toast.error("Select a supplier");
     if (!form.amount || form.amount <= 0) return toast.error("Enter valid amount");
@@ -125,7 +134,7 @@ function PaymentsContent() {
     try {
       await createPayment({
         payment_direction: direction,
-        customer_id: form.customer_id ? parseInt(form.customer_id) : null,
+        customer_id: isCashSale ? null : (form.customer_id ? parseInt(form.customer_id) : null),
         supplier_id: form.supplier_id ? parseInt(form.supplier_id) : null,
         bank_account_id: form.bank_account_id ? parseInt(form.bank_account_id) : null,
         is_advance: form.is_advance,
@@ -329,6 +338,7 @@ function PaymentsContent() {
                   <label className="label">Customer *</label>
                   <select className="input" value={form.customer_id} onChange={(e) => setForm(f => ({ ...f, customer_id: e.target.value }))}>
                     <option value="">— Select Customer —</option>
+                    <option value="cash_sale">💵 CASH SALE (no customer)</option>
                     {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
@@ -405,7 +415,7 @@ function PaymentsContent() {
                 </div>
               )}
 
-              {/* Invoice allocations (received only, customer selected) */}
+              {/* Invoice allocations (received only, customer or cash_sale selected) */}
               {form.payment_direction === "received" && form.customer_id && !form.is_advance && invoices.length > 0 && (
                 <div>
                   <label className="label">Allocate to Invoices</label>

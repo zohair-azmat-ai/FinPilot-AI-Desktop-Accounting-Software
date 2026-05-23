@@ -75,7 +75,10 @@ export const downloadQuotationPDF = (id: number, num?: string) => {
 
 // Invoices
 export const getInvoices = (params?: Record<string, unknown>) => api.get("/api/invoices/", { params });
+export const getCashInvoices = (status?: string) =>
+  api.get("/api/invoices/", { params: { is_cash: true, ...(status ? { status } : {}) } });
 export const getInvoice = (id: number) => api.get(`/api/invoices/${id}`);
+export const quickPayInvoice = (id: number) => api.post(`/api/invoices/${id}/quick-pay`);
 export const createInvoice = (data: unknown) => api.post("/api/invoices/", data);
 export const updateInvoice = (id: number, data: unknown) => api.put(`/api/invoices/${id}`, data);
 export const deleteInvoice = (id: number) => api.delete(`/api/invoices/${id}`);
