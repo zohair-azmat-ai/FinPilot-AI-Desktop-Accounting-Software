@@ -102,9 +102,17 @@ Write-OK "Icons written to $IconsDir"
 # ── 3. Build backend ──────────────────────────────────────────────────────────
 Write-Step "Building backend (PyInstaller)"
 
-# Install/upgrade PyInstaller
-& $PythonExe -m pip install --quiet --upgrade pyinstaller
-$piOk = $LASTEXITCODE -eq 0
+# Install/upgrade PyInstaller (wrap in try/catch so stderr warnings don't terminate with Stop preference)
+$piOk = $false
+try {
+    $savedEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $PythonExe -m pip install --quiet --upgrade pyinstaller
+    $piOk = $LASTEXITCODE -eq 0
+    $ErrorActionPreference = $savedEAP
+} catch {
+    Write-Warn "pip install pyinstaller: $_"
+}
 
 $BackendDistDir = Join-Path $BackendDir "dist\backend"
 $PyInstallerOk  = $false
@@ -144,11 +152,13 @@ if (-not $PyInstallerOk) {
         Write-OK "Embedded Python extracted to $EmbeddedPythonDir"
 
         # Enable site-packages in embeddable Python (uncomment import site line)
+        # Use UTF-8 WITHOUT BOM — PowerShell 5.1's "-Encoding utf8" writes BOM which breaks Python path resolution
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
         $pthFiles = Get-ChildItem $EmbeddedPythonDir -Filter "python*._pth" -ErrorAction SilentlyContinue
         foreach ($pth in $pthFiles) {
             $content = Get-Content $pth.FullName -Raw
             $content = $content -replace "#import site", "import site"
-            Set-Content $pth.FullName $content -Encoding utf8
+            [System.IO.File]::WriteAllText($pth.FullName, $content, $utf8NoBom)
         }
 
         # Install pip into embedded Python
