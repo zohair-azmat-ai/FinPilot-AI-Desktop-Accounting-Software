@@ -12,37 +12,35 @@ router = APIRouter(prefix="/api/delivery-notes", tags=["delivery-notes"])
 
 
 def _next_dn_number(db: Session) -> str:
-    """Fills the lowest gap first; if no gap, uses max+1."""
-    company = db.query(models.Company).first()
-    prefix = (company.dn_prefix or "DN-") if company else "DN-"
+    """Generate next DN number respecting company-set series with leading-zero padding.
 
-    rows = db.query(models.DeliveryNote.dn_number).filter(models.DeliveryNote.deleted_at.is_(None)).all()
+    When dn_current_number > 0: use it directly and increment (no DB gap scan).
+    Legacy fallback: scan existing DNs for max+1 (only when no manual override).
+    """
+    company = db.query(models.Company).first()
+    prefix  = (company.dn_prefix or "DN-") if company else "DN-"
+    pad     = (company.dn_number_pad or 4)  if company else 4
+
+    if company and (company.dn_current_number or 0) > 0:
+        # Manual series: always use the stored counter, then increment
+        next_num = company.dn_current_number
+        company.dn_current_number = next_num + 1
+        db.add(company)
+        db.commit()
+        return f"{prefix}{str(next_num).zfill(pad)}"
+
+    # Legacy path: no manual starting number set — scan existing DNs
+    rows = db.query(models.DeliveryNote.dn_number).filter(
+        models.DeliveryNote.deleted_at.is_(None)
+    ).all()
     existing = set()
     for (dn_no,) in rows:
         try:
             existing.add(int(dn_no.split("-")[-1]))
         except Exception:
             pass
-
-    if not existing:
-        counter = (company.dn_current_number or 0) if company else 0
-        next_num = counter if counter > 0 else 1
-    else:
-        candidate = min(existing)
-        while candidate in existing:
-            candidate += 1
-        next_num = candidate
-
-    if company and next_num != (company.dn_current_number or 0):
-        company.dn_current_number = next_num
-        db.add(company)
-        db.commit()
-
-    return f"{prefix}{next_num:04d}"
-
-
-def _increment_dn_counter(db: Session) -> None:
-    pass
+    next_num = (max(existing) + 1) if existing else 1
+    return f"{prefix}{str(next_num).zfill(pad)}"
 
 
 _active = lambda: models.DeliveryNote.deleted_at.is_(None)
@@ -106,7 +104,6 @@ def create_delivery_note(payload: schemas.DeliveryNoteCreate, db: Session = Depe
 
     db.commit()
     db.refresh(dn)
-    _increment_dn_counter(db)
     return dn
 
 

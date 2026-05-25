@@ -319,7 +319,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     # ── Data ─────────────────────────────────────────────────────────────────
     is_cash       = invoice_data.get("is_cash", False)
     _stamp_raw    = invoice_data.get("include_stamp")
-    include_stamp = True if _stamp_raw is None else bool(_stamp_raw)
+    include_stamp = bool(_stamp_raw) if _stamp_raw is not None else False
     inv_no   = invoice_data.get("invoice_number", "")
     inv_date = invoice_data.get("date", "")
     lpo_no   = invoice_data.get("lpo_no", "") or ""
@@ -1886,16 +1886,20 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     story.append(info_t)
     story.append(Spacer(1, 12 * mm))
 
-    # ── Items table: rows calculated to fill available page space ─────────────
+    # ── Items table: smart compact filler rows (keep to 1 page, minimal blanks) ─
     items_data = dn_data.get("items", [])
     _actual_n  = len(items_data)
     _HDR_H     = 8  * mm
     _ROW_H     = 9  * mm
-    # Story overhead: Spacer(5) + title(11) + Spacer(6) + info_t(~24) + Spacer(12) ≈ 58mm
-    _overhead  = 58 * mm + (24 * mm if not lh_draw_h else 0)
+    # Story overhead: Spacer(2) + title(11) + Spacer(12) + info_t(~24) + Spacer(12) ≈ 61mm
+    _overhead  = 61 * mm + (24 * mm if not lh_draw_h else 0)
     _avail     = page_h - top_margin - _BOT - _overhead
-    _max_rows  = max(_actual_n, int((_avail - _HDR_H) / _ROW_H))
-    MIN_ROWS   = _max_rows
+    # Maximum rows that physically fit (hard ceiling)
+    _max_possible = max(_actual_n, int((_avail - _HDR_H) / _ROW_H))
+    # Smart filler: 2–5 blank rows depending on item count; never over-fill page
+    _filler_n  = max(2, min(5, 10 - _actual_n))
+    _filler_n  = min(_filler_n, max(0, _max_possible - _actual_n))
+    MIN_ROWS   = _actual_n + _filler_n
 
     dn_col_w   = [14 * mm, 90 * mm, 20 * mm, 56 * mm]
     table_data = [[

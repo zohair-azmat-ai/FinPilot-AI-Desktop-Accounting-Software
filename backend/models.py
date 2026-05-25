@@ -19,6 +19,7 @@ class Company(Base):
     invoice_current_number = Column(Integer, default=0)
     dn_prefix = Column(String, default="DN-")
     dn_current_number = Column(Integer, default=0)
+    dn_number_pad = Column(Integer, default=4)
     show_dn_stamp = Column(Boolean, default=False)
     quotation_prefix = Column(String, default="QUO-")
     quotation_current_number = Column(Integer, default=0)

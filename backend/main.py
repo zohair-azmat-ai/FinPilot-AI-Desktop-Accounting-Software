@@ -68,6 +68,7 @@ def _run_migrations():
         ("purchase_orders",     "include_stamp",              "INTEGER DEFAULT 0"),
         ("purchase_orders",     "letterhead",                 "INTEGER DEFAULT 1"),
         ("companies",           "show_lpo_in_statement",      "INTEGER DEFAULT 0"),
+        ("companies",           "dn_number_pad",              "INTEGER DEFAULT 4"),
         # Supplier accounting tables are created by create_all; these guard older DBs
         ("supplier_bills",      "trn",                        "TEXT DEFAULT ''"),
         ("supplier_bills",      "lpo_no",                     "TEXT DEFAULT ''"),
@@ -122,6 +123,7 @@ def _run_migrations():
             ("UPDATE companies SET invoice_current_number = 0 WHERE invoice_current_number IS NULL"),
             ("UPDATE companies SET po_prefix = 'PO-' WHERE po_prefix IS NULL OR po_prefix = ''"),
             ("UPDATE companies SET po_current_number = 0 WHERE po_current_number IS NULL"),
+            ("UPDATE companies SET dn_number_pad = 4 WHERE dn_number_pad IS NULL"),
         ]
         for sql in _backfills:
             try:

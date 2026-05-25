@@ -25,6 +25,7 @@ def _company_dict(company) -> dict:
         "invoice_current_number": company.invoice_current_number or 0,
         "dn_prefix": company.dn_prefix or "DN-",
         "dn_current_number": company.dn_current_number or 0,
+        "dn_number_pad": company.dn_number_pad if company.dn_number_pad is not None else 4,
         "show_dn_stamp": bool(company.show_dn_stamp) if company.show_dn_stamp is not None else False,
         "quotation_prefix": company.quotation_prefix or "QUO-",
         "quotation_current_number": company.quotation_current_number or 0,

@@ -11,12 +11,14 @@ export default function CompanyPage() {
     name: "", trn: "", address: "", phone: "", email: "",
     letterhead_mode: true, vat_rate: 5.0,
     invoice_prefix: "", invoice_current_number: 0,
-    dn_prefix: "DN-", dn_current_number: 0,
+    dn_prefix: "DN-", dn_current_number: 0, dn_number_pad: 4,
     show_dn_stamp: false,
     quotation_prefix: "QUO-", quotation_current_number: 0,
     po_prefix: "PO-", po_current_number: 0,
     show_lpo_in_statement: false,
   });
+  // Separate text state for DN number so leading zeros are preserved during input
+  const [dnNumberText, setDnNumberText] = useState("");
   const [saving, setSaving] = useState(false);
   const [stampUploading, setStampUploading] = useState(false);
   const stampInputRef = useRef<HTMLInputElement>(null);
@@ -37,7 +39,13 @@ export default function CompanyPage() {
   };
 
   useEffect(() => {
-    getCompany().then((res) => setForm(res.data)).catch(() => {});
+    getCompany().then((res) => {
+      const data = res.data;
+      setForm({ ...data, dn_number_pad: data.dn_number_pad ?? 4 });
+      const pad = data.dn_number_pad ?? 4;
+      const num = data.dn_current_number ?? 0;
+      setDnNumberText(num > 0 ? String(num).padStart(pad, "0") : "");
+    }).catch(() => {});
   }, []);
 
   const handleSave = async () => {
@@ -269,15 +277,18 @@ export default function CompanyPage() {
               <label className="label">Current / Starting DN No.</label>
               <input
                 className="input"
-                type="number"
-                min="1"
-                step="1"
-                value={form.dn_current_number || ""}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={dnNumberText}
                 onChange={(e) => {
-                  const v = parseInt(e.target.value);
-                  setForm({ ...form, dn_current_number: isNaN(v) || v < 1 ? 0 : v });
+                  const raw = e.target.value.replace(/[^0-9]/g, "");
+                  setDnNumberText(raw);
+                  const num = parseInt(raw) || 0;
+                  const pad = raw.length >= 4 ? raw.length : 4;
+                  setForm({ ...form, dn_current_number: num, dn_number_pad: pad });
                 }}
-                placeholder="e.g. 9948"
+                placeholder="e.g. 09943 (leading zeros preserved)"
               />
             </div>
           </div>
@@ -285,7 +296,7 @@ export default function CompanyPage() {
             <div className="rounded-lg bg-brand-indigo/5 border border-brand-indigo/20 px-4 py-3">
               <p className="text-xs text-text-muted">Next delivery note will be:</p>
               <p className="text-lg font-bold text-brand-indigo mt-0.5">
-                {form.dn_prefix || "DN-"}{String(form.dn_current_number).padStart(4, "0")}
+                {form.dn_prefix || "DN-"}{dnNumberText || String(form.dn_current_number).padStart(form.dn_number_pad || 4, "0")}
               </p>
             </div>
           ) : (

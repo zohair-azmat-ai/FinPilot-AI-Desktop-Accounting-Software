@@ -30,6 +30,7 @@ class CompanyBase(BaseModel):
     invoice_current_number: Optional[int] = 0
     dn_prefix: Optional[str] = "DN-"
     dn_current_number: Optional[int] = 0
+    dn_number_pad: Optional[int] = 4
     show_dn_stamp: Optional[bool] = False
     quotation_prefix: Optional[str] = "QUO-"
     quotation_current_number: Optional[int] = 0
