@@ -17,7 +17,7 @@ class Company(Base):
     logo_path = Column(String, default="")
     invoice_prefix = Column(String, default="")
     invoice_current_number = Column(Integer, default=0)
-    dn_prefix = Column(String, default="DN-")
+    dn_prefix = Column(String, default="")
     dn_current_number = Column(Integer, default=0)
     dn_number_pad = Column(Integer, default=4)
     show_dn_stamp = Column(Boolean, default=False)

@@ -1886,20 +1886,24 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     story.append(info_t)
     story.append(Spacer(1, 12 * mm))
 
-    # ── Items table: smart compact filler rows (keep to 1 page, minimal blanks) ─
+    # ── Items table: measured overhead → guaranteed single page ──────────────
     items_data = dn_data.get("items", [])
     _actual_n  = len(items_data)
-    _HDR_H     = 8  * mm
-    _ROW_H     = 9  * mm
-    # Story overhead: Spacer(2) + title(11) + Spacer(12) + info_t(~24) + Spacer(12) ≈ 61mm
-    _overhead  = 61 * mm + (24 * mm if not lh_draw_h else 0)
-    _avail     = page_h - top_margin - _BOT - _overhead
-    # Maximum rows that physically fit (hard ceiling)
-    _max_possible = max(_actual_n, int((_avail - _HDR_H) / _ROW_H))
-    # Smart filler: 2–5 blank rows depending on item count; never over-fill page
-    _filler_n  = max(2, min(5, 10 - _actual_n))
-    _filler_n  = min(_filler_n, max(0, _max_possible - _actual_n))
-    MIN_ROWS   = _actual_n + _filler_n
+    _HDR_H     = 8 * mm
+    _ROW_H     = 9 * mm
+    _RENDER_SAFE = 6 * mm   # buffer for ReportLab frame/padding variance
+
+    # Measure the story built so far (title + spacers + info_t + spacer)
+    _content_w = page_w - 30 * mm          # left(15) + right(15) margins
+    _pre_h = sum(el.wrap(_content_w, 9999 * mm)[1] for el in story)
+    _available = (page_h - top_margin - _BOT) - _pre_h - _RENDER_SAFE
+
+    # Rows that safely fit (hard ceiling, never negative)
+    _max_rows = max(_actual_n, int((_available - _HDR_H) / _ROW_H))
+
+    # Add at most 2 compact blank rows — enough for manual writing, never overflows
+    _filler_n = min(2, max(0, _max_rows - _actual_n))
+    MIN_ROWS  = _actual_n + _filler_n
 
     dn_col_w   = [14 * mm, 90 * mm, 20 * mm, 56 * mm]
     table_data = [[

@@ -18,8 +18,9 @@ def _next_dn_number(db: Session) -> str:
     Legacy fallback: scan existing DNs for max+1 (only when no manual override).
     """
     company = db.query(models.Company).first()
-    prefix  = (company.dn_prefix or "DN-") if company else "DN-"
-    pad     = (company.dn_number_pad or 4)  if company else 4
+    # Use dn_prefix exactly as stored — do NOT fall back to "DN-" for empty string
+    prefix  = (company.dn_prefix if company.dn_prefix is not None else "") if company else ""
+    pad     = (company.dn_number_pad or 4) if company else 4
 
     if company and (company.dn_current_number or 0) > 0:
         # Manual series: always use the stored counter, then increment

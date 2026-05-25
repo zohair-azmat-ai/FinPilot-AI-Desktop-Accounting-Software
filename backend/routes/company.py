@@ -23,7 +23,7 @@ def _company_dict(company) -> dict:
         "logo_path": company.logo_path or "",
         "invoice_prefix": company.invoice_prefix or "",
         "invoice_current_number": company.invoice_current_number or 0,
-        "dn_prefix": company.dn_prefix or "DN-",
+        "dn_prefix": company.dn_prefix if company.dn_prefix is not None else "",
         "dn_current_number": company.dn_current_number or 0,
         "dn_number_pad": company.dn_number_pad if company.dn_number_pad is not None else 4,
         "show_dn_stamp": bool(company.show_dn_stamp) if company.show_dn_stamp is not None else False,

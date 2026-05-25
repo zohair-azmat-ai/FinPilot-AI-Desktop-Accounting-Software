@@ -270,7 +270,7 @@ export default function CompanyPage() {
                 className="input"
                 value={form.dn_prefix}
                 onChange={(e) => setForm({ ...form, dn_prefix: e.target.value })}
-                placeholder='e.g. DN- (default)'
+                placeholder='e.g. DN- (leave blank for none)'
               />
             </div>
             <div>
@@ -296,7 +296,7 @@ export default function CompanyPage() {
             <div className="rounded-lg bg-brand-indigo/5 border border-brand-indigo/20 px-4 py-3">
               <p className="text-xs text-text-muted">Next delivery note will be:</p>
               <p className="text-lg font-bold text-brand-indigo mt-0.5">
-                {form.dn_prefix || "DN-"}{dnNumberText || String(form.dn_current_number).padStart(form.dn_number_pad || 4, "0")}
+                {form.dn_prefix ?? ""}{dnNumberText || String(form.dn_current_number).padStart(form.dn_number_pad || 5, "0")}
               </p>
             </div>
           ) : (

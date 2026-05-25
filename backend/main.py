@@ -124,6 +124,7 @@ def _run_migrations():
             ("UPDATE companies SET po_prefix = 'PO-' WHERE po_prefix IS NULL OR po_prefix = ''"),
             ("UPDATE companies SET po_current_number = 0 WHERE po_current_number IS NULL"),
             ("UPDATE companies SET dn_number_pad = 4 WHERE dn_number_pad IS NULL"),
+            ("UPDATE companies SET dn_prefix = '' WHERE dn_prefix = 'DN-'"),
         ]
         for sql in _backfills:
             try:

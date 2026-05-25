@@ -28,7 +28,7 @@ class CompanyBase(BaseModel):
     logo_path: Optional[str] = ""
     invoice_prefix: Optional[str] = ""
     invoice_current_number: Optional[int] = 0
-    dn_prefix: Optional[str] = "DN-"
+    dn_prefix: Optional[str] = ""
     dn_current_number: Optional[int] = 0
     dn_number_pad: Optional[int] = 4
     show_dn_stamp: Optional[bool] = False
