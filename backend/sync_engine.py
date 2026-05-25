@@ -727,6 +727,35 @@ def restore_from_cloud(db_path: str) -> dict:
     return _engine_ref.restore_from_cloud()
 
 
+def delete_rows_from_supabase(table: str, sync_uuids: list) -> dict:
+    """Hard-delete rows from Supabase by sync_uuid.
+
+    Called when local rows are hard-deleted (e.g. delivery_note_items when a DN is deleted)
+    so they can never be re-synced back from Supabase.
+    """
+    if not sync_uuids:
+        return {"ok": True, "deleted": 0}
+    creds = _read_creds()
+    if not creds:
+        return {"ok": True, "deleted": 0, "note": "offline"}
+    try:
+        client = SupabaseClient(creds["url"], creds["anon_key"], creds["workspace_id"])
+        uuid_list = ",".join(sync_uuids)
+        r = client._s.delete(
+            f"{client.url}/rest/v1/{table}",
+            params={"sync_uuid": f"in.({uuid_list})"},
+            timeout=15,
+        )
+        if r.status_code not in (200, 204):
+            log.warning("Supabase delete [%s] HTTP %s: %s", table, r.status_code, r.text[:200])
+            return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
+        log.info("Supabase delete [%s] purged %s rows", table, len(sync_uuids))
+        return {"ok": True, "deleted": len(sync_uuids)}
+    except Exception as e:
+        log.warning("Supabase delete [%s]: %s", table, e)
+        return {"ok": False, "error": str(e)[:200]}
+
+
 def start(db_path: str) -> None:
     global _engine_ref
     if _engine_ref and _engine_ref.is_alive():

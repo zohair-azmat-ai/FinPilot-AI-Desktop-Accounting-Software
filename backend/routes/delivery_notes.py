@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone
 from database import get_db
-import models, schemas
+import models, schemas, sync_engine
 from pdf_generator import generate_delivery_note_pdf
 from supabase_pdf import fetch_delivery_note_for_pdf
 
@@ -76,13 +76,32 @@ def create_delivery_note(payload: schemas.DeliveryNoteCreate, db: Session = Depe
 
     if existing_deleted:
         dn = existing_deleted
+        # Collect item sync_uuids via direct SQL (sync_uuid is migration-only, not in ORM model)
+        import sqlalchemy as _sa
+        _uuid_rows = db.execute(
+            _sa.text("SELECT sync_uuid FROM delivery_note_items WHERE dn_id = :dn_id AND sync_uuid IS NOT NULL"),
+            {"dn_id": dn.id}
+        ).fetchall()
+        old_item_uuids = [r[0] for r in _uuid_rows]
         dn.deleted_at = None
+        # Refresh updated_at so the sync orphan guard (parent_ts > item_ts) correctly
+        # blocks Supabase from re-syncing the stale child rows we are about to delete.
+        db.execute(
+            _sa.text("UPDATE delivery_notes SET updated_at = :ts WHERE id = :id"),
+            {"ts": datetime.utcnow().isoformat(), "id": dn.id}
+        )
         dn.customer_id = payload.customer_id
         dn.date = payload.date or datetime.utcnow()
         dn.remarks = payload.remarks or ""
         dn.letterhead = payload.letterhead if payload.letterhead is not None else True
         dn.status = "draft"
-        db.query(models.DeliveryNoteItem).filter(models.DeliveryNoteItem.dn_id == dn.id).delete()
+        db.query(models.DeliveryNoteItem).filter(models.DeliveryNoteItem.dn_id == dn.id).delete(synchronize_session=False)
+        # Purge from Supabase so sync never resurrects them
+        if old_item_uuids:
+            try:
+                sync_engine.delete_rows_from_supabase("delivery_note_items", old_item_uuids)
+            except Exception:
+                pass
     else:
         dn = models.DeliveryNote(
             dn_number=dn_number,
@@ -148,8 +167,31 @@ def delete_delivery_note(dn_id: int, db: Session = Depends(get_db)):
     dn = db.query(models.DeliveryNote).filter(models.DeliveryNote.id == dn_id, _active()).first()
     if not dn:
         raise HTTPException(status_code=404, detail="Delivery note not found")
+
+    # Collect item sync_uuids via direct SQL (sync_uuid is migration-only, not in ORM model)
+    import sqlalchemy as _sa
+    _uuid_rows = db.execute(
+        _sa.text("SELECT sync_uuid FROM delivery_note_items WHERE dn_id = :dn_id AND sync_uuid IS NOT NULL"),
+        {"dn_id": dn_id}
+    ).fetchall()
+    item_uuids = [r[0] for r in _uuid_rows]
+
+    # Hard-delete child items so they can never be re-synced from Supabase
+    db.query(models.DeliveryNoteItem).filter(
+        models.DeliveryNoteItem.dn_id == dn_id
+    ).delete(synchronize_session=False)
+
+    # Soft-delete the parent DN
     dn.deleted_at = datetime.now(timezone.utc).isoformat()
     db.commit()
+
+    # Purge items from Supabase (fire-and-forget; non-blocking errors ignored)
+    if item_uuids:
+        try:
+            sync_engine.delete_rows_from_supabase("delivery_note_items", item_uuids)
+        except Exception:
+            pass
+
     return {"ok": True}
 
 
