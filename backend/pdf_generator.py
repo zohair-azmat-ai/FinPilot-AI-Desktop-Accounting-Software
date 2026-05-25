@@ -1735,7 +1735,8 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     filename = f"DeliveryNote_{dn_data['dn_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath = os.path.join(EXPORT_DIR, filename)
 
-    use_lh    = dn_data.get("letterhead", True) and os.path.exists(LETTERHEAD_PATH)
+    use_lh     = dn_data.get("letterhead", True) and os.path.exists(LETTERHEAD_PATH)
+    show_stamp = bool(dn_data.get("show_stamp", False))
     page_w, page_h = A4
 
     LH_MAX_H  = 70 * mm
@@ -1744,65 +1745,19 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     lh_draw_h = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
     top_margin = (lh_draw_h + 2 * mm) if lh_draw_h else 63 * mm
 
-    # Bottom reserve: footer(11mm) + HR gap(4mm) + sig box(32mm) + gap(3mm) = 50mm
-    _BOT = 50 * mm
+    # Signature box is now in the story (not fixed on canvas) — only need footer space.
+    _BOT = 15 * mm
 
     def _draw_dn_page(canv, _doc):
         canv.saveState()
-
-        # Letterhead
         if lh_draw_h:
             canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
                            width=page_w, height=lh_draw_h,
                            preserveAspectRatio=False, mask='auto')
-
-        # Footer text
-        footer_y = 11 * mm
         canv.setFont("Helvetica", 7)
         canv.setFillColor(MED_GRAY)
-        canv.drawCentredString(page_w / 2, footer_y,
+        canv.drawCentredString(page_w / 2, 8 * mm,
                                "This is a computer generated delivery note.")
-
-        # HR above footer
-        hr_y = footer_y + 4 * mm
-        canv.setStrokeColor(colors.HexColor("#CBD5E1"))
-        canv.setLineWidth(0.5)
-        canv.line(15 * mm, hr_y, page_w - 15 * mm, hr_y)
-
-        # Signature box — full content width, split left (Receiver) / right (Authorized)
-        sig_h   = 32 * mm
-        sig_y   = hr_y + 3 * mm   # moved up slightly
-        sig_x   = 15 * mm
-        sig_w   = page_w - 30 * mm
-        mid_x   = sig_x + sig_w / 2
-
-        canv.setStrokeColor(colors.HexColor("#94A3B8"))
-        canv.setLineWidth(0.6)
-        canv.rect(sig_x, sig_y, sig_w, sig_h)
-        canv.line(mid_x, sig_y, mid_x, sig_y + sig_h)
-
-        # Signature line 12mm from bottom of box
-        line_y    = sig_y + 12 * mm
-        half_line = 28 * mm
-
-        # LEFT — Receiver's Signature
-        left_cx = sig_x + sig_w / 4
-        canv.setStrokeColor(PRIMARY)
-        canv.setLineWidth(1.5)
-        canv.line(left_cx - half_line, line_y, left_cx + half_line, line_y)
-        canv.setFont("Helvetica-Bold", 8)
-        canv.setFillColor(DARK)
-        canv.drawCentredString(left_cx, line_y - 4.5 * mm, "Receiver's Signature")
-
-        # RIGHT — Authorized Signature (no stamp on DN)
-        right_cx = sig_x + 3 * sig_w / 4
-        canv.setStrokeColor(PRIMARY)
-        canv.setLineWidth(1.5)
-        canv.line(right_cx - half_line, line_y, right_cx + half_line, line_y)
-        canv.setFont("Helvetica-Bold", 8)
-        canv.setFillColor(DARK)
-        canv.drawCentredString(right_cx, line_y - 4.5 * mm, "Authorized Signature")
-
         canv.restoreState()
 
     doc = SimpleDocTemplate(
@@ -1824,6 +1779,10 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     row_c   = ParagraphStyle("dn_rc",    fontName="Helvetica",      fontSize=8,
                               textColor=DARK, alignment=TA_CENTER)
     row_l   = ParagraphStyle("dn_rl",    fontName="Helvetica",      fontSize=8, textColor=DARK)
+    sig_lbl = ParagraphStyle("dn_sl",    fontName="Helvetica-Bold", fontSize=8, textColor=DARK,
+                              alignment=TA_CENTER)
+    sig_ln  = ParagraphStyle("dn_sln",   fontName="Helvetica",      fontSize=10, textColor=PRIMARY,
+                              alignment=TA_CENTER)
 
     story = []
 
@@ -1884,26 +1843,22 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         ("RIGHTPADDING",  (1, 0), (1,  0),  8),
     ]))
     story.append(info_t)
-    story.append(Spacer(1, 12 * mm))
+    story.append(Spacer(1, 6 * mm))
 
-    # ── Items table: measured overhead → guaranteed single page ──────────────
+    # ── Items table ───────────────────────────────────────────────────────────
     items_data = dn_data.get("items", [])
     _actual_n  = len(items_data)
     _HDR_H     = 8 * mm
     _ROW_H     = 9 * mm
-    _RENDER_SAFE = 6 * mm   # buffer for ReportLab frame/padding variance
 
-    # Measure the story built so far (title + spacers + info_t + spacer)
-    _content_w = page_w - 30 * mm          # left(15) + right(15) margins
-    _pre_h = sum(el.wrap(_content_w, 9999 * mm)[1] for el in story)
-    _available = (page_h - top_margin - _BOT) - _pre_h - _RENDER_SAFE
-
-    # Rows that safely fit (hard ceiling, never negative)
-    _max_rows = max(_actual_n, int((_available - _HDR_H) / _ROW_H))
-
-    # Add at most 2 compact blank rows — enough for manual writing, never overflows
-    _filler_n = min(2, max(0, _max_rows - _actual_n))
-    MIN_ROWS  = _actual_n + _filler_n
+    # Filler rows: compact — give room to write but no huge blank waste
+    if _actual_n <= 3:
+        _filler_n = 2
+    elif _actual_n <= 6:
+        _filler_n = 1
+    else:
+        _filler_n = 0
+    MIN_ROWS = _actual_n + _filler_n
 
     dn_col_w   = [14 * mm, 90 * mm, 20 * mm, 56 * mm]
     table_data = [[
@@ -1947,6 +1902,58 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         ("LEFTPADDING",    (3, 1), (3, -1),  6),
     ]))
     story.append(dn_table)
+    story.append(Spacer(1, 4 * mm))
+
+    # ── Signature block (in story — follows table, no fixed canvas position) ──
+    sig_content_w = page_w - 30 * mm   # matches doc left+right margins
+    half_w        = sig_content_w / 2
+
+    # Resolve stamp path for DN
+    stamp_path_dn = _get_stamp_path() if show_stamp else ""
+
+    # LEFT cell — Receiver's Signature
+    left_sig = [
+        Spacer(1, 8 * mm),
+        Paragraph("________________________", sig_ln),
+        Spacer(1, 2 * mm),
+        Paragraph("Receiver's Signature", sig_lbl),
+    ]
+
+    # RIGHT cell — Authorized Signature (+ stamp image when enabled)
+    right_sig = []
+    if show_stamp and stamp_path_dn:
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(stamp_path_dn) as _img:
+                _sw, _sh = _img.size
+            STAMP_W = 38 * mm
+            STAMP_H = min(STAMP_W * _sh / _sw, 16 * mm)
+            right_sig.append(Image(stamp_path_dn, width=STAMP_W, height=STAMP_H))
+            right_sig.append(Spacer(1, 1 * mm))
+        except Exception as _se:
+            _dbg(f"[DN] stamp render error: {_se}")
+            right_sig.append(Spacer(1, 8 * mm))
+    else:
+        right_sig.append(Spacer(1, 8 * mm))
+
+    right_sig += [
+        Paragraph("________________________", sig_ln),
+        Spacer(1, 2 * mm),
+        Paragraph("Authorized Signature", sig_lbl),
+    ]
+
+    sig_table = Table([[left_sig, right_sig]], colWidths=[half_w, half_w])
+    sig_table.setStyle(TableStyle([
+        ("BOX",           (0, 0), (-1, -1), 0.6, colors.HexColor("#94A3B8")),
+        ("LINEBEFORE",    (1, 0), (1,  0),  0.6, colors.HexColor("#94A3B8")),
+        ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
+        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+    ]))
+    story.append(sig_table)
 
     doc.build(story, onFirstPage=_draw_dn_page, onLaterPages=lambda c, d: None)
     return filepath
