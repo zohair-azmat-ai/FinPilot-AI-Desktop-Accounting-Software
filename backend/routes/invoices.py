@@ -64,6 +64,16 @@ def _calculate_items(items_data, vat_rate=5.0):
 
 
 def _update_ledger(db: Session, invoice: models.Invoice):
+    import sqlalchemy as _sa
+    # Collect sync_uuids of existing entries before deleting so we can purge
+    # them from Supabase — prevents stale cloud rows from being re-inserted on
+    # the next sync pull cycle and creating duplicates.
+    _uuid_rows = db.execute(
+        _sa.text("SELECT sync_uuid FROM ledger_entries WHERE invoice_id = :inv_id AND sync_uuid IS NOT NULL"),
+        {"inv_id": invoice.id}
+    ).fetchall()
+    old_uuids = [r[0] for r in _uuid_rows]
+
     db.query(models.LedgerEntry).filter(models.LedgerEntry.invoice_id == invoice.id).delete()
 
     prev_balance = 0.0
@@ -100,6 +110,14 @@ def _update_ledger(db: Session, invoice: models.Invoice):
     for e in later_entries:
         running = round(running + e.debit - e.credit, 2)
         e.balance = running
+
+    # Purge old Supabase rows so sync never resurrects them as duplicates
+    if old_uuids:
+        try:
+            import sync_engine as _se
+            _se.delete_rows_from_supabase("ledger_entries", old_uuids)
+        except Exception:
+            pass
 
 
 _active = lambda: models.Invoice.deleted_at.is_(None)

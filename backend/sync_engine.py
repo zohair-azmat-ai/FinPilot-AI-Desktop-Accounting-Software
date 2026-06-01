@@ -445,6 +445,21 @@ class SyncEngine(threading.Thread):
                                 except Exception:
                                     pass
 
+                        # For ledger_entries: skip if a local entry already exists for this
+                        # invoice_id — prevents stale Supabase rows from being re-inserted as
+                        # duplicates when _update_ledger has already re-created the entry.
+                        if table == "ledger_entries" and filtered.get("invoice_id") is not None:
+                            _existing_le = con.execute(
+                                "SELECT id FROM ledger_entries WHERE invoice_id=? LIMIT 1",
+                                [filtered["invoice_id"]],
+                            ).fetchone()
+                            if _existing_le:
+                                log.warning(
+                                    "Pull [ledger_entries] SKIP dup: invoice_id=%s already has local entry id=%s",
+                                    filtered["invoice_id"], _existing_le[0],
+                                )
+                                continue
+
                         # New row from cloud — strip 'id' to avoid PK conflicts;
                         # SQLite auto-assigns a safe local id via rowid.
                         # Also coerce None to column defaults for non-nullable columns so

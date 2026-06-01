@@ -145,10 +145,26 @@ def update_delivery_note(dn_id: int, payload: schemas.DeliveryNoteUpdate, db: Se
         dn.status = payload.status
 
     if payload.items is not None:
+        # Collect sync_uuids via direct SQL before hard-deleting (sync_uuid is migration-only)
+        import sqlalchemy as _sa
+        _uuid_rows = db.execute(
+            _sa.text("SELECT sync_uuid FROM delivery_note_items WHERE dn_id = :dn_id AND sync_uuid IS NOT NULL"),
+            {"dn_id": dn_id}
+        ).fetchall()
+        old_item_uuids = [r[0] for r in _uuid_rows]
+
         _del_c = db.query(models.DeliveryNoteItem).filter(
             models.DeliveryNoteItem.dn_id == dn_id,
         ).delete(synchronize_session=False)
-        print(f"[dn update] dn_id={dn_id} received={len(payload.items)} deleted={_del_c} old items")
+
+        # Refresh DN updated_at so orphan guard (parent_ts > item_ts) blocks sync resurrection
+        db.execute(
+            _sa.text("UPDATE delivery_notes SET updated_at = :ts WHERE id = :id"),
+            {"ts": datetime.utcnow().isoformat(), "id": dn_id}
+        )
+
+        print(f"[dn update] dn_id={dn_id} received={len(payload.items)} deleted={_del_c} old items purging={len(old_item_uuids)}")
+
         for item in payload.items:
             db.add(models.DeliveryNoteItem(
                 dn_id=dn.id,
@@ -156,6 +172,13 @@ def update_delivery_note(dn_id: int, payload: schemas.DeliveryNoteUpdate, db: Se
                 quantity=item.quantity,
                 remarks=item.remarks or "",
             ))
+
+        # Purge old items from Supabase so sync never resurrects them
+        if old_item_uuids:
+            try:
+                sync_engine.delete_rows_from_supabase("delivery_note_items", old_item_uuids)
+            except Exception:
+                pass
 
     db.commit()
     db.refresh(dn)
