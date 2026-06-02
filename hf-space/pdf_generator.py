@@ -27,7 +27,7 @@ def _dbg(msg: str) -> None:
         pass
     log.info(msg)
 
-_BUILD = "FP_NAVY_V24"
+_BUILD = "FP_NAVY_V25"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -72,10 +72,16 @@ os.makedirs(EXPORT_DIR, exist_ok=True)
 # Resolve assets/ relative to this file (works both from source and PyInstaller bundle)
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
-# Letterhead: user-writable location first, fallback to bundle assets
-_USER_LH    = os.path.join(os.path.expanduser("~"), "FinPilot", "assets", "letterhead.jpg")
-_BUNDLE_LH  = os.path.join(_HERE, "assets", "letterhead.jpg")
-LETTERHEAD_PATH = _USER_LH if (os.path.exists(_USER_LH) and os.path.getsize(_USER_LH) > 0) else _BUNDLE_LH
+# Letterhead resolution: /tmp/assets (push-assets / restored from /data/assets/) → user dir → bundle
+_TMP_LH    = "/tmp/assets/letterhead.jpg"
+_USER_LH   = os.path.join(os.path.expanduser("~"), "FinPilot", "assets", "letterhead.jpg")
+_BUNDLE_LH = os.path.join(_HERE, "assets", "letterhead.jpg")
+def _resolve_lh() -> str:
+    for p in (_TMP_LH, _USER_LH, _BUNDLE_LH):
+        if os.path.exists(p) and os.path.getsize(p) > 0:
+            return p
+    return _BUNDLE_LH
+LETTERHEAD_PATH = _resolve_lh()
 _dbg(f"letterhead resolved: {LETTERHEAD_PATH} exists={os.path.exists(LETTERHEAD_PATH)}")
 
 # Stamp: user-writable location first, fallback to bundle assets

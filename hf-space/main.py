@@ -23,9 +23,31 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 DEFAULT_WS   = os.environ.get("DEFAULT_WORKSPACE_ID", "")
 
-# ── PDF export temp dir ────────────────────────────────────────────────────────
-os.makedirs("/tmp/exports", exist_ok=True)
-os.makedirs("/tmp/assets", exist_ok=True)
+# ── Asset directories ─────────────────────────────────────────────────────────
+# /data/assets  → HF persistent volume (survives restarts)
+# /tmp/assets   → runtime location that pdf_generator reads from
+PERSIST_ASSET_DIR = "/data/assets"
+_TMP_ASSET_DIR    = "/tmp/assets"
+
+for _d in (PERSIST_ASSET_DIR, _TMP_ASSET_DIR, "/tmp/exports"):
+    try:
+        os.makedirs(_d, exist_ok=True)
+    except OSError:
+        pass  # /data/ may not exist outside HF — silent fallback
+
+# On startup: restore user-pushed assets from persistent storage so
+# pdf_generator resolves /tmp/assets/letterhead.jpg before being imported.
+import shutil as _shutil
+for _fname in ("letterhead.jpg", "stamp.png"):
+    _persist = os.path.join(PERSIST_ASSET_DIR, _fname)
+    _tmp     = os.path.join(_TMP_ASSET_DIR, _fname)
+    if os.path.exists(_persist) and os.path.getsize(_persist) > 0:
+        if not (os.path.exists(_tmp) and os.path.getsize(_tmp) > 0):
+            try:
+                _shutil.copy2(_persist, _tmp)
+                log.info("[assets] Restored %s from /data/assets → /tmp/assets", _fname)
+            except Exception as _e:
+                log.warning("[assets] Restore %s failed: %s", _fname, _e)
 
 # ── Supabase REST helpers ──────────────────────────────────────────────────────
 def _sb_headers() -> dict:
@@ -230,7 +252,13 @@ def invoice_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "include_stamp": inv.get("include_stamp") is not False,
         "require_customer_signature": bool(inv.get("require_customer_signature", False)),
     }
-    path = generate_invoice_pdf(data, comp)
+    try:
+        path = generate_invoice_pdf(data, comp)
+    except Exception as _exc:
+        import traceback
+        log.error("[invoice pdf] generation failed: %s", _exc, exc_info=True)
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": False, "error": str(_exc), "traceback": traceback.format_exc()}, status_code=500)
     return _pdf_response(path, f"Invoice_{data['invoice_number']}.pdf")
 
 
@@ -276,7 +304,13 @@ def quotation_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "include_stamp": q.get("include_stamp") is not False,
         "letterhead": q.get("letterhead", 1),
     }
-    path = generate_quotation_pdf(data, comp)
+    try:
+        path = generate_quotation_pdf(data, comp)
+    except Exception as _exc:
+        import traceback
+        log.error("[quotation pdf] generation failed: %s", _exc, exc_info=True)
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": False, "error": str(_exc), "traceback": traceback.format_exc()}, status_code=500)
     return _pdf_response(path, f"Quotation_{data['quotation_number']}.pdf")
 
 
@@ -325,7 +359,13 @@ def dn_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "show_stamp": show_stamp,
         "items": items,
     }
-    path = generate_delivery_note_pdf(data, comp)
+    try:
+        path = generate_delivery_note_pdf(data, comp)
+    except Exception as _exc:
+        import traceback
+        log.error("[dn pdf] generation failed: %s", _exc, exc_info=True)
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": False, "error": str(_exc), "traceback": traceback.format_exc()}, status_code=500)
     return _pdf_response(path, f"DeliveryNote_{data['dn_number']}.pdf")
 
 
@@ -368,7 +408,13 @@ def po_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "letterhead": po.get("letterhead", 1),
         "supplier": sup, "items": items,
     }
-    path = generate_po_pdf(data, comp)
+    try:
+        path = generate_po_pdf(data, comp)
+    except Exception as _exc:
+        import traceback
+        log.error("[po pdf] generation failed: %s", _exc, exc_info=True)
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": False, "error": str(_exc), "traceback": traceback.format_exc()}, status_code=500)
     return _pdf_response(path, f"PO_{data['po_number']}.pdf")
 
 
@@ -452,28 +498,60 @@ async def upload_asset(
     asset_type: str = Form(...),
     file: UploadFile = File(...),
 ):
-    """Upload letterhead or stamp asset to /tmp/assets/ for use in PDF generation.
-
-    asset_type: 'letterhead' → saves as /tmp/assets/letterhead.jpg
-                'stamp'      → saves as /tmp/assets/stamp.png
+    """Upload letterhead or stamp.
+    Saves to /tmp/assets/ (runtime) AND /data/assets/ (persistent across restarts).
     """
     if asset_type not in ("letterhead", "stamp"):
         raise HTTPException(400, "asset_type must be 'letterhead' or 'stamp'")
 
-    ext = "jpg" if asset_type == "letterhead" else "png"
-    dest = f"/tmp/assets/{asset_type}.{ext}"
-    os.makedirs("/tmp/assets", exist_ok=True)
-
+    ext     = "jpg" if asset_type == "letterhead" else "png"
     content = await file.read()
     if not content:
         raise HTTPException(400, "Uploaded file is empty")
 
-    with open(dest, "wb") as f:
-        f.write(content)
+    saved = []
+    for dest_dir in (_TMP_ASSET_DIR, PERSIST_ASSET_DIR):
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+            dest = os.path.join(dest_dir, f"{asset_type}.{ext}")
+            with open(dest, "wb") as fh:
+                fh.write(content)
+            saved.append(dest)
+        except OSError as _e:
+            log.warning("[upload_asset] could not write to %s: %s", dest_dir, _e)
 
+    log.info("[upload_asset] %s saved to: %s", asset_type, saved)
     return {
         "ok": True,
         "asset_type": asset_type,
-        "saved_to": dest,
+        "saved_to": saved,
         "size_bytes": len(content),
+    }
+
+
+@app.get("/api/assets/status")
+def assets_status():
+    """Return which assets are available and from which source."""
+    def _info(name: str, ext: str) -> dict:
+        tmp     = os.path.join(_TMP_ASSET_DIR, f"{name}.{ext}")
+        persist = os.path.join(PERSIST_ASSET_DIR, f"{name}.{ext}")
+        bundle  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", f"{name}.{ext}")
+        if os.path.exists(persist) and os.path.getsize(persist) > 0:
+            return {"present": True, "source": "persistent", "path": persist, "size": os.path.getsize(persist)}
+        if os.path.exists(tmp) and os.path.getsize(tmp) > 0:
+            return {"present": True, "source": "runtime",    "path": tmp,     "size": os.path.getsize(tmp)}
+        if os.path.exists(bundle) and os.path.getsize(bundle) > 0:
+            return {"present": True, "source": "bundle",     "path": bundle,  "size": os.path.getsize(bundle)}
+        return {"present": False, "source": None}
+
+    lh  = _info("letterhead", "jpg")
+    stm = _info("stamp", "png")
+    return {
+        "letterhead": lh,
+        "stamp": stm,
+        "all_present": lh["present"] and stm["present"],
+        "requires_push": not (
+            os.path.exists(os.path.join(PERSIST_ASSET_DIR, "letterhead.jpg")) and
+            os.path.exists(os.path.join(PERSIST_ASSET_DIR, "stamp.png"))
+        ),
     }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
-import { getQuotations, getQuotation, getCustomers, getItems, createQuotation, updateQuotation, deleteQuotation, convertQuotation, downloadQuotationPDF, apiErr } from "@/lib/api";
+import { getQuotations, getQuotation, getCustomers, getItems, createQuotation, updateQuotation, deleteQuotation, convertQuotation, downloadQuotationPDF, openPdfSafe, API_URL, apiErr } from "@/lib/api";
 import toast from "react-hot-toast";
 import { Plus, FileText, Trash2, FileDown, ArrowRight, X, MessageCircle, Edit2 } from "lucide-react";
 
@@ -195,7 +195,7 @@ export default function QuotationsPage() {
                     <td className="font-medium">AED {q.total.toFixed(2)}</td>
                     <td><span className={`status-badge border ${sc}`}>{q.status}</span></td>
                     <td><div className="flex gap-2">
-                      <button onClick={() => window.open(downloadQuotationPDF(q.id, q.quotation_number), "_blank")} className="text-text-muted hover:text-brand-indigo" title="Download PDF"><FileDown size={14} /></button>
+                      <button onClick={() => openPdfSafe(downloadQuotationPDF(q.id, q.quotation_number), `${API_URL}/api/quotations/${q.id}/pdf`)} className="text-text-muted hover:text-brand-indigo" title="Download PDF"><FileDown size={14} /></button>
                       {!q.converted_to_invoice && (
                         <>
                           <button onClick={() => openEdit(q.id)} className="text-text-muted hover:text-brand-indigo" title="Edit"><Edit2 size={14} /></button>

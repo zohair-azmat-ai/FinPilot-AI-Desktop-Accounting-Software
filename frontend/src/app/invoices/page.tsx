@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
-import { getInvoices, deleteInvoice, downloadInvoicePDF, getCustomers, quickPayInvoice } from "@/lib/api";
+import { getInvoices, deleteInvoice, downloadInvoicePDF, getCustomers, quickPayInvoice, openPdfSafe, API_URL } from "@/lib/api";
 import toast from "react-hot-toast";
 import { Plus, Receipt, Edit2, Trash2, FileDown, Search, DollarSign, MessageCircle, CheckCircle } from "lucide-react";
 
@@ -147,7 +147,7 @@ function InvoicesContent() {
                     <td>
                       <div className="flex gap-2 items-center">
                         <button
-                          onClick={() => window.open(downloadInvoicePDF(inv.id, inv.invoice_number), "_blank")}
+                          onClick={() => openPdfSafe(downloadInvoicePDF(inv.id, inv.invoice_number), `${API_URL}/api/invoices/${inv.id}/pdf`)}
                           className="text-text-muted hover:text-brand-indigo transition-colors"
                           title="Download PDF"
                         >

@@ -1,6 +1,41 @@
 import axios from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+
+/**
+ * Open a PDF with automatic retry + local fallback.
+ * - Tries the primary URL once (20s timeout).
+ * - On failure, waits 2s then retries once.
+ * - If second attempt fails, falls back to fallbackUrl (local backend).
+ * Works for both cloud (HF Space) and local URLs.
+ */
+export async function openPdfSafe(primaryUrl: string, fallbackUrl?: string): Promise<void> {
+  const isCloud = /^https?:\/\/(?!127\.|localhost)/.test(primaryUrl);
+  if (!isCloud) { window.open(primaryUrl, "_blank"); return; }
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20_000);
+      const resp  = await fetch(primaryUrl, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (resp.ok) {
+        const ct = resp.headers.get("content-type") ?? "";
+        if (ct.includes("pdf") || ct.includes("octet-stream")) {
+          const blob   = await resp.blob();
+          const objUrl = URL.createObjectURL(blob);
+          window.open(objUrl, "_blank");
+          return;
+        }
+      }
+    } catch {
+      // network error or timeout
+    }
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 2_000));
+  }
+  // Both attempts failed — use local backend
+  if (fallbackUrl) window.open(fallbackUrl, "_blank");
+}
 
 export function getCloudPdfUrl(): string | null {
   if (typeof window === "undefined") return null;

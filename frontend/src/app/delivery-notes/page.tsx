@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import {
   getCustomers, getDeliveryNotes, createDeliveryNote,
   updateDeliveryNote, deleteDeliveryNote, downloadDeliveryNotePDF,
+  openPdfSafe, API_URL,
 } from "@/lib/api";
 import { Plus, Trash2, FileDown, Edit2, ClipboardList, CheckCircle, Clock, MessageCircle } from "lucide-react";
 
@@ -204,9 +205,8 @@ function DeliveryNotesContent() {
                         {dn.status === "delivered" ? <Clock size={14} /> : <CheckCircle size={14} />}
                       </button>
                       <a
-                        href={downloadDeliveryNotePDF(dn.id, dn.dn_number)}
-                        target="_blank"
-                        rel="noreferrer"
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); openPdfSafe(downloadDeliveryNotePDF(dn.id, dn.dn_number), `${API_URL}/api/delivery-notes/${dn.id}/pdf`); }}
                         className="p-1.5 rounded hover:bg-bg-primary text-text-muted hover:text-brand-indigo transition-colors"
                         title="Download PDF"
                       >
