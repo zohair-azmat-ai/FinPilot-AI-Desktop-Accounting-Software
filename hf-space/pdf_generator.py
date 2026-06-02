@@ -27,7 +27,7 @@ def _dbg(msg: str) -> None:
         pass
     log.info(msg)
 
-_BUILD = "FP_NAVY_V19"
+_BUILD = "FP_NAVY_V20"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -386,10 +386,10 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     _sval  = ParagraphStyle("_sval", fontName="Helvetica-Bold", fontSize=8,   textColor=DARK)
     _bh    = ParagraphStyle("_bh",   fontName="Helvetica-Bold", fontSize=8,   textColor=WHITE,  alignment=TA_CENTER)
 
-    # ── 1. TAX INVOICE title — compact spacer for 3+ items
+    # ── 1. TAX INVOICE title — spacer decided after height measurement ────────
     _many_items = len(actual_items) >= 3
-    story.append(Paragraph("TAX INVOICE", _ti))
-    story.append(Spacer(1, 3 * mm if _many_items else (5 * mm if _compact else 12 * mm)))
+    _title_para = Paragraph("TAX INVOICE", _ti)
+    # story.append deferred — adaptive spacer chosen in layout block below
 
     # ── 2. Bill To (left box) | Invoice Details (right box) ──────────────────
     _cn  = ParagraphStyle("_cn",  fontName="Helvetica-Bold", fontSize=10, textColor=INK)
@@ -416,7 +416,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     if not cust_rows_inner:
         cust_rows_inner = [[Paragraph("—", _sub2)]]
 
-    _cp = 1 if _compact else 2   # inner cell vert padding (points)
+    _cp = 1 if (_compact or _many_items) else 2   # inner cell vert padding (points)
     cust_inner_t = Table(cust_rows_inner, colWidths=[96 * mm])
     cust_inner_t.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
@@ -426,7 +426,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
     ]))
 
-    _bp = 3 if _compact else 5   # outer box vert padding (points)
+    _bp = 3 if (_compact or _many_items) else 5   # outer box vert padding (points)
     bill_to_box = Table([[Paragraph("BILL TO", _bh)], [cust_inner_t]], colWidths=[110 * mm])
     bill_to_box.setStyle(TableStyle([
         ("BOX",           (0, 0), (-1, -1), 0.8, ACCENT),
@@ -489,10 +489,8 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         ("TOPPADDING",    (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
-    story.append(info_wrap)
-    story.append(Spacer(1, 1 * mm if (_many_items or _compact) else 3 * mm))
-
-    # ── 4. Items table ────────────────────────────────────────────────────────
+    # story.append(info_wrap) deferred — adaptive spacer chosen in layout block
+    # ── 4. Items table ───────────────────────────────────────────────────────
     stamp_path_check = _get_stamp_path(_comp_stamp) if include_stamp else ""
     _dbg(f"resolved_stamp_path={stamp_path_check or 'none'}")
     _dbg(f"stamp_exists={bool(stamp_path_check)}")
@@ -693,62 +691,85 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         Paragraph("This is a computer generated TAX INVOICE. Thank you for your business.", ft_s),
     ]
 
-    # ── V19: tight padding for 3+ items, RENDER_SAFE=15mm, KeepTogether(footer) only ─
+    # ── V20: measure everything, then choose spacers adaptively ─────────────
     _footer_h_actual = sum(f.wrap(_CW, 9999 * mm)[1] for f in footer_block)
-    _title_h_inv     = Paragraph("TAX INVOICE", _ti).wrap(_CW, 9999 * mm)[1]
+    _title_h_inv     = _title_para.wrap(_CW, 9999 * mm)[1]
     _info_wrap_h     = info_wrap.wrap(_CW, 9999 * mm)[1]
-    _sp_title        = (3 if _many_items else (5 if _compact else 12)) * mm
-    _sp_info         = (1 if (_many_items or _compact) else 3) * mm
-    _pre_items_h     = _title_h_inv + _sp_title + _info_wrap_h + _sp_info
     _usable_h        = A4[1] - top_margin - 4 * mm
-    _RENDER_SAFE     = 15 * mm
+    _OVERHEAD        = 15 * mm   # conservative rendering overhead for pre_items section
+    _RENDER_SAFE     = 14 * mm   # budget guard
 
     _blank = [Paragraph("", _icc), Paragraph("", _ir),  Paragraph("", _icc),
               Paragraph("", _irc), Paragraph("", _irc), Paragraph("", _irc),
               Paragraph("", _icc), Paragraph("", _irc), Paragraph("", _irc)]
 
-    # Tighter base padding for 3+ items
     _init_pt, _init_pb = (4, 3) if _many_items else (8, 8)
     items_tbl = _make_items_tbl(base_rows, _init_pt, _init_pb)
     items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
 
-    # Filler: 1 row for ≤2 items only; 0 for 3+ items
-    _filler_n = 0
-    if not _many_items:
-        _candidate = _make_items_tbl(base_rows + [_blank], _init_pt, _init_pb, n_filler=1, filler_pad=6)
-        _cand_h    = _candidate.wrap(_CW, 9999 * mm)[1]
-        if _pre_items_h + _cand_h + _footer_h_actual <= _usable_h - _RENDER_SAFE:
-            items_tbl, items_h, _filler_n = _candidate, _cand_h, 1
+    # Adaptive spacers: comfortable where budget allows, tight when needed
+    _sp_max    = _usable_h - items_h - _footer_h_actual - _OVERHEAD - _title_h_inv - _info_wrap_h
+    _sp_prefer = (7 if _many_items else (7 if _compact else 14)) * mm
+    _sp_total  = min(_sp_prefer, max(2 * mm, _sp_max))
+    _sp_title  = max(2 * mm, min(_sp_total * 0.65, (5 if _many_items else (5 if _compact else 12)) * mm))
+    _sp_info   = max(1 * mm, _sp_total - _sp_title)
+    _pre_items_h = _title_h_inv + _sp_title + _info_wrap_h + _sp_info
 
-    # Budget check: items must leave room for footer after rendering overhead
+    # Graduated filler for short invoices
+    _n_actual = len(actual_items)
+    _max_fill = 3 if _n_actual <= 1 else (2 if _n_actual <= 2 else (1 if _n_actual <= 3 else 0))
+    _filler_n = 0
+    for _fn in range(1, _max_fill + 1):
+        _cand   = _make_items_tbl(base_rows + [_blank] * _fn, _init_pt, _init_pb,
+                                  n_filler=_fn, filler_pad=6)
+        _cand_h = _cand.wrap(_CW, 9999 * mm)[1]
+        if _pre_items_h + _cand_h + _footer_h_actual <= _usable_h - _RENDER_SAFE:
+            items_tbl, items_h, _filler_n = _cand, _cand_h, _fn
+        else:
+            break
+
+    # Safety compression with fresh rows to avoid Paragraph cache
+    def _fresh_rows():
+        fr = [[Paragraph(h, _ih) for h in hdrs]]
+        for _fi, _fit in enumerate(actual_items, 1):
+            fr.append(_item_row(_fi, _fit))
+        return fr
+
     _budget = _usable_h - _pre_items_h - _footer_h_actual - _RENDER_SAFE
     if items_h > _budget:
-        for _cpt, _cpb in [(3, 2), (2, 2)]:
-            _t = _make_items_tbl(base_rows, _cpt, _cpb)
+        for _cpt, _cpb in [(3, 2), (2, 2), (1, 1)]:
+            _t = _make_items_tbl(_fresh_rows(), _cpt, _cpb)
             _h = _t.wrap(_CW, 9999 * mm)[1]
+            _dbg(f"compress ({_cpt},{_cpb}): {_h/mm:.1f}mm vs budget {_budget/mm:.1f}mm")
             if _h <= _budget:
-                items_tbl, items_h = _t, _h
+                items_tbl, items_h, _filler_n = _t, _h, 0
                 break
         else:
-            items_tbl = _make_items_tbl(base_rows, 2, 2)
+            items_tbl = _make_items_tbl(_fresh_rows(), 2, 2)
             items_h   = items_tbl.wrap(_CW, 9999 * mm)[1]
+            _filler_n = 0
 
     _content_total = _pre_items_h + items_h + _footer_h_actual
-    _dbg(f"invoice V19: pre={_pre_items_h/mm:.1f}mm items={items_h/mm:.1f}mm "
+    _dbg(f"invoice V20: sp={_sp_title/mm:.1f}+{_sp_info/mm:.1f}mm "
+         f"pre={_pre_items_h/mm:.1f}mm items={items_h/mm:.1f}mm "
          f"footer={_footer_h_actual/mm:.1f}mm total={_content_total/mm:.1f}mm "
          f"usable={_usable_h/mm:.1f}mm budget={_budget/mm:.1f}mm filler={_filler_n} "
          f"generator={__file__}")
 
     try:
-        log.info("[invoice_layout V19] invoice_no=%s item_count=%s filler=%s "
-                 "pre=%.1fmm items=%.1fmm footer=%.1fmm total=%.1fmm usable=%.1fmm budget=%.1fmm",
+        log.info("[invoice_layout V20] invoice_no=%s item_count=%s filler=%s "
+                 "sp=%.1f+%.1fmm pre=%.1fmm items=%.1fmm footer=%.1fmm total=%.1fmm",
                  inv_no, len(actual_items), _filler_n,
-                 _pre_items_h / mm, items_h / mm, _footer_h_actual / mm,
-                 _content_total / mm, _usable_h / mm, _budget / mm)
+                 _sp_title / mm, _sp_info / mm,
+                 _pre_items_h / mm, items_h / mm, _footer_h_actual / mm, _content_total / mm)
     except Exception as _le:
-        log.warning("[invoice_layout V19] measure error: %s", _le)
+        log.warning("[invoice_layout V20] measure error: %s", _le)
 
-    # Always separate items from footer — KeepTogether(footer) only, never items+footer
+    # Build story now that all measurements and spacers are decided
+    story.append(_title_para)
+    story.append(Spacer(1, _sp_title))
+    story.append(info_wrap)
+    story.append(Spacer(1, _sp_info))
     story.append(items_tbl)
     story.append(KeepTogether(footer_block))
 
@@ -1082,10 +1103,8 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     sig_sb_s = ParagraphStyle("qss",  fontName="Helvetica",      fontSize=7,   textColor=DARK,      alignment=TA_CENTER)
     ft_s     = ParagraphStyle("qft",  fontName="Helvetica",      fontSize=6.5, textColor=MED_GRAY,  alignment=TA_CENTER)
 
-    # ── 1. Title — 2mm from frame edge, 12mm clear gap below before boxes
-    story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph("QUOTATION", title_s))
-    story.append(Spacer(1, 12 * mm))
+    # ── 1. Title — defer append until adaptive spacers are computed ──────────
+    _title_para_q = Paragraph("QUOTATION", title_s)
 
     # ── 2. Two bordered boxes: Customer (left) | Quotation Info (right) ───────
     cust_rows = [[Paragraph("TO:", lbl_s), Paragraph(_xe(customer.get("name", "")), val_b)]]
@@ -1160,8 +1179,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ("TOPPADDING",    (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
-    story.append(top_t)
-    story.append(Spacer(1, 4 * mm))
+    # story appends deferred — adaptive spacers chosen in V20 layout block below
 
     # ── 3. Items table (5 cols: SR NO | DESCRIPTION | QTY | UNIT PRICE | AMOUNT)
     _actual_n = len(_raw_items_q)
@@ -1306,26 +1324,84 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         Paragraph("This is a computer generated quotation. Thank you for the opportunity to be of service.", ft_s),
     ]
 
-    # Measure actual heights to compute exact filler budget
-    _post_measure   = [Spacer(1, 0.5 * mm), tot_wrap_q, Spacer(1, 1 * mm), _aiw_t] + bottom_block
-    _below_h_actual = sum(f.wrap(_CW, 9999 * mm)[1] for f in _post_measure)
-    _title_h_q      = Paragraph("QUOTATION", title_s).wrap(_CW, 9999 * mm)[1]
-    _top_t_h        = top_t.wrap(_CW, 9999 * mm)[1]
-    _above_h_actual = 2 * mm + _title_h_q + 12 * mm + _top_t_h + 4 * mm
-    _content_h      = page_h - top_margin - 4 * mm
-    _max_items_h    = max(20 * mm, _content_h - _above_h_actual - _below_h_actual - 2 * mm)
-    _filler_n       = max(0, int((_max_items_h - _real_h) / _FILLER_H))
-    _dbg(f"[quotation] items n={_actual_n} real_h={_real_h/mm:.1f}mm above={_above_h_actual/mm:.1f}mm below={_below_h_actual/mm:.1f}mm max={_max_items_h/mm:.1f}mm filler_n={_filler_n}")
+    # ── V20: measure first, then pick spacers + graduated filler adaptively ──
+    _post_measure = [Spacer(1, 0.5 * mm), tot_wrap_q, Spacer(1, 1 * mm), _aiw_t] + bottom_block
+    _footer_h_q   = sum(f.wrap(_CW, 9999 * mm)[1] for f in _post_measure)
+    _title_h_q    = _title_para_q.wrap(_CW, 9999 * mm)[1]
+    _top_t_h      = top_t.wrap(_CW, 9999 * mm)[1]
+    _usable_h     = page_h - top_margin - 4 * mm
+    _OVERHEAD     = 12 * mm
+    _RENDER_SAFE  = 12 * mm
 
+    # Adaptive spacers: prefer 2mm top + 8mm after title + 3mm after boxes; tighten if needed
+    _sp_budget = _usable_h - _real_h - _footer_h_q - _OVERHEAD - _title_h_q - _top_t_h
+    _sp_prefer = (2 + 8 + 3) * mm
+    _sp_total  = min(_sp_prefer, max(4 * mm, _sp_budget))
+    _sp_top    = 2 * mm
+    _sp_title  = max(2 * mm, min(_sp_total - _sp_top - 1 * mm, 8 * mm))
+    _sp_info   = max(1 * mm, _sp_total - _sp_top - _sp_title)
+
+    _pre_h  = _sp_top + _title_h_q + _sp_title + _top_t_h + _sp_info
+    _budget = _usable_h - _pre_h - _footer_h_q - _RENDER_SAFE
+
+    # Graduated filler: cap by item count, only add row if it fits in budget
+    _max_fill   = 3 if _actual_n <= 1 else (2 if _actual_n <= 2 else (1 if _actual_n == 3 else 0))
     empty_row_q = [Paragraph("", ir_s)] * 5
-    for _ in range(_filler_n):
-        q_data.append(empty_row_q)
-    _final_row_heights = _real_row_heights + [_FILLER_H] * _filler_n
-    items_t = Table(q_data, colWidths=q_col_w, rowHeights=_final_row_heights)
-    items_t.setStyle(TableStyle(_style_cmds))
-    story.append(items_t)
+    _filler_n   = 0
+    for _fn in range(1, _max_fill + 1):
+        _cand_heights = _real_row_heights + [_FILLER_H] * _fn
+        _cand_t = Table(q_data + [empty_row_q] * _fn, colWidths=q_col_w, rowHeights=_cand_heights)
+        _cand_t.setStyle(TableStyle(_style_cmds))
+        _cand_h = _cand_t.wrap(_CW, 9999 * mm)[1]
+        if _cand_h <= _budget:
+            _filler_n = _fn
+        else:
+            break
 
-    # ── 4. Totals | Amount in Words | Terms | Signature ───────────────────────
+    _final_row_heights = _real_row_heights + [_FILLER_H] * _filler_n
+    items_t = Table(q_data + [empty_row_q] * _filler_n, colWidths=q_col_w, rowHeights=_final_row_heights)
+    items_t.setStyle(TableStyle(_style_cmds))
+
+    # Safety compression: if real items exceed budget, tighten row padding
+    if _real_h > _budget:
+        def _make_quo_tbl(top_pad, bot_pad):
+            cmds = [c for c in _style_cmds if c[0] not in ("TOPPADDING", "BOTTOMPADDING")]
+            cmds += [("TOPPADDING",    (0, 0), (-1, -1), top_pad),
+                     ("BOTTOMPADDING", (0, 0), (-1, -1), bot_pad)]
+            t = Table(q_data, colWidths=q_col_w)
+            t.setStyle(TableStyle(cmds))
+            return t
+
+        for _cpt, _cpb in [(3, 2), (2, 2), (1, 1)]:
+            _t = _make_quo_tbl(_cpt, _cpb)
+            _h = _t.wrap(_CW, 9999 * mm)[1]
+            _dbg(f"[quotation] compress ({_cpt},{_cpb}): {_h/mm:.1f}mm vs budget {_budget/mm:.1f}mm")
+            if _h <= _budget:
+                items_t, _filler_n = _t, 0
+                break
+        else:
+            items_t = _make_quo_tbl(2, 2)
+            _filler_n = 0
+
+    _dbg(f"[quotation V20] n={_actual_n} sp_title={_sp_title/mm:.1f}mm sp_info={_sp_info/mm:.1f}mm "
+         f"pre={_pre_h/mm:.1f}mm items={_real_h/mm:.1f}mm footer={_footer_h_q/mm:.1f}mm "
+         f"budget={_budget/mm:.1f}mm filler={_filler_n}")
+    try:
+        log.info("[quo_layout V20] quo_no=%s n=%s filler=%s "
+                 "sp_title=%.1fmm sp_info=%.1fmm pre=%.1fmm items=%.1fmm footer=%.1fmm budget=%.1fmm",
+                 quo_no, _actual_n, _filler_n,
+                 _sp_title / mm, _sp_info / mm,
+                 _pre_h / mm, _real_h / mm, _footer_h_q / mm, _budget / mm)
+    except Exception as _le:
+        log.warning("[quo_layout V20] measure error: %s", _le)
+
+    # Build story in order now that all measurements are known
+    story.append(Spacer(1, _sp_top))
+    story.append(_title_para_q)
+    story.append(Spacer(1, _sp_title))
+    story.append(top_t)
+    story.append(Spacer(1, _sp_info))
+    story.append(items_t)
     story.append(Spacer(1, 0.5 * mm))
     story.append(tot_wrap_q)
     story.append(Spacer(1, 1 * mm))
@@ -1333,6 +1409,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     story.append(KeepTogether(bottom_block))
 
     doc.build(story, onFirstPage=_draw_lh_q, onLaterPages=lambda c, d: None)
+    _dbg(f"[quotation V20] PDF built -> {filepath}")
     return filepath
 
 
