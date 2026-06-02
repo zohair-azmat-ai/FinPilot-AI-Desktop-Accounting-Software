@@ -27,7 +27,7 @@ def _dbg(msg: str) -> None:
         pass
     log.info(msg)
 
-_BUILD = "FP_NAVY_V20"
+_BUILD = "FP_NAVY_V21"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -1344,18 +1344,21 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     _pre_h  = _sp_top + _title_h_q + _sp_title + _top_t_h + _sp_info
     _budget = _usable_h - _pre_h - _footer_h_q - _RENDER_SAFE
 
-    # Graduated filler: cap by item count, only add row if it fits in budget
-    _max_fill   = 3 if _actual_n <= 1 else (2 if _actual_n <= 2 else (1 if _actual_n == 3 else 0))
+    # V21 smart filler: start from preferred count, reduce one-by-one until fits in budget
+    _prefer_fill = (5 if _actual_n <= 1 else
+                    4 if _actual_n == 2 else
+                    3 if _actual_n == 3 else
+                    2 if _actual_n == 4 else
+                    1 if _actual_n == 5 else 0)
     empty_row_q = [Paragraph("", ir_s)] * 5
     _filler_n   = 0
-    for _fn in range(1, _max_fill + 1):
+    for _fn in range(_prefer_fill, 0, -1):
         _cand_heights = _real_row_heights + [_FILLER_H] * _fn
         _cand_t = Table(q_data + [empty_row_q] * _fn, colWidths=q_col_w, rowHeights=_cand_heights)
         _cand_t.setStyle(TableStyle(_style_cmds))
         _cand_h = _cand_t.wrap(_CW, 9999 * mm)[1]
         if _cand_h <= _budget:
             _filler_n = _fn
-        else:
             break
 
     _final_row_heights = _real_row_heights + [_FILLER_H] * _filler_n
@@ -1383,17 +1386,17 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
             items_t = _make_quo_tbl(2, 2)
             _filler_n = 0
 
-    _dbg(f"[quotation V20] n={_actual_n} sp_title={_sp_title/mm:.1f}mm sp_info={_sp_info/mm:.1f}mm "
+    _dbg(f"[quotation V21] n={_actual_n} sp_title={_sp_title/mm:.1f}mm sp_info={_sp_info/mm:.1f}mm "
          f"pre={_pre_h/mm:.1f}mm items={_real_h/mm:.1f}mm footer={_footer_h_q/mm:.1f}mm "
          f"budget={_budget/mm:.1f}mm filler={_filler_n}")
     try:
-        log.info("[quo_layout V20] quo_no=%s n=%s filler=%s "
+        log.info("[quo_layout V21] quo_no=%s n=%s filler=%s "
                  "sp_title=%.1fmm sp_info=%.1fmm pre=%.1fmm items=%.1fmm footer=%.1fmm budget=%.1fmm",
                  quo_no, _actual_n, _filler_n,
                  _sp_title / mm, _sp_info / mm,
                  _pre_h / mm, _real_h / mm, _footer_h_q / mm, _budget / mm)
     except Exception as _le:
-        log.warning("[quo_layout V20] measure error: %s", _le)
+        log.warning("[quo_layout V21] measure error: %s", _le)
 
     # Build story in order now that all measurements are known
     story.append(Spacer(1, _sp_top))
@@ -1409,7 +1412,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     story.append(KeepTogether(bottom_block))
 
     doc.build(story, onFirstPage=_draw_lh_q, onLaterPages=lambda c, d: None)
-    _dbg(f"[quotation V20] PDF built -> {filepath}")
+    _dbg(f"[quotation V21] PDF built -> {filepath}")
     return filepath
 
 
