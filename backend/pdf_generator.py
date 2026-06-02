@@ -18,7 +18,7 @@ def _dbg(msg: str) -> None:
     with open(_DBG_LOG, "a", encoding="utf-8") as _f:
         _f.write(f"[{_dt.now().strftime('%H:%M:%S')}] {msg}\n")
 
-_BUILD = "FP_NAVY_V23"
+_BUILD = "FP_NAVY_V24"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -1322,12 +1322,13 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     _OVERHEAD     = 12 * mm
     _RENDER_SAFE  = 12 * mm
 
-    # Adaptive spacers — identical formula to invoice: no leading spacer, 65/35 split
+    # Adaptive spacers — quotation needs wider heading gap for visual balance
+    # Target: ~10mm below QUOTATION heading, ~4mm below boxes (14mm total preferred)
     _sp_budget = _usable_h - _real_h - _footer_h_q - _OVERHEAD - _title_h_q - _top_t_h
-    _sp_prefer = _HDG_SP_PREFER
+    _sp_prefer = 14 * mm
     _sp_total  = min(_sp_prefer, max(3 * mm, _sp_budget))
-    _sp_title  = max(2 * mm, min(_sp_total * 0.65, 6 * mm))
-    _sp_info   = max(1 * mm, _sp_total - _sp_title)
+    _sp_title  = max(6 * mm, min(_sp_total * 0.72, 10 * mm))
+    _sp_info   = max(2 * mm, _sp_total - _sp_title)
 
     _pre_h  = _title_h_q + _sp_title + _top_t_h + _sp_info
     _budget = _usable_h - _pre_h - _footer_h_q - _RENDER_SAFE
@@ -1375,10 +1376,10 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
             items_t = _make_quo_tbl(2, 2)
             _filler_n = 0
 
-    _dbg(f"[quotation V23] n={_actual_n} sp_title={_sp_title/mm:.1f}mm sp_info={_sp_info/mm:.1f}mm "
+    _dbg(f"[quotation V24] n={_actual_n} sp_title={_sp_title/mm:.1f}mm sp_info={_sp_info/mm:.1f}mm "
          f"pre={_pre_h/mm:.1f}mm items={_real_h/mm:.1f}mm footer={_footer_h_q/mm:.1f}mm "
          f"budget={_budget/mm:.1f}mm filler={_filler_n}")
-    print(f"[quo V23] quo={quo_no} n={_actual_n} filler={_filler_n} "
+    print(f"[quo V24] quo={quo_no} n={_actual_n} filler={_filler_n} "
           f"pre={_pre_h/mm:.1f}mm footer={_footer_h_q/mm:.1f}mm budget={_budget/mm:.1f}mm")
 
     # Build story — heading starts at frame top (no leading spacer), matching invoice
@@ -1394,7 +1395,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     story.append(KeepTogether(bottom_block))
 
     doc.build(story, onFirstPage=_draw_lh_q, onLaterPages=lambda c, d: None)
-    _dbg(f"[quotation V23] PDF built -> {filepath}")
+    _dbg(f"[quotation V24] PDF built -> {filepath}")
     return filepath
 
 
