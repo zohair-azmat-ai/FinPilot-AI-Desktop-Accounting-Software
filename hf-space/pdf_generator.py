@@ -27,7 +27,7 @@ def _dbg(msg: str) -> None:
         pass
     log.info(msg)
 
-_BUILD = "FP_NAVY_V21"
+_BUILD = "FP_NAVY_V22"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -1179,7 +1179,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         ("TOPPADDING",    (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
-    # story appends deferred — adaptive spacers chosen in V20 layout block below
+    # story appends deferred — adaptive spacers chosen in V22 layout block below
 
     # ── 3. Items table (5 cols: SR NO | DESCRIPTION | QTY | UNIT PRICE | AMOUNT)
     _actual_n = len(_raw_items_q)
@@ -1271,30 +1271,32 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         terms_cell.append(Paragraph(f"Note: {_xe(notes)}", tc_val_s))
 
     # Stamp shows unless EXPLICITLY set to False — None/absent/True all show stamp
-    _stamp_raw_q    = quotation_data.get("include_stamp")
+    # Check include_stamp first; fall back to show_stamp; default True (show stamp)
+    _inc_q       = quotation_data.get("include_stamp")
+    _show_q      = quotation_data.get("show_stamp")
+    _stamp_raw_q = _inc_q if _inc_q is not None else (_show_q if _show_q is not None else None)
     include_stamp_q = True if _stamp_raw_q is None else bool(_stamp_raw_q)
     stamp_path_q = _get_stamp_path(_comp_stamp_q) if include_stamp_q else ""
-    _dbg(f"[quotation] stamp_enabled={include_stamp_q}")
+    _dbg(f"[quotation] stamp_enabled={include_stamp_q} inc={_inc_q} show={_show_q}")
     _dbg(f"[quotation] resolved_stamp_path={stamp_path_q or 'none'}")
     _dbg(f"[quotation] stamp_exists={bool(stamp_path_q)}")
-    _dbg(f"[quotation] stamp_rendered={bool(stamp_path_q)}")
     sig_cell = []
     if stamp_path_q:
         try:
             from PIL import Image as PILImage
             with PILImage.open(stamp_path_q) as img:
                 sw, sh = img.size
-            STAMP_W = 32 * mm
-            stamp_h = min(STAMP_W * sh / sw, 12 * mm)
+            STAMP_W = 38 * mm
+            stamp_h = min(STAMP_W * sh / sw, 16 * mm)
             sig_cell.append(Image(stamp_path_q, width=STAMP_W, height=stamp_h))
             sig_cell.append(Spacer(1, 1 * mm))
-            _dbg(f"[quotation] stamp rendered: {STAMP_W:.1f}x{stamp_h:.1f}")
+            _dbg(f"[quotation] stamp rendered: {STAMP_W:.1f}x{stamp_h:.1f} from {stamp_path_q}")
         except Exception as _se:
             _dbg(f"[quotation] stamp render ERROR: {_se}")
-            sig_cell.append(Spacer(1, 1 * mm))
+            sig_cell.append(Spacer(1, 4 * mm))
     else:
         _dbg(f"[quotation] stamp skipped: include_stamp={include_stamp_q} path={stamp_path_q or 'none'}")
-        sig_cell.append(Spacer(1, 1 * mm))
+        sig_cell.append(Spacer(1, 4 * mm))
     sig_cell += [
         Paragraph("________________________", sig_ln_s),
         Spacer(1, 2 * mm),
@@ -1324,7 +1326,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         Paragraph("This is a computer generated quotation. Thank you for the opportunity to be of service.", ft_s),
     ]
 
-    # ── V20: measure first, then pick spacers + graduated filler adaptively ──
+    # ── V22: measure first, then pick balanced spacers + smart filler ────────
     _post_measure = [Spacer(1, 0.5 * mm), tot_wrap_q, Spacer(1, 1 * mm), _aiw_t] + bottom_block
     _footer_h_q   = sum(f.wrap(_CW, 9999 * mm)[1] for f in _post_measure)
     _title_h_q    = _title_para_q.wrap(_CW, 9999 * mm)[1]
@@ -1333,23 +1335,24 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     _OVERHEAD     = 12 * mm
     _RENDER_SAFE  = 12 * mm
 
-    # Adaptive spacers: prefer 2mm top + 8mm after title + 3mm after boxes; tighten if needed
+    # Adaptive spacers: prefer 5mm top + 6mm after title + 4mm after boxes = 15mm total
     _sp_budget = _usable_h - _real_h - _footer_h_q - _OVERHEAD - _title_h_q - _top_t_h
-    _sp_prefer = (2 + 8 + 3) * mm
+    _sp_prefer = (5 + 6 + 4) * mm
     _sp_total  = min(_sp_prefer, max(4 * mm, _sp_budget))
-    _sp_top    = 2 * mm
-    _sp_title  = max(2 * mm, min(_sp_total - _sp_top - 1 * mm, 8 * mm))
-    _sp_info   = max(1 * mm, _sp_total - _sp_top - _sp_title)
+    _sp_top    = min(5 * mm, max(2 * mm, _sp_total * 0.34))
+    _sp_title  = max(3 * mm, min(6 * mm, _sp_total - _sp_top - 2 * mm))
+    _sp_info   = max(2 * mm, _sp_total - _sp_top - _sp_title)
 
     _pre_h  = _sp_top + _title_h_q + _sp_title + _top_t_h + _sp_info
     _budget = _usable_h - _pre_h - _footer_h_q - _RENDER_SAFE
 
-    # V21 smart filler: start from preferred count, reduce one-by-one until fits in budget
-    _prefer_fill = (5 if _actual_n <= 1 else
-                    4 if _actual_n == 2 else
-                    3 if _actual_n == 3 else
-                    2 if _actual_n == 4 else
-                    1 if _actual_n == 5 else 0)
+    # V22 smart filler: prefer more rows for short quotations, reduce until safe
+    _prefer_fill = (6 if _actual_n <= 1 else
+                    5 if _actual_n == 2 else
+                    4 if _actual_n == 3 else
+                    3 if _actual_n == 4 else
+                    2 if _actual_n == 5 else
+                    1 if _actual_n == 6 else 0)
     empty_row_q = [Paragraph("", ir_s)] * 5
     _filler_n   = 0
     for _fn in range(_prefer_fill, 0, -1):
@@ -1386,17 +1389,17 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
             items_t = _make_quo_tbl(2, 2)
             _filler_n = 0
 
-    _dbg(f"[quotation V21] n={_actual_n} sp_title={_sp_title/mm:.1f}mm sp_info={_sp_info/mm:.1f}mm "
+    _dbg(f"[quotation V22] n={_actual_n} sp_title={_sp_title/mm:.1f}mm sp_info={_sp_info/mm:.1f}mm "
          f"pre={_pre_h/mm:.1f}mm items={_real_h/mm:.1f}mm footer={_footer_h_q/mm:.1f}mm "
          f"budget={_budget/mm:.1f}mm filler={_filler_n}")
     try:
-        log.info("[quo_layout V21] quo_no=%s n=%s filler=%s "
+        log.info("[quo_layout V22] quo_no=%s n=%s filler=%s "
                  "sp_title=%.1fmm sp_info=%.1fmm pre=%.1fmm items=%.1fmm footer=%.1fmm budget=%.1fmm",
                  quo_no, _actual_n, _filler_n,
                  _sp_title / mm, _sp_info / mm,
                  _pre_h / mm, _real_h / mm, _footer_h_q / mm, _budget / mm)
     except Exception as _le:
-        log.warning("[quo_layout V21] measure error: %s", _le)
+        log.warning("[quo_layout V22] measure error: %s", _le)
 
     # Build story in order now that all measurements are known
     story.append(Spacer(1, _sp_top))
@@ -1412,7 +1415,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     story.append(KeepTogether(bottom_block))
 
     doc.build(story, onFirstPage=_draw_lh_q, onLaterPages=lambda c, d: None)
-    _dbg(f"[quotation V21] PDF built -> {filepath}")
+    _dbg(f"[quotation V22] PDF built -> {filepath}")
     return filepath
 
 
