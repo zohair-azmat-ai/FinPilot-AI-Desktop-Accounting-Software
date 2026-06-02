@@ -27,7 +27,7 @@ def _dbg(msg: str) -> None:
         pass
     log.info(msg)
 
-_BUILD = "FP_NAVY_V22"
+_BUILD = "FP_NAVY_V23"
 _dbg(f">>> ACTIVE PDF GENERATOR BUILD={_BUILD} LOADED <<<")
 
 
@@ -115,6 +115,11 @@ WHITE      = colors.white
 
 # A4 content width with 15 mm left/right margins
 _CONTENT_W = A4[0] - 30 * mm   # ≈ 180 mm
+
+# ── Shared heading layout constants — used identically in invoice + quotation ──
+_HDG_FONT_NAME = "Helvetica-Bold"
+_HDG_FONT_SIZE = 18              # pt
+_HDG_SP_PREFER = 8 * mm         # preferred total gap budget (heading→boxes + boxes→items)
 
 
 def _letterhead_flowable():
@@ -372,7 +377,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     MUTED   = MED_GRAY                      # #94A3B8 label / secondary text
 
     # ── Shared styles ─────────────────────────────────────────────────────────
-    _ti    = ParagraphStyle("_ti",   fontName="Helvetica-Bold", fontSize=18, textColor=ACCENT, alignment=TA_CENTER)
+    _ti    = ParagraphStyle("_ti",   fontName=_HDG_FONT_NAME, fontSize=_HDG_FONT_SIZE, textColor=ACCENT, alignment=TA_CENTER)
     _lbl   = ParagraphStyle("_lbl",  fontName="Helvetica",      fontSize=7.5, textColor=MED_GRAY)
     _val   = ParagraphStyle("_val",  fontName="Helvetica-Bold", fontSize=10,  textColor=PRIMARY)
     _lblr  = ParagraphStyle("_lblr", fontName="Helvetica",      fontSize=7.5, textColor=MED_GRAY, alignment=TA_RIGHT)
@@ -1085,7 +1090,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     _dbg(f"[quotation] generate_quotation_pdf: quo={quo_no} pdf_render_count={len(_raw_items_q)}")
     log.info("[quotation pdf_generator] quo=%s pdf_render_count=%s", quo_no, len(_raw_items_q))
 
-    title_s  = ParagraphStyle("qt",   fontName="Helvetica-Bold", fontSize=18,  textColor=ACCENT,    alignment=TA_CENTER)
+    title_s  = ParagraphStyle("qt",   fontName=_HDG_FONT_NAME, fontSize=_HDG_FONT_SIZE, textColor=ACCENT, alignment=TA_CENTER)
     box_hdr  = ParagraphStyle("qbh",  fontName="Helvetica-Bold", fontSize=8.5, textColor=WHITE,     alignment=TA_CENTER)
     lbl_s    = ParagraphStyle("ql",   fontName="Helvetica-Bold", fontSize=8,   textColor=MED_GRAY)
     val_s    = ParagraphStyle("qv",   fontName="Helvetica",      fontSize=8.5, textColor=DARK)
@@ -1335,15 +1340,14 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     _OVERHEAD     = 12 * mm
     _RENDER_SAFE  = 12 * mm
 
-    # Adaptive spacers: prefer 5mm top + 6mm after title + 4mm after boxes = 15mm total
+    # Adaptive spacers — identical formula to invoice: no leading spacer, 65/35 split
     _sp_budget = _usable_h - _real_h - _footer_h_q - _OVERHEAD - _title_h_q - _top_t_h
-    _sp_prefer = (5 + 6 + 4) * mm
-    _sp_total  = min(_sp_prefer, max(4 * mm, _sp_budget))
-    _sp_top    = min(5 * mm, max(2 * mm, _sp_total * 0.34))
-    _sp_title  = max(3 * mm, min(6 * mm, _sp_total - _sp_top - 2 * mm))
-    _sp_info   = max(2 * mm, _sp_total - _sp_top - _sp_title)
+    _sp_prefer = _HDG_SP_PREFER
+    _sp_total  = min(_sp_prefer, max(3 * mm, _sp_budget))
+    _sp_title  = max(2 * mm, min(_sp_total * 0.65, 6 * mm))
+    _sp_info   = max(1 * mm, _sp_total - _sp_title)
 
-    _pre_h  = _sp_top + _title_h_q + _sp_title + _top_t_h + _sp_info
+    _pre_h  = _title_h_q + _sp_title + _top_t_h + _sp_info
     _budget = _usable_h - _pre_h - _footer_h_q - _RENDER_SAFE
 
     # V22 smart filler: prefer more rows for short quotations, reduce until safe
@@ -1389,20 +1393,19 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
             items_t = _make_quo_tbl(2, 2)
             _filler_n = 0
 
-    _dbg(f"[quotation V22] n={_actual_n} sp_title={_sp_title/mm:.1f}mm sp_info={_sp_info/mm:.1f}mm "
+    _dbg(f"[quotation V23] n={_actual_n} sp_title={_sp_title/mm:.1f}mm sp_info={_sp_info/mm:.1f}mm "
          f"pre={_pre_h/mm:.1f}mm items={_real_h/mm:.1f}mm footer={_footer_h_q/mm:.1f}mm "
          f"budget={_budget/mm:.1f}mm filler={_filler_n}")
     try:
-        log.info("[quo_layout V22] quo_no=%s n=%s filler=%s "
+        log.info("[quo_layout V23] quo_no=%s n=%s filler=%s "
                  "sp_title=%.1fmm sp_info=%.1fmm pre=%.1fmm items=%.1fmm footer=%.1fmm budget=%.1fmm",
                  quo_no, _actual_n, _filler_n,
                  _sp_title / mm, _sp_info / mm,
                  _pre_h / mm, _real_h / mm, _footer_h_q / mm, _budget / mm)
     except Exception as _le:
-        log.warning("[quo_layout V22] measure error: %s", _le)
+        log.warning("[quo_layout V23] measure error: %s", _le)
 
-    # Build story in order now that all measurements are known
-    story.append(Spacer(1, _sp_top))
+    # Build story — heading starts at frame top (no leading spacer), matching invoice
     story.append(_title_para_q)
     story.append(Spacer(1, _sp_title))
     story.append(top_t)
@@ -1415,7 +1418,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     story.append(KeepTogether(bottom_block))
 
     doc.build(story, onFirstPage=_draw_lh_q, onLaterPages=lambda c, d: None)
-    _dbg(f"[quotation V22] PDF built -> {filepath}")
+    _dbg(f"[quotation V23] PDF built -> {filepath}")
     return filepath
 
 
