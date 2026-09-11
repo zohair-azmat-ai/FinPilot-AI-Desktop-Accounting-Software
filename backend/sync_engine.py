@@ -255,6 +255,21 @@ class SyncEngine(threading.Thread):
         for row in rows:
             row["workspace_id"] = client.workspace_id
 
+        # Deduplicate by sync_uuid before push: PostgreSQL's ON CONFLICT DO UPDATE
+        # raises error 21000 if the same sync_uuid appears twice in the same batch.
+        # Duplicates can exist locally when a pull re-inserted a row that was already
+        # present. Keep the highest-id row (most recently created) for each uuid.
+        _uuid_seen: dict = {}
+        _rows_deduped = []
+        for _row in rows:
+            _su = _row.get("sync_uuid")
+            if not _su:
+                _rows_deduped.append(_row)
+            elif _su not in _uuid_seen or _row.get("id", 0) > _uuid_seen[_su].get("id", 0):
+                _uuid_seen[_su] = _row
+        _rows_deduped.extend(_uuid_seen.values())
+        rows = _rows_deduped
+
         try:
             client.upsert(table, rows)
         except IOError as e:
