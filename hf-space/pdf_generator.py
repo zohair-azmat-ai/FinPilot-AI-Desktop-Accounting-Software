@@ -2011,8 +2011,12 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
             table_data.append([Paragraph("", row_c), Paragraph("", row_l),
                                 Paragraph("", row_c), Paragraph("", row_l)])
 
-    dn_table = Table(table_data, colWidths=dn_col_w,
-                     rowHeights=[_HDR_H] + [_ROW_H] * MIN_ROWS)
+    # Row heights: header is fixed; actual item rows use None (auto-size for long
+    # descriptions); filler rows keep the fixed _ROW_H so the table fills the page.
+    _dn_row_heights = [_HDR_H] + [
+        None if idx < _actual_n else _ROW_H for idx in range(MIN_ROWS)
+    ]
+    dn_table = Table(table_data, colWidths=dn_col_w, rowHeights=_dn_row_heights)
     dn_table.setStyle(TableStyle([
         ("BACKGROUND",     (0, 0), (-1, 0),  ACCENT),
         ("FONTSIZE",       (0, 0), (-1, -1), 8),
@@ -2021,7 +2025,8 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
         ("ALIGN",          (3, 1), (3, -1),  "LEFT"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [LIGHT_GRAY, WHITE]),
         ("GRID",           (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-        ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
+        ("VALIGN",         (0, 0), (-1, 0),  "MIDDLE"),
+        ("VALIGN",         (0, 1), (-1, -1), "TOP"),
         ("TOPPADDING",     (0, 0), (-1, 0),  5),
         ("BOTTOMPADDING",  (0, 0), (-1, 0),  5),
         ("TOPPADDING",     (0, 1), (-1, -1), 4),

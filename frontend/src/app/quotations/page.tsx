@@ -106,12 +106,16 @@ export default function QuotationsPage() {
   const addLine = () => setLines([...lines, { item_id: null, description: "", quantity: 1, unit_price: 0, vat_applicable: true }]);
   const removeLine = (i: number) => setLines(lines.filter((_, idx) => idx !== i));
   const updateLine = (i: number, field: keyof LineItem, value: unknown) => {
-    const updated = [...lines];
-    (updated[i] as Record<string, unknown>)[field] = value;
-    if (field === "item_id" && value) {
-      const item = items.find((it) => it.id === value);
-      if (item) { updated[i].description = item.name; updated[i].unit_price = item.price; updated[i].vat_applicable = item.vat_applicable; }
-    }
+    // Create a new object (immutable update) so React always detects the state change
+    const updated = lines.map((l, idx) => {
+      if (idx !== i) return l;
+      const next = { ...l, [field]: value };
+      if (field === "item_id" && value) {
+        const item = items.find((it) => it.id === value);
+        if (item) { next.description = item.name; next.unit_price = item.price; next.vat_applicable = item.vat_applicable; }
+      }
+      return next;
+    });
     setLines(updated);
   };
 
@@ -122,6 +126,8 @@ export default function QuotationsPage() {
 
   const handleSave = async () => {
     if (!customerId) return toast.error("Select a customer");
+    const blankItems = lines.filter((l) => !l.description.trim());
+    if (blankItems.length > 0) return toast.error("All items must have a description.");
     const payload = {
       customer_id: parseInt(customerId),
       date: new Date(date).toISOString(),
