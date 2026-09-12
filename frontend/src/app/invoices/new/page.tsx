@@ -11,7 +11,7 @@ interface Customer { id: number; name: string; trn: string; attn: string; phone:
 interface Item { id: number; name: string; description: string; unit: string; price: number; vat_applicable: boolean; }
 interface LineItem {
   item_id: number | null; description: string;
-  quantity: number; unit_price: number; vat_applicable: boolean;
+  quantity: number; unit_price: number; discount: number; vat_applicable: boolean;
   [key: string]: unknown;
 }
 
@@ -24,7 +24,10 @@ function InvoiceEditorContent() {
   const [items, setItems] = useState<Item[]>([]);
   const [customerId, setCustomerId] = useState(params.get("customer_id") || "");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [discount, setDiscount] = useState(0);
+  // legacyDiscount: the header-level discount an EXISTING invoice was saved with before
+  // item-level discounts existed. Kept as a fallback only — once any line item carries
+  // its own discount, that takes over and this is ignored. New invoices start at 0.
+  const [legacyDiscount, setLegacyDiscount] = useState(0);
   const [notes, setNotes] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
   const [lpoNo, setLpoNo] = useState("");
@@ -34,7 +37,7 @@ function InvoiceEditorContent() {
   const [includeStamp, setIncludeStamp] = useState(false);
   const [requireCustomerSignature, setRequireCustomerSignature] = useState(false);
   const [lines, setLines] = useState<LineItem[]>([
-    { item_id: null, description: "", quantity: 1, unit_price: parseFloat(params.get("amount") || "0"), vat_applicable: true }
+    { item_id: null, description: "", quantity: 1, unit_price: parseFloat(params.get("amount") || "0"), discount: 0, vat_applicable: true }
   ]);
   const [saving, setSaving] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,7 +62,7 @@ function InvoiceEditorContent() {
         const inv = r.data;
         setCustomerId(inv.customer_id ? String(inv.customer_id) : "");
         setDate(inv.date?.split("T")[0] || "");
-        setDiscount(inv.discount);
+        setLegacyDiscount(inv.discount || 0);
         setNotes(inv.notes);
         setPaymentTerms(inv.payment_terms || "");
         setLpoNo(inv.lpo_no || "");
@@ -68,18 +71,19 @@ function InvoiceEditorContent() {
         setIsCash(inv.is_cash || false);
         setIncludeStamp(inv.include_stamp || false);
         setRequireCustomerSignature(inv.require_customer_signature || false);
-        setLines(inv.items.map((it: { item_id: number | null; description: string; quantity: number; unit_price: number; vat_applicable: boolean }) => ({
+        setLines(inv.items.map((it: { item_id: number | null; description: string; quantity: number; unit_price: number; discount?: number; vat_applicable: boolean }) => ({
           item_id: it.item_id,
           description: it.description,
           quantity: it.quantity,
           unit_price: it.unit_price,
+          discount: it.discount || 0,
           vat_applicable: it.vat_applicable
         })));
       });
     }
   }, [editId]);
 
-  const addLine = () => setLines([...lines, { item_id: null, description: "", quantity: 1, unit_price: 0, vat_applicable: true }]);
+  const addLine = () => setLines([...lines, { item_id: null, description: "", quantity: 1, unit_price: 0, discount: 0, vat_applicable: true }]);
   const removeLine = (i: number) => setLines(lines.filter((_, idx) => idx !== i));
 
   const updateLine = (i: number, field: keyof LineItem, value: unknown) => {
@@ -96,17 +100,30 @@ function InvoiceEditorContent() {
     setLines(updated);
   };
 
+  // Discount is applied to the specific item first: Line Taxable = (Qty × Unit Price) − Line Discount,
+  // Line VAT = Line Taxable × rate. Invoice totals are then the sum of the line-level values.
   const calcLine = (line: LineItem) => {
-    const lineTotal = line.quantity * line.unit_price;
-    const vat = line.vat_applicable ? lineTotal * (VAT_RATE / 100) : 0;
-    return { lineTotal, vat, total: lineTotal + vat };
+    const lineTotal = line.quantity * line.unit_price;             // gross, before discount
+    const lineDiscount = Math.min(Math.max(line.discount || 0, 0), lineTotal);
+    const lineTaxable = lineTotal - lineDiscount;
+    const vat = line.vat_applicable ? lineTaxable * (VAT_RATE / 100) : 0;
+    return { lineTotal, lineDiscount, lineTaxable, vat, total: lineTaxable + vat };
   };
 
   const subtotal = lines.reduce((s, l) => s + calcLine(l).lineTotal, 0);
-  // VAT is calculated on the amount AFTER discount (discount allocated proportionally to VAT-applicable items)
-  const vatApplicableSubtotal = lines.reduce((s, l) => s + (l.vat_applicable ? calcLine(l).lineTotal : 0), 0);
-  const vatBase = subtotal > 0 ? Math.max(0, vatApplicableSubtotal - discount * (vatApplicableSubtotal / subtotal)) : 0;
-  const totalVat = Math.round(vatBase * (VAT_RATE / 100) * 100) / 100;
+  const itemDiscountTotal = lines.reduce((s, l) => s + calcLine(l).lineDiscount, 0);
+  // Once any line item carries its own discount, that's authoritative. Otherwise fall back
+  // to the invoice's original header-level discount (legacy invoices, untouched) so old
+  // totals keep matching exactly — same formula the backend uses for that same case.
+  const discount = itemDiscountTotal > 0 ? itemDiscountTotal : legacyDiscount;
+  let totalVat: number;
+  if (itemDiscountTotal > 0) {
+    totalVat = lines.reduce((s, l) => s + calcLine(l).vat, 0);
+  } else {
+    const vatApplicableSubtotal = lines.reduce((s, l) => s + (l.vat_applicable ? calcLine(l).lineTotal : 0), 0);
+    const vatBase = subtotal > 0 ? Math.max(0, vatApplicableSubtotal - discount * (vatApplicableSubtotal / subtotal)) : 0;
+    totalVat = Math.round(vatBase * (VAT_RATE / 100) * 100) / 100;
+  }
   const amountAfterDiscount = subtotal - discount;
   const grandTotal = amountAfterDiscount + totalVat;
 
@@ -279,6 +296,7 @@ function InvoiceEditorContent() {
                       <th>Description</th>
                       <th className="w-20">Qty</th>
                       <th className="w-28">Unit Price</th>
+                      <th className="w-24">Discount</th>
                       <th className="w-16">VAT</th>
                       <th className="w-28 text-right">Amount</th>
                       <th className="w-8"></th>
@@ -286,7 +304,7 @@ function InvoiceEditorContent() {
                   </thead>
                   <tbody>
                     {lines.map((line, i) => {
-                      const { lineTotal, vat, total } = calcLine(line);
+                      const { vat, total } = calcLine(line);
                       return (
                         <tr key={i} className="border-b border-bg-border">
                           <td className="px-3 py-2">
@@ -321,6 +339,15 @@ function InvoiceEditorContent() {
                               type="number" min="0" step="0.01"
                               value={line.unit_price}
                               onChange={(e) => updateLine(i, "unit_price", parseFloat(e.target.value) || 0)}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              className="input text-xs py-1.5 text-right"
+                              type="number" min="0" step="0.01"
+                              value={line.discount}
+                              onChange={(e) => updateLine(i, "discount", parseFloat(e.target.value) || 0)}
+                              placeholder="0.00"
                             />
                           </td>
                           <td className="px-3 py-2 text-center">
@@ -382,19 +409,12 @@ function InvoiceEditorContent() {
                   <span className="text-text-secondary">Amount Excl. VAT</span>
                   <span className="font-medium">AED {subtotal.toFixed(2)}</span>
                 </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
+                {discount > 0 && (
+                  <div className="flex justify-between text-sm">
                     <span className="text-text-secondary">Discount</span>
                     <span className="font-medium text-amber-400">- AED {discount.toFixed(2)}</span>
                   </div>
-                  <input
-                    className="input text-sm py-1.5"
-                    type="number" min="0" step="0.01"
-                    value={discount}
-                    onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                    placeholder="0.00"
-                  />
-                </div>
+                )}
                 {discount > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-text-secondary">Amount After Discount</span>

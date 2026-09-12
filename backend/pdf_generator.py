@@ -490,7 +490,9 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     def _item_row(idx, item):
         qty    = item.get("quantity",   1)
         up     = item.get("unit_price", 0)
-        taxable = round(qty * up, 2)          # taxable amount = qty × unit price (no per-item discount)
+        disc   = item.get("discount",   0) or 0
+        gross  = round(qty * up, 2)
+        taxable = round(gross - disc, 2)      # taxable amount = (qty × unit price) − this item's discount
         vat_ok = item.get("vat_applicable", True)
         tax_a  = item.get("vat_amount", 0)
         tot_a  = item.get("total", round(taxable + tax_a, 2))
@@ -499,7 +501,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
             Paragraph(_xe(item.get("description", "")), _ir),
             Paragraph(_qty_label(qty),                 _icc),
             Paragraph(f"{up:.2f}",                     _irc),
-            Paragraph("0.00",                          _irc),   # DISCOUNT (AED)
+            Paragraph(f"{disc:.2f}",                   _irc),   # DISCOUNT (AED)
             Paragraph(f"{taxable:.2f}",                _irc),   # TAXABLE AMOUNT (AED)
             Paragraph("5%" if vat_ok else "0%",        _icc),
             Paragraph(f"{tax_a:.2f}",                  _irc),
@@ -1171,26 +1173,37 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     ]))
     # story appends deferred — adaptive spacers chosen in V22 layout block below
 
-    # ── 3. Items table (5 cols: SR NO | DESCRIPTION | QTY | UNIT PRICE | AMOUNT)
+    # ── 3. Items table (9 cols, matching the invoice: SR NO | DESCRIPTION | QTY |
+    #      UNIT PRICE | DISCOUNT | TAXABLE AMT | TAX RATE | TAX AMT | TOTAL)
     _actual_n = len(_raw_items_q)
     _HDR_H_Q  = 8 * mm
     _FILLER_H = 8 * mm
 
-    # 14+94+18+32+32 = 190mm
-    q_col_w = [14 * mm, 94 * mm, 18 * mm, 32 * mm, 32 * mm]
-    q_hdrs  = ["SR\nNO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)", "AMOUNT\n(AED)"]
+    # 8+50+18+24+16+24+11+19+20 = 190mm — same widths as the invoice table
+    q_col_w = [8 * mm, 50 * mm, 18 * mm, 24 * mm, 16 * mm, 24 * mm, 11 * mm, 19 * mm, 20 * mm]
+    q_hdrs  = ["SR\nNO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)",
+               "DISCOUNT\n(AED)", "TAXABLE\nAMT (AED)", "TAX\nRATE", "TAX AMT\n(AED)", "TOTAL\n(AED)"]
     q_data  = [[Paragraph(h, ih_s) for h in q_hdrs]]
 
     for idx, item in enumerate(_raw_items_q, 1):
-        qty = item.get("quantity", 1)
-        up  = item.get("unit_price", 0)
-        amt = round(qty * up, 2)
+        qty     = item.get("quantity", 1)
+        up      = item.get("unit_price", 0)
+        disc    = item.get("discount", 0) or 0
+        gross   = round(qty * up, 2)
+        taxable = round(gross - disc, 2)
+        vat_ok  = item.get("vat_applicable", True)
+        tax_a   = item.get("vat_amount", 0)
+        tot_a   = item.get("total", round(taxable + tax_a, 2))
         q_data.append([
             Paragraph(str(idx), icc_s),
             Paragraph(_xe(item.get("description", "")), ir_s),
             Paragraph(_qty_label(qty), icc_s),
             Paragraph(f"{up:.2f}", irc_s),
-            Paragraph(f"{amt:.2f}", irc_s),
+            Paragraph(f"{disc:.2f}", irc_s),
+            Paragraph(f"{taxable:.2f}", irc_s),
+            Paragraph("5%" if vat_ok else "0%", icc_s),
+            Paragraph(f"{tax_a:.2f}", irc_s),
+            Paragraph(f"{tot_a:.2f}", irc_s),
         ])
 
     _style_cmds = [
@@ -1214,12 +1227,15 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     _real_row_heights[0] = max(_real_row_heights[0], _HDR_H_Q)  # enforce min header height
 
     # ── 3b. Build footer first to measure actual height for filler budget ──────
-    tot_rows_q = []
-    tot_rows_q.append([Paragraph("Subtotal (AED):", tl_s), Paragraph(f"{subtotal:.2f}", tv_s)])
-    tot_rows_q.append([Paragraph("VAT 5% (AED):",   tl_s), Paragraph(f"{vat_amount:.2f}", tv_s)])
+    # Same order as the invoice totals box: Amount Excl. VAT -> Discount ->
+    # Amount After Discount -> VAT -> TOTAL AMOUNT.
+    tot_rows_q = [[Paragraph("Amount Excl. VAT:", tl_s), Paragraph(f"AED {subtotal:.2f}", tv_s)]]
     if discount > 0:
-        tot_rows_q.append([Paragraph("Discount (AED):", tl_s), Paragraph(f"- {discount:.2f}", tv_s)])
-    tot_rows_q.append([Paragraph("GRAND TOTAL (AED):", tb_s), Paragraph(f"{total:.2f}", tb_s)])
+        _after_disc_q = round(subtotal - discount, 2)
+        tot_rows_q.append([Paragraph("Discount:", tl_s), Paragraph(f"- AED {discount:.2f}", tv_s)])
+        tot_rows_q.append([Paragraph("Amount After Discount:", tl_s), Paragraph(f"AED {_after_disc_q:.2f}", tv_s)])
+    tot_rows_q.append([Paragraph("VAT (5%):", tl_s), Paragraph(f"AED {vat_amount:.2f}", tv_s)])
+    tot_rows_q.append([Paragraph("TOTAL AMOUNT:", tb_s), Paragraph(f"AED {total:.2f}", tb_s)])
     tot_t_q = Table(tot_rows_q, colWidths=[55 * mm, 35 * mm])
     tot_t_q.setStyle(TableStyle([
         ("ALIGN",         (0, 0),  (-1, -1), "RIGHT"),
@@ -1342,7 +1358,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
                     3 if _actual_n == 4 else
                     2 if _actual_n == 5 else
                     1 if _actual_n == 6 else 0)
-    empty_row_q = [Paragraph("", ir_s)] * 5
+    empty_row_q = [Paragraph("", ir_s)] * 9
     _filler_n   = 0
     for _fn in range(_prefer_fill, 0, -1):
         _cand_heights = _real_row_heights + [_FILLER_H] * _fn

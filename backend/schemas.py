@@ -110,6 +110,7 @@ class QuotationItemCreate(BaseModel):
     description: str
     quantity: float = 1.0
     unit_price: float = 0.0
+    discount: Optional[float] = 0.0
     vat_applicable: bool = True
 
 class QuotationItemOut(QuotationItemCreate):
@@ -171,6 +172,7 @@ class InvoiceItemCreate(BaseModel):
     description: str
     quantity: float = 1.0
     unit_price: float = 0.0
+    discount: Optional[float] = 0.0
     vat_applicable: bool = True
 
 class InvoiceItemOut(InvoiceItemCreate):

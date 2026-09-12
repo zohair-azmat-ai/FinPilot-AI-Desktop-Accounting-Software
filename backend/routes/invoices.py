@@ -50,29 +50,52 @@ def _increment_invoice_counter(db: Session) -> None:
 
 
 def _calculate_items(items_data, vat_rate=5.0):
+    """Per-line calculation: Line Gross = Qty × Unit Price, Line Discount = that item's
+    own discount (clamped to the line so it can never go negative), Line Taxable =
+    Gross - Discount, Line VAT = Taxable × rate, Line Total = Taxable + VAT.
+    Returns (processed_items, subtotal_gross, vat_total, vat_applicable_subtotal, item_discount_total)."""
     subtotal = 0.0
     vat_total = 0.0
     vat_applicable_subtotal = 0.0
+    item_discount_total = 0.0
     processed = []
     for item in items_data:
-        line_total = item.quantity * item.unit_price
-        vat_amt = round(line_total * (vat_rate / 100), 2) if item.vat_applicable else 0.0
-        item_total = round(line_total + vat_amt, 2)
-        subtotal += line_total
+        line_gross = round(item.quantity * item.unit_price, 2)
+        line_discount = min(max(item.discount or 0.0, 0.0), line_gross)  # never negative, never exceeds the line
+        line_taxable = round(line_gross - line_discount, 2)
+        vat_amt = round(line_taxable * (vat_rate / 100), 2) if item.vat_applicable else 0.0
+        item_total = round(line_taxable + vat_amt, 2)
+        subtotal += line_gross
         vat_total += vat_amt
+        item_discount_total += line_discount
         if item.vat_applicable:
-            vat_applicable_subtotal += line_total
-        processed.append({**item.model_dump(), "vat_amount": vat_amt, "total": item_total})
-    return processed, round(subtotal, 2), round(vat_total, 2), round(vat_applicable_subtotal, 2)
+            vat_applicable_subtotal += line_gross
+        processed.append({**item.model_dump(), "discount": line_discount, "vat_amount": vat_amt, "total": item_total})
+    return processed, round(subtotal, 2), round(vat_total, 2), round(vat_applicable_subtotal, 2), round(item_discount_total, 2)
 
 
 def _vat_after_discount(subtotal: float, vat_applicable_subtotal: float, discount: float, vat_rate: float) -> float:
-    """Calculate VAT on the amount after discount (discount allocated proportionally
-    to VAT-applicable items).  Returns rounded VAT amount."""
+    """Legacy path: VAT on the amount after an OVERALL (header-level) discount, allocated
+    proportionally across VAT-applicable items. Kept for invoices/quotations that predate
+    per-line discounts and still carry only a header discount (no line-level discounts set)."""
     if subtotal <= 0 or discount <= 0:
         return round(vat_applicable_subtotal * vat_rate / 100, 2)
     vat_base = max(0.0, vat_applicable_subtotal - discount * (vat_applicable_subtotal / subtotal))
     return round(vat_base * vat_rate / 100, 2)
+
+
+def _resolve_discount_and_vat(data, processed_items, subtotal, vat_total, vat_applicable_subtotal, item_discount_total, vat_rate):
+    """Decide which discount model applies for this save:
+    - If any line item carries its own discount, that is authoritative — the header
+      discount becomes the sum of line discounts and VAT is already per-line-correct.
+    - Otherwise fall back to the pre-existing header-level discount behavior untouched,
+      so old invoices/quotations that only ever used an overall discount keep working
+      exactly as before (same VAT-after-discount formula, same totals)."""
+    if item_discount_total > 0:
+        return item_discount_total, vat_total
+    discount = data.discount or 0
+    vat_total = _vat_after_discount(subtotal, vat_applicable_subtotal, discount, vat_rate)
+    return discount, vat_total
 
 
 def _update_ledger(db: Session, invoice: models.Invoice):
@@ -177,9 +200,8 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
 
     # Filter out blank rows — never save items with no description
     data.items = [it for it in data.items if it.description.strip()]
-    processed_items, subtotal, _, vat_applicable_subtotal = _calculate_items(data.items, vat_rate)
-    discount = data.discount or 0
-    vat_total = _vat_after_discount(subtotal, vat_applicable_subtotal, discount, vat_rate)
+    processed_items, subtotal, vat_total, vat_applicable_subtotal, item_discount_total = _calculate_items(data.items, vat_rate)
+    discount, vat_total = _resolve_discount_and_vat(data, processed_items, subtotal, vat_total, vat_applicable_subtotal, item_discount_total, vat_rate)
     total = round(subtotal - discount + vat_total, 2)
     balance_due = total
 
@@ -197,7 +219,7 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
         invoice.customer_id = data.customer_id
         invoice.date = data.date or datetime.utcnow()
         invoice.due_date = data.due_date
-        invoice.discount = data.discount or 0
+        invoice.discount = discount
         invoice.notes = data.notes or ""
         invoice.letterhead = data.letterhead if data.letterhead is not None else True
         invoice.lpo_no = data.lpo_no or ""
@@ -226,7 +248,7 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
             customer_id=data.customer_id,
             date=data.date or datetime.utcnow(),
             due_date=data.due_date,
-            discount=data.discount or 0,
+            discount=discount,
             notes=data.notes or "",
             letterhead=data.letterhead if data.letterhead is not None else True,
             lpo_no=data.lpo_no or "",
@@ -253,6 +275,7 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
             description=item["description"],
             quantity=item["quantity"],
             unit_price=item["unit_price"],
+            discount=item["discount"],
             vat_applicable=item["vat_applicable"],
             vat_amount=item["vat_amount"],
             total=item["total"]
@@ -285,16 +308,15 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
     vat_rate = company.vat_rate if company else 5.0
     # Filter blank rows before processing
     data.items = [it for it in data.items if it.description.strip()]
-    processed_items, subtotal, _, vat_applicable_subtotal = _calculate_items(data.items, vat_rate)
-    discount = data.discount or 0
-    vat_total = _vat_after_discount(subtotal, vat_applicable_subtotal, discount, vat_rate)
+    processed_items, subtotal, vat_total, vat_applicable_subtotal, item_discount_total = _calculate_items(data.items, vat_rate)
+    discount, vat_total = _resolve_discount_and_vat(data, processed_items, subtotal, vat_total, vat_applicable_subtotal, item_discount_total, vat_rate)
     total = round(subtotal - discount + vat_total, 2)
 
     now = datetime.now(timezone.utc).isoformat()
     inv.customer_id = data.customer_id
     inv.date = data.date or inv.date
     inv.due_date = data.due_date
-    inv.discount = data.discount or 0
+    inv.discount = discount
     inv.notes = data.notes or ""
     inv.letterhead = data.letterhead if data.letterhead is not None else True
     inv.lpo_no = data.lpo_no or ""
@@ -329,6 +351,7 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
             description=item["description"],
             quantity=item["quantity"],
             unit_price=item["unit_price"],
+            discount=item["discount"],
             vat_applicable=item["vat_applicable"],
             vat_amount=item["vat_amount"],
             total=item["total"]
@@ -548,6 +571,7 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
                     "description": it.description,
                     "quantity": it.quantity,
                     "unit_price": it.unit_price,
+                    "discount": it.discount or 0,
                     "vat_applicable": it.vat_applicable,
                     "vat_amount": it.vat_amount,
                     "total": it.total,

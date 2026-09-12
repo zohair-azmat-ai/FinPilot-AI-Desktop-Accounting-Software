@@ -113,6 +113,7 @@ class QuotationItem(Base):
     description = Column(String, nullable=False)
     quantity = Column(Float, default=1.0)
     unit_price = Column(Float, default=0.0)
+    discount = Column(Float, default=0.0)  # per-line-item discount (AED, flat) — applied before VAT
     vat_applicable = Column(Boolean, default=True)
     vat_amount = Column(Float, default=0.0)
     total = Column(Float, default=0.0)
@@ -164,6 +165,7 @@ class InvoiceItem(Base):
     description = Column(String, nullable=False)
     quantity = Column(Float, default=1.0)
     unit_price = Column(Float, default=0.0)
+    discount = Column(Float, default=0.0)  # per-line-item discount (AED, flat) — applied before VAT
     vat_applicable = Column(Boolean, default=True)
     vat_amount = Column(Float, default=0.0)
     total = Column(Float, default=0.0)

@@ -46,19 +46,42 @@ def _increment_quotation_counter(db: Session) -> None:
 
 
 def _calculate_items(items_data, vat_rate=5.0):
+    """Per-line calculation, mirroring invoices: Line Gross = Qty × Unit Price,
+    Line Discount = that item's own discount (clamped), Line Taxable = Gross - Discount,
+    Line VAT = Taxable × rate, Line Total = Taxable + VAT."""
     subtotal = 0.0
     vat_total = 0.0
+    vat_applicable_subtotal = 0.0
+    item_discount_total = 0.0
     processed = []
     for item in items_data:
         if not (item.description or "").strip():
             continue  # skip blank rows — never persist blank items
-        line_total = item.quantity * item.unit_price
-        vat_amt = round(line_total * (vat_rate / 100), 2) if item.vat_applicable else 0.0
-        item_total = round(line_total + vat_amt, 2)
-        subtotal += line_total
+        line_gross = round(item.quantity * item.unit_price, 2)
+        line_discount = min(max(item.discount or 0.0, 0.0), line_gross)
+        line_taxable = round(line_gross - line_discount, 2)
+        vat_amt = round(line_taxable * (vat_rate / 100), 2) if item.vat_applicable else 0.0
+        item_total = round(line_taxable + vat_amt, 2)
+        subtotal += line_gross
         vat_total += vat_amt
-        processed.append({**item.model_dump(), "vat_amount": vat_amt, "total": item_total})
-    return processed, round(subtotal, 2), round(vat_total, 2)
+        item_discount_total += line_discount
+        if item.vat_applicable:
+            vat_applicable_subtotal += line_gross
+        processed.append({**item.model_dump(), "discount": line_discount, "vat_amount": vat_amt, "total": item_total})
+    return processed, round(subtotal, 2), round(vat_total, 2), round(vat_applicable_subtotal, 2), round(item_discount_total, 2)
+
+
+def _resolve_discount_and_vat(data, subtotal, vat_total, vat_applicable_subtotal, item_discount_total, vat_rate):
+    """Decide which discount model applies for this save. If any line item carries its own
+    discount, that's authoritative — vat_total is already per-line-correct. Otherwise this is
+    a quotation that only ever used a header-level discount: quotations never had a
+    VAT-after-discount adjustment before this feature (unlike invoices), so — to avoid
+    silently changing a historical quotation's stored total on an incidental re-save — the
+    fallback reproduces that exact prior behavior: VAT stays as computed on the full line
+    amounts, and only the discount is subtracted from the total."""
+    if item_discount_total > 0:
+        return item_discount_total, vat_total
+    return data.discount or 0, vat_total
 
 
 _active = lambda: models.Quotation.deleted_at.is_(None)
@@ -89,8 +112,9 @@ def create_quotation(data: schemas.QuotationCreate, db: Session = Depends(get_db
     company = db.query(models.Company).first()
     vat_rate = company.vat_rate if company else 5.0
 
-    processed_items, subtotal, vat_total = _calculate_items(data.items, vat_rate)
-    total = round(subtotal + vat_total - (data.discount or 0), 2)
+    processed_items, subtotal, vat_total, vat_applicable_subtotal, item_discount_total = _calculate_items(data.items, vat_rate)
+    discount, vat_total = _resolve_discount_and_vat(data, subtotal, vat_total, vat_applicable_subtotal, item_discount_total, vat_rate)
+    total = round(subtotal - discount + vat_total, 2)
 
     q_number = _next_quotation_number(db)
     existing_deleted = db.query(models.Quotation).filter(
@@ -104,7 +128,7 @@ def create_quotation(data: schemas.QuotationCreate, db: Session = Depends(get_db
         quotation.customer_id = data.customer_id
         quotation.date = data.date or datetime.utcnow()
         quotation.valid_until = data.valid_until
-        quotation.discount = data.discount or 0
+        quotation.discount = discount
         quotation.notes = data.notes or ""
         quotation.payment_terms = data.payment_terms or ""
         quotation.delivery = data.delivery or ""
@@ -124,7 +148,7 @@ def create_quotation(data: schemas.QuotationCreate, db: Session = Depends(get_db
             customer_id=data.customer_id,
             date=data.date or datetime.utcnow(),
             valid_until=data.valid_until,
-            discount=data.discount or 0,
+            discount=discount,
             notes=data.notes or "",
             payment_terms=data.payment_terms or "",
             delivery=data.delivery or "",
@@ -145,6 +169,7 @@ def create_quotation(data: schemas.QuotationCreate, db: Session = Depends(get_db
             description=item["description"],
             quantity=item["quantity"],
             unit_price=item["unit_price"],
+            discount=item["discount"],
             vat_applicable=item["vat_applicable"],
             vat_amount=item["vat_amount"],
             total=item["total"]
@@ -200,6 +225,7 @@ def convert_to_invoice(quotation_id: int, db: Session = Depends(get_db)):
             description=qi.description,
             quantity=qi.quantity,
             unit_price=qi.unit_price,
+            discount=qi.discount or 0,
             vat_applicable=qi.vat_applicable,
             vat_amount=qi.vat_amount,
             total=qi.total
@@ -234,13 +260,14 @@ def update_quotation(quotation_id: int, data: schemas.QuotationCreate, db: Sessi
     company = db.query(models.Company).first()
     vat_rate = company.vat_rate if company else 5.0
 
-    processed_items, subtotal, vat_total = _calculate_items(data.items, vat_rate)
-    total = round(subtotal + vat_total - (data.discount or 0), 2)
+    processed_items, subtotal, vat_total, vat_applicable_subtotal, item_discount_total = _calculate_items(data.items, vat_rate)
+    discount, vat_total = _resolve_discount_and_vat(data, subtotal, vat_total, vat_applicable_subtotal, item_discount_total, vat_rate)
+    total = round(subtotal - discount + vat_total, 2)
 
     q.customer_id = data.customer_id
     q.date = data.date or q.date
     q.valid_until = data.valid_until
-    q.discount = data.discount or 0
+    q.discount = discount
     q.notes = data.notes or ""
     q.payment_terms = data.payment_terms or ""
     q.delivery = data.delivery or ""
@@ -265,6 +292,7 @@ def update_quotation(quotation_id: int, data: schemas.QuotationCreate, db: Sessi
             description=item["description"],
             quantity=item["quantity"],
             unit_price=item["unit_price"],
+            discount=item["discount"],
             vat_applicable=item["vat_applicable"],
             vat_amount=item["vat_amount"],
             total=item["total"]
@@ -403,7 +431,7 @@ def download_quotation_pdf(quotation_id: str, db: Session = Depends(get_db)):
             "date": q.date.strftime("%d %b %Y"),
             "valid_until": q.valid_until.strftime("%d %b %Y") if q.valid_until else "",
             "customer": cust_dict,
-            "items": [{"description": it.description, "quantity": it.quantity, "unit_price": it.unit_price, "vat_applicable": it.vat_applicable, "vat_amount": it.vat_amount, "total": it.total} for it in q.items if not it.deleted_at and (it.description or "").strip()],
+            "items": [{"description": it.description, "quantity": it.quantity, "unit_price": it.unit_price, "discount": it.discount or 0, "vat_applicable": it.vat_applicable, "vat_amount": it.vat_amount, "total": it.total} for it in q.items if not it.deleted_at and (it.description or "").strip()],
             "subtotal": q.subtotal,
             "vat_amount": q.vat_amount,
             "discount": q.discount,

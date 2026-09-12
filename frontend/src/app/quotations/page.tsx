@@ -9,7 +9,7 @@ import { Plus, FileText, Trash2, FileDown, ArrowRight, X, MessageCircle, Edit2 }
 
 interface Customer { id: number; name: string; payment_terms: string; }
 interface Item { id: number; name: string; price: number; vat_applicable: boolean; }
-interface LineItem { item_id: number | null; description: string; quantity: number; unit_price: number; vat_applicable: boolean; [key: string]: unknown; }
+interface LineItem { item_id: number | null; description: string; quantity: number; unit_price: number; discount: number; vat_applicable: boolean; [key: string]: unknown; }
 interface Quotation {
   id: number; quotation_number: string; customer?: { name: string };
   date: string; total: number; status: string; converted_to_invoice: boolean;
@@ -24,7 +24,7 @@ const emptyForm = () => ({
   paymentTerms: "",
   delivery: "",
   includeStamp: false,
-  lines: [{ item_id: null, description: "", quantity: 1, unit_price: 0, vat_applicable: true }] as LineItem[],
+  lines: [{ item_id: null, description: "", quantity: 1, unit_price: 0, discount: 0, vat_applicable: true }] as LineItem[],
 });
 
 export default function QuotationsPage() {
@@ -38,12 +38,15 @@ export default function QuotationsPage() {
   const [customerId, setCustomerId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [validUntil, setValidUntil] = useState("");
-  const [discount, setDiscount] = useState(0);
+  // legacyDiscount: header-level discount an EXISTING quotation was saved with before
+  // item-level discounts existed. Fallback only — once any line has its own discount,
+  // that's authoritative and this is ignored. New quotations start at 0.
+  const [legacyDiscount, setLegacyDiscount] = useState(0);
   const [notes, setNotes] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
   const [delivery, setDelivery] = useState("");
   const [includeStamp, setIncludeStamp] = useState(false);
-  const [lines, setLines] = useState<LineItem[]>([{ item_id: null, description: "", quantity: 1, unit_price: 0, vat_applicable: true }]);
+  const [lines, setLines] = useState<LineItem[]>([{ item_id: null, description: "", quantity: 1, unit_price: 0, discount: 0, vat_applicable: true }]);
 
   const load = () => getQuotations()
     .then((r) => {
@@ -66,7 +69,7 @@ export default function QuotationsPage() {
     setCustomerId(f.customerId);
     setDate(f.date);
     setValidUntil(f.validUntil);
-    setDiscount(f.discount);
+    setLegacyDiscount(f.discount);
     setNotes(f.notes);
     setPaymentTerms(f.paymentTerms);
     setDelivery(f.delivery);
@@ -83,17 +86,18 @@ export default function QuotationsPage() {
       setCustomerId(String(q.customer_id));
       setDate(q.date.split("T")[0]);
       setValidUntil(q.valid_until ? q.valid_until.split("T")[0] : "");
-      setDiscount(q.discount || 0);
+      setLegacyDiscount(q.discount || 0);
       setNotes(q.notes || "");
       setPaymentTerms(q.payment_terms || "");
       setDelivery(q.delivery || "");
       setIncludeStamp(q.include_stamp || false);
       setLines(
-        q.items.map((it: { item_id: number | null; description: string; quantity: number; unit_price: number; vat_applicable: boolean }) => ({
+        q.items.map((it: { item_id: number | null; description: string; quantity: number; unit_price: number; discount?: number; vat_applicable: boolean }) => ({
           item_id: it.item_id ?? null,
           description: it.description,
           quantity: it.quantity,
           unit_price: it.unit_price,
+          discount: it.discount || 0,
           vat_applicable: it.vat_applicable,
         }))
       );
@@ -103,7 +107,7 @@ export default function QuotationsPage() {
     }
   };
 
-  const addLine = () => setLines([...lines, { item_id: null, description: "", quantity: 1, unit_price: 0, vat_applicable: true }]);
+  const addLine = () => setLines([...lines, { item_id: null, description: "", quantity: 1, unit_price: 0, discount: 0, vat_applicable: true }]);
   const removeLine = (i: number) => setLines(lines.filter((_, idx) => idx !== i));
   const updateLine = (i: number, field: keyof LineItem, value: unknown) => {
     // Create a new object (immutable update) so React always detects the state change
@@ -119,10 +123,30 @@ export default function QuotationsPage() {
     setLines(updated);
   };
 
-  const calcLine = (l: LineItem) => { const lt = l.quantity * l.unit_price; const vat = l.vat_applicable ? lt * 0.05 : 0; return { lt, vat, total: lt + vat }; };
+  // Discount is applied to the specific item first: Taxable = (Qty × Unit Price) − Line Discount,
+  // VAT = Taxable × rate. Quotation totals are then the sum of the line-level values.
+  const calcLine = (l: LineItem) => {
+    const lt = l.quantity * l.unit_price;                     // gross, before discount
+    const disc = Math.min(Math.max(l.discount || 0, 0), lt);
+    const taxable = lt - disc;
+    const vat = l.vat_applicable ? taxable * 0.05 : 0;
+    return { lt, disc, taxable, vat, total: taxable + vat };
+  };
   const subtotal = lines.reduce((s, l) => s + calcLine(l).lt, 0);
-  const totalVat = lines.reduce((s, l) => s + calcLine(l).vat, 0);
-  const grandTotal = subtotal + totalVat - discount;
+  const itemDiscountTotal = lines.reduce((s, l) => s + calcLine(l).disc, 0);
+  // Once any line carries its own discount, that's authoritative; otherwise fall back to the
+  // quotation's original header-level discount so old (untouched) quotations keep matching.
+  const discount = itemDiscountTotal > 0 ? itemDiscountTotal : legacyDiscount;
+  let totalVat: number;
+  if (itemDiscountTotal > 0) {
+    totalVat = lines.reduce((s, l) => s + calcLine(l).vat, 0);
+  } else {
+    const vatApplicableSubtotal = lines.reduce((s, l) => s + (l.vat_applicable ? calcLine(l).lt : 0), 0);
+    const vatBase = subtotal > 0 ? Math.max(0, vatApplicableSubtotal - discount * (vatApplicableSubtotal / subtotal)) : 0;
+    totalVat = Math.round(vatBase * 0.05 * 100) / 100;
+  }
+  const amountAfterDiscount = subtotal - discount;
+  const grandTotal = amountAfterDiscount + totalVat;
 
   const handleSave = async () => {
     if (!customerId) return toast.error("Select a customer");
@@ -257,7 +281,7 @@ export default function QuotationsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="table-head">
-                    <tr><th>Item</th><th>Description</th><th className="w-20">Qty</th><th className="w-28">Price</th><th className="w-12">VAT</th><th className="w-24 text-right">Total</th><th className="w-8"></th></tr>
+                    <tr><th>Item</th><th>Description</th><th className="w-20">Qty</th><th className="w-28">Price</th><th className="w-24">Discount</th><th className="w-12">VAT</th><th className="w-24 text-right">Total</th><th className="w-8"></th></tr>
                   </thead>
                   <tbody>
                     {lines.map((l, i) => {
@@ -273,6 +297,7 @@ export default function QuotationsPage() {
                           <td className="px-3 py-2"><input className="input text-xs py-1" value={l.description} onChange={(e) => updateLine(i, "description", e.target.value)} /></td>
                           <td className="px-3 py-2"><input className="input text-xs py-1 text-center" type="number" value={l.quantity} onChange={(e) => updateLine(i, "quantity", parseFloat(e.target.value) || 0)} /></td>
                           <td className="px-3 py-2"><input className="input text-xs py-1 text-right" type="number" value={l.unit_price} onChange={(e) => updateLine(i, "unit_price", parseFloat(e.target.value) || 0)} /></td>
+                          <td className="px-3 py-2"><input className="input text-xs py-1 text-right" type="number" min="0" step="0.01" value={l.discount} onChange={(e) => updateLine(i, "discount", parseFloat(e.target.value) || 0)} placeholder="0.00" /></td>
                           <td className="px-3 py-2 text-center"><input type="checkbox" checked={l.vat_applicable} onChange={(e) => updateLine(i, "vat_applicable", e.target.checked)} className="accent-brand-indigo" /></td>
                           <td className="px-3 py-2 text-right font-medium">{total.toFixed(2)}</td>
                           <td className="px-2 py-2">{lines.length > 1 && <button onClick={() => removeLine(i)} className="text-text-muted hover:text-red-400"><Trash2 size={12} /></button>}</td>
@@ -296,12 +321,14 @@ export default function QuotationsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div><label className="label">Notes</label><textarea className="input h-16 resize-none" value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
                 <div className="space-y-2 pt-4 text-sm">
-                  <div className="flex justify-between"><span className="text-text-secondary">Subtotal</span><span>AED {subtotal.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span className="text-text-secondary">Amount Excl. VAT</span><span>AED {subtotal.toFixed(2)}</span></div>
+                  {discount > 0 && (
+                    <div className="flex justify-between"><span className="text-text-secondary">Discount</span><span className="font-medium text-amber-400">- AED {discount.toFixed(2)}</span></div>
+                  )}
+                  {discount > 0 && (
+                    <div className="flex justify-between"><span className="text-text-secondary">Amount After Discount</span><span>AED {amountAfterDiscount.toFixed(2)}</span></div>
+                  )}
                   <div className="flex justify-between"><span className="text-text-secondary">VAT (5%)</span><span>AED {totalVat.toFixed(2)}</span></div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-text-secondary">Discount</span>
-                    <input className="input w-28 text-right py-1 text-sm" type="number" value={discount} onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)} />
-                  </div>
                   <div className="flex justify-between font-bold text-base border-t border-bg-border pt-2">
                     <span>Total</span><span className="text-gradient">AED {grandTotal.toFixed(2)}</span>
                   </div>

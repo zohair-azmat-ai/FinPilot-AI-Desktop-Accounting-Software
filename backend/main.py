@@ -87,6 +87,9 @@ def _run_migrations():
         ("supplier_bills",  "deleted_at", "TEXT DEFAULT NULL"),
         # Expense party name — added for party/supplier name saving on expenses
         ("expenses",        "party_name", "TEXT DEFAULT ''"),
+        # Per-line-item discount — item-specific discount for invoices/quotations
+        ("invoice_items",   "discount", "REAL DEFAULT 0.0"),
+        ("quotation_items", "discount", "REAL DEFAULT 0.0"),
         # Cloud sync columns — added to all tables
         *[col for tbl in [
             "companies", "bank_accounts", "customers", "suppliers", "items",
