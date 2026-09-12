@@ -541,7 +541,9 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
 
     tot_rows = [[Paragraph("Amount Excl. VAT:", tl_s), Paragraph(f"AED {subtotal:.2f}", tv_s)]]
     if discount > 0:
+        _after_disc = round(subtotal - discount, 2)
         tot_rows.append([Paragraph("Discount:", tl_s), Paragraph(f"- AED {discount:.2f}", tv_s)])
+        tot_rows.append([Paragraph("Amount After Discount:", tl_s), Paragraph(f"AED {_after_disc:.2f}", tv_s)])
     tot_rows.append([Paragraph("VAT (5%):",     tl_s), Paragraph(f"AED {vat_amount:.2f}", tv_s)])
     tot_rows.append([Paragraph("TOTAL AMOUNT:", tb_s), Paragraph(f"AED {total:.2f}",      tb_s)])
 

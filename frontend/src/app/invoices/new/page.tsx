@@ -103,8 +103,12 @@ function InvoiceEditorContent() {
   };
 
   const subtotal = lines.reduce((s, l) => s + calcLine(l).lineTotal, 0);
-  const totalVat = lines.reduce((s, l) => s + calcLine(l).vat, 0);
-  const grandTotal = subtotal + totalVat - discount;
+  // VAT is calculated on the amount AFTER discount (discount allocated proportionally to VAT-applicable items)
+  const vatApplicableSubtotal = lines.reduce((s, l) => s + (l.vat_applicable ? calcLine(l).lineTotal : 0), 0);
+  const vatBase = subtotal > 0 ? Math.max(0, vatApplicableSubtotal - discount * (vatApplicableSubtotal / subtotal)) : 0;
+  const totalVat = Math.round(vatBase * (VAT_RATE / 100) * 100) / 100;
+  const amountAfterDiscount = subtotal - discount;
+  const grandTotal = amountAfterDiscount + totalVat;
 
   const handleSave = async () => {
     if (!isCash && !customerId) return toast.error("Please select a customer");
@@ -375,12 +379,8 @@ function InvoiceEditorContent() {
               <h4 className="font-medium text-sm text-text-primary border-b border-bg-border pb-3">Invoice Summary</h4>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-text-secondary">Subtotal</span>
+                  <span className="text-text-secondary">Amount Excl. VAT</span>
                   <span className="font-medium">AED {subtotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-text-secondary">VAT (5%)</span>
-                  <span className="font-medium">AED {totalVat.toFixed(2)}</span>
                 </div>
                 <div>
                   <div className="flex justify-between text-sm mb-1">
@@ -394,6 +394,16 @@ function InvoiceEditorContent() {
                     onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
                     placeholder="0.00"
                   />
+                </div>
+                {discount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-text-secondary">Amount After Discount</span>
+                    <span className="font-medium">AED {amountAfterDiscount.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm">
+                  <span className="text-text-secondary">VAT (5%)</span>
+                  <span className="font-medium">AED {totalVat.toFixed(2)}</span>
                 </div>
                 <div className="pt-2 border-t border-bg-border">
                   <div className="flex justify-between">

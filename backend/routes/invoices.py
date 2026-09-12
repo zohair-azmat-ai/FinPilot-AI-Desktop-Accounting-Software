@@ -52,6 +52,7 @@ def _increment_invoice_counter(db: Session) -> None:
 def _calculate_items(items_data, vat_rate=5.0):
     subtotal = 0.0
     vat_total = 0.0
+    vat_applicable_subtotal = 0.0
     processed = []
     for item in items_data:
         line_total = item.quantity * item.unit_price
@@ -59,8 +60,19 @@ def _calculate_items(items_data, vat_rate=5.0):
         item_total = round(line_total + vat_amt, 2)
         subtotal += line_total
         vat_total += vat_amt
+        if item.vat_applicable:
+            vat_applicable_subtotal += line_total
         processed.append({**item.model_dump(), "vat_amount": vat_amt, "total": item_total})
-    return processed, round(subtotal, 2), round(vat_total, 2)
+    return processed, round(subtotal, 2), round(vat_total, 2), round(vat_applicable_subtotal, 2)
+
+
+def _vat_after_discount(subtotal: float, vat_applicable_subtotal: float, discount: float, vat_rate: float) -> float:
+    """Calculate VAT on the amount after discount (discount allocated proportionally
+    to VAT-applicable items).  Returns rounded VAT amount."""
+    if subtotal <= 0 or discount <= 0:
+        return round(vat_applicable_subtotal * vat_rate / 100, 2)
+    vat_base = max(0.0, vat_applicable_subtotal - discount * (vat_applicable_subtotal / subtotal))
+    return round(vat_base * vat_rate / 100, 2)
 
 
 def _update_ledger(db: Session, invoice: models.Invoice):
@@ -165,8 +177,10 @@ def create_invoice(data: schemas.InvoiceCreate, db: Session = Depends(get_db)):
 
     # Filter out blank rows — never save items with no description
     data.items = [it for it in data.items if it.description.strip()]
-    processed_items, subtotal, vat_total = _calculate_items(data.items, vat_rate)
-    total = round(subtotal + vat_total - (data.discount or 0), 2)
+    processed_items, subtotal, _, vat_applicable_subtotal = _calculate_items(data.items, vat_rate)
+    discount = data.discount or 0
+    vat_total = _vat_after_discount(subtotal, vat_applicable_subtotal, discount, vat_rate)
+    total = round(subtotal - discount + vat_total, 2)
     balance_due = total
 
     inv_number, _use_series = _next_invoice_number(db)
@@ -271,8 +285,10 @@ def update_invoice(invoice_id: int, data: schemas.InvoiceCreate, db: Session = D
     vat_rate = company.vat_rate if company else 5.0
     # Filter blank rows before processing
     data.items = [it for it in data.items if it.description.strip()]
-    processed_items, subtotal, vat_total = _calculate_items(data.items, vat_rate)
-    total = round(subtotal + vat_total - (data.discount or 0), 2)
+    processed_items, subtotal, _, vat_applicable_subtotal = _calculate_items(data.items, vat_rate)
+    discount = data.discount or 0
+    vat_total = _vat_after_discount(subtotal, vat_applicable_subtotal, discount, vat_rate)
+    total = round(subtotal - discount + vat_total, 2)
 
     now = datetime.now(timezone.utc).isoformat()
     inv.customer_id = data.customer_id
