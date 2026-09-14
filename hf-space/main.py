@@ -168,6 +168,21 @@ def _resolve_invoice(lookup: str, workspace_id: Optional[str]) -> Optional[dict]
     return inv
 
 
+def _inv_pdf_filename(ref: str) -> str:
+    """PDF download filename from the actual invoice reference — mirrors
+    backend/routes/invoices.py's _pdf_filename() so cloud and local downloads
+    use identical naming."""
+    ref = (ref or "").strip()
+    return f"{ref}.pdf" if ref.upper().startswith("INV-") else f"INV-{ref}.pdf"
+
+
+def _quo_pdf_filename(ref: str) -> str:
+    """PDF download filename from the actual quotation reference — mirrors
+    backend/routes/quotations.py's _pdf_filename()."""
+    ref = (ref or "").strip()
+    return f"{ref}.pdf" if ref.upper().startswith("QUO-") else f"QUO-{ref}.pdf"
+
+
 def _pdf_response(path: str, filename: str) -> Response:
     try:
         with open(path, "rb") as f:
@@ -260,7 +275,7 @@ def invoice_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         log.error("[invoice pdf] generation failed: %s", _exc, exc_info=True)
         from fastapi.responses import JSONResponse
         return JSONResponse({"ok": False, "error": str(_exc), "traceback": traceback.format_exc()}, status_code=500)
-    return _pdf_response(path, f"Invoice_{data['invoice_number']}.pdf")
+    return _pdf_response(path, _inv_pdf_filename(data['invoice_number']))
 
 
 @app.get("/api/quotations/{lookup}/pdf")
@@ -313,7 +328,7 @@ def quotation_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         log.error("[quotation pdf] generation failed: %s", _exc, exc_info=True)
         from fastapi.responses import JSONResponse
         return JSONResponse({"ok": False, "error": str(_exc), "traceback": traceback.format_exc()}, status_code=500)
-    return _pdf_response(path, f"Quotation_{data['quotation_number']}.pdf")
+    return _pdf_response(path, _quo_pdf_filename(data['quotation_number']))
 
 
 @app.get("/api/delivery-notes/{lookup}/pdf")

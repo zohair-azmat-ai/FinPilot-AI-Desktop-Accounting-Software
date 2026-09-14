@@ -12,6 +12,14 @@ from supabase_pdf import fetch_invoice_for_pdf
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
 
+def _pdf_filename(ref: str) -> str:
+    """PDF download filename from the actual invoice reference — never the
+    customer name, a UUID, or a timestamp. Avoids a duplicate 'INV-' if the
+    stored invoice_number already carries the company's own prefix."""
+    ref = (ref or "").strip()
+    return f"{ref}.pdf" if ref.upper().startswith("INV-") else f"INV-{ref}.pdf"
+
+
 def _next_invoice_number(db: Session) -> tuple:
     """Returns (invoice_number_string, True).
     Fills the lowest gap first; if no gap, uses max+1."""
@@ -603,7 +611,7 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
     return FileResponse(
         filepath,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="Invoice_{doc_number}.pdf"',
+        headers={"Content-Disposition": f'inline; filename="{_pdf_filename(doc_number)}"',
                  "Cache-Control": "no-cache, no-store, must-revalidate",
                  "Pragma": "no-cache", "Expires": "0"},
     )

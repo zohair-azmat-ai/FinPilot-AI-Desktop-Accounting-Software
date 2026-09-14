@@ -290,20 +290,52 @@ class SyncEngine(threading.Thread):
                 # Format 1: "column_name" of relation
                 for m in _re.finditer(r'"([^"]+)" of relation', err_str):
                     bad_cols.add(m.group(1))
-                # Format 2: Could not find the column_name column of table in the schema cache
-                for m in _re.finditer(r'Could not find the (\w+) column', err_str):
+                # Format 2: PostgREST PGRST204 schema-cache error, e.g.
+                # "Could not find the 'discount' column of 'quotation_items' in the schema
+                # cache" — this is what a real upsert against a genuinely missing column
+                # actually returns (quotes included), unlike the unquoted variant below.
+                for m in _re.finditer(r"Could not find the '?(\w+)'? column", err_str):
                     bad_cols.add(m.group(1))
                 # Format 3: column "col" does not exist
                 for m in _re.finditer(r'column "([^"]+)" does not exist', err_str):
                     bad_cols.add(m.group(1))
+                # Format 4: column table.col does not exist (unquoted, schema-qualified —
+                # this is the exact shape PostgREST returns for a plain upsert against a
+                # column that doesn't exist yet, e.g. when a new local column like
+                # "discount" is added before the matching Supabase column is created)
+                for m in _re.finditer(r'column \w+\.(\w+) does not exist', err_str):
+                    bad_cols.add(m.group(1))
                 if not bad_cols:
                     bad_cols = {"deleted_at"}  # safe fallback
-                rows_clean = [{k: v for k, v in r.items() if k not in bad_cols} for r in rows]
                 log.warning(
                     "Push [%s]: Supabase missing column(s) %s — retrying without. "
                     "Add these columns in Supabase dashboard to sync them.", table, bad_cols
                 )
-                client.upsert(table, rows_clean)
+                # Retry, expanding bad_cols if further missing-column errors surface (covers
+                # tables missing more than one new column at once) — bounded so a genuinely
+                # different error still surfaces instead of looping forever.
+                rows_clean = rows
+                for _attempt in range(5):
+                    rows_clean = [{k: v for k, v in r.items() if k not in bad_cols} for r in rows_clean]
+                    try:
+                        client.upsert(table, rows_clean)
+                        break
+                    except IOError as e2:
+                        e2_str = str(e2)
+                        more_cols: set = set()
+                        for m in _re.finditer(r'"([^"]+)" of relation', e2_str):
+                            more_cols.add(m.group(1))
+                        for m in _re.finditer(r'Could not find the (\w+) column', e2_str):
+                            more_cols.add(m.group(1))
+                        for m in _re.finditer(r'column "([^"]+)" does not exist', e2_str):
+                            more_cols.add(m.group(1))
+                        for m in _re.finditer(r'column \w+\.(\w+) does not exist', e2_str):
+                            more_cols.add(m.group(1))
+                        more_cols -= bad_cols
+                        if not more_cols:
+                            raise
+                        bad_cols |= more_cols
+                        log.warning("Push [%s]: also missing %s — retrying without those too.", table, more_cols)
             else:
                 raise
 

@@ -11,6 +11,15 @@ from supabase_pdf import fetch_quotation_for_pdf
 router = APIRouter(prefix="/api/quotations", tags=["quotations"])
 
 
+def _pdf_filename(ref: str) -> str:
+    """PDF download filename from the actual quotation reference — never the
+    customer name, a UUID, or a timestamp. The quotation_number already carries
+    the company's own prefix (default 'QUO-'); avoid duplicating it if so, but
+    still guarantee a 'QUO-' prefix if the reference somehow lacks one."""
+    ref = (ref or "").strip()
+    return f"{ref}.pdf" if ref.upper().startswith("QUO-") else f"QUO-{ref}.pdf"
+
+
 def _next_quotation_number(db: Session) -> str:
     """Fills the lowest gap first; if no gap, uses max+1."""
     company = db.query(models.Company).first()
@@ -454,7 +463,7 @@ def download_quotation_pdf(quotation_id: str, db: Session = Depends(get_db)):
     return FileResponse(
         filepath,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="Quotation_{doc_number}.pdf"',
+        headers={"Content-Disposition": f'inline; filename="{_pdf_filename(doc_number)}"',
                  "Cache-Control": "no-cache, no-store, must-revalidate",
                  "Pragma": "no-cache", "Expires": "0"},
     )
