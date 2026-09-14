@@ -107,6 +107,11 @@ export const uploadStamp = (file: File) => {
   fd.append("file", file);
   return api.post("/api/company/stamp", fd, { headers: { "Content-Type": undefined } });
 };
+export const uploadLetterhead = (file: File) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return api.post("/api/company/letterhead", fd, { headers: { "Content-Type": undefined } });
+};
 
 // Customers
 export const getCustomers = () => api.get("/api/customers/");

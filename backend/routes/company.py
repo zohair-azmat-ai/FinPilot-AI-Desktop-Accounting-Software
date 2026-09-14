@@ -78,3 +78,25 @@ async def upload_stamp(file: UploadFile = File(...)):
     with open(stamp_path, "wb") as f:
         f.write(contents)
     return {"ok": True, "message": "Stamp uploaded", "path": stamp_path}
+
+
+@router.post("/letterhead")
+async def upload_letterhead(file: UploadFile = File(...)):
+    """Upload this installation's letterhead image. Saved to this machine's
+    own ~/FinPilot/assets/ folder only — never touches any other install's
+    (or workspace's) letterhead, since each installation has its own folder."""
+    ALLOWED = {"image/png", "image/jpeg", "image/webp", "image/jpg"}
+    MAX_BYTES = 5 * 1024 * 1024  # 5 MB — letterheads are full-page-width images
+
+    if file.content_type not in ALLOWED:
+        raise HTTPException(status_code=400, detail="Only PNG, JPG or WebP images are allowed")
+
+    contents = await file.read()
+    if len(contents) > MAX_BYTES:
+        raise HTTPException(status_code=400, detail="File too large — maximum size is 5 MB")
+
+    os.makedirs(_USER_STAMP_DIR, exist_ok=True)
+    letterhead_path = os.path.join(_USER_STAMP_DIR, "letterhead.jpg")
+    with open(letterhead_path, "wb") as f:
+        f.write(contents)
+    return {"ok": True, "message": "Letterhead uploaded", "path": letterhead_path}

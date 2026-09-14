@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import Header from "@/components/Header";
-import { getCompany, saveCompany, uploadStamp } from "@/lib/api";
+import { getCompany, saveCompany, uploadStamp, uploadLetterhead } from "@/lib/api";
 import toast from "react-hot-toast";
-import { Building2, Hash, Save, Stamp, Upload, FileText } from "lucide-react";
+import { Building2, Hash, Save, Stamp, Upload, FileText, Image as ImageIcon } from "lucide-react";
 
 export default function CompanyPage() {
   const [form, setForm] = useState({
@@ -22,6 +22,8 @@ export default function CompanyPage() {
   const [saving, setSaving] = useState(false);
   const [stampUploading, setStampUploading] = useState(false);
   const stampInputRef = useRef<HTMLInputElement>(null);
+  const [letterheadUploading, setLetterheadUploading] = useState(false);
+  const letterheadInputRef = useRef<HTMLInputElement>(null);
 
   const handleStampUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -35,6 +37,21 @@ export default function CompanyPage() {
     } finally {
       setStampUploading(false);
       if (stampInputRef.current) stampInputRef.current.value = "";
+    }
+  };
+
+  const handleLetterheadUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLetterheadUploading(true);
+    try {
+      await uploadLetterhead(file);
+      toast.success("Letterhead uploaded successfully!");
+    } catch {
+      toast.error("Failed to upload letterhead.");
+    } finally {
+      setLetterheadUploading(false);
+      if (letterheadInputRef.current) letterheadInputRef.current.value = "";
     }
   };
 
@@ -408,6 +425,40 @@ export default function CompanyPage() {
             <Save size={15} />
             {saving ? "Saving..." : "Save Statement Settings"}
           </button>
+        </div>
+
+        {/* Letterhead Upload */}
+        <div className="card space-y-4 mt-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-brand-indigo/10 flex items-center justify-center text-brand-indigo">
+              <ImageIcon size={20} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-text-primary">Company Letterhead</h3>
+              <p className="text-xs text-text-secondary">Full-width header image printed at the top of Invoice, Quotation and Delivery Note PDFs</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-bg-secondary border border-bg-border">
+            <div className="flex-1">
+              <p className="text-sm text-text-primary">Upload letterhead image (JPG or PNG)</p>
+              <p className="text-xs text-text-muted">Replaces this installation&apos;s letterhead immediately</p>
+            </div>
+            <input
+              ref={letterheadInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={handleLetterheadUpload}
+            />
+            <button
+              onClick={() => letterheadInputRef.current?.click()}
+              disabled={letterheadUploading}
+              className="btn-secondary py-1.5 px-3 text-sm"
+            >
+              <Upload size={14} />
+              {letterheadUploading ? "Uploading..." : "Upload Letterhead"}
+            </button>
+          </div>
         </div>
 
         {/* Stamp Upload */}

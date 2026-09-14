@@ -49,6 +49,26 @@ for _fname in ("letterhead.jpg", "stamp.png"):
             except Exception as _e:
                 log.warning("[assets] Restore %s failed: %s", _fname, _e)
 
+# Same restore, per-workspace: /data/assets/ws_{id}/... → /tmp/assets/ws_{id}/...
+# (each workspace's uploaded letterhead/stamp is isolated in its own subfolder)
+try:
+    for _wsdir in os.listdir(PERSIST_ASSET_DIR):
+        if not _wsdir.startswith("ws_"):
+            continue
+        for _fname in ("letterhead.jpg", "stamp.png"):
+            _persist = os.path.join(PERSIST_ASSET_DIR, _wsdir, _fname)
+            _tmp     = os.path.join(_TMP_ASSET_DIR, _wsdir, _fname)
+            if os.path.exists(_persist) and os.path.getsize(_persist) > 0:
+                if not (os.path.exists(_tmp) and os.path.getsize(_tmp) > 0):
+                    try:
+                        os.makedirs(os.path.dirname(_tmp), exist_ok=True)
+                        _shutil.copy2(_persist, _tmp)
+                        log.info("[assets] Restored %s/%s from persistent storage", _wsdir, _fname)
+                    except Exception as _e:
+                        log.warning("[assets] Restore %s/%s failed: %s", _wsdir, _fname, _e)
+except OSError:
+    pass  # PERSIST_ASSET_DIR not available outside HF — silent fallback
+
 # ── Supabase REST helpers ──────────────────────────────────────────────────────
 def _sb_headers() -> dict:
     h = {
@@ -209,10 +229,68 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import contextlib
+import pdf_generator
 from pdf_generator import (
     generate_invoice_pdf, generate_quotation_pdf,
     generate_delivery_note_pdf, generate_po_pdf,
 )
+
+
+def _safe_ws_id(ws: Optional[str]) -> str:
+    """Sanitize a workspace_id for safe use as a filesystem path segment."""
+    return "".join(c for c in (ws or "") if c.isalnum() or c in ("-", "_"))[:80]
+
+
+def _is_default_ws(ws: Optional[str]) -> bool:
+    safe_ws = _safe_ws_id(ws)
+    return (not safe_ws) or safe_ws == _safe_ws_id(DEFAULT_WS)
+
+
+def _ws_asset_path(base_dir: str, ws: str, kind: str) -> str:
+    ext = "jpg" if kind == "letterhead" else "png"
+    return os.path.join(base_dir, f"ws_{ws}", f"{kind}.{ext}")
+
+
+def _resolve_ws_asset(ws: Optional[str], kind: str, fallback: str) -> str:
+    """Return a workspace-scoped asset path if that workspace has uploaded its
+    own letterhead/stamp, otherwise the existing shared/default path unchanged.
+    Our own company (default workspace) always resolves to `fallback` — this
+    branch only ever activates for a workspace_id that differs from DEFAULT_WS,
+    e.g. a customer deployment, so it can never affect our own PDFs."""
+    if _is_default_ws(ws):
+        return fallback
+    safe_ws = _safe_ws_id(ws)
+    tmp_scoped = _ws_asset_path(_TMP_ASSET_DIR, safe_ws, kind)
+    if os.path.exists(tmp_scoped) and os.path.getsize(tmp_scoped) > 0:
+        return tmp_scoped
+    # Fall back to the persistent copy (survives Space restarts) if runtime copy is missing.
+    persist_scoped = _ws_asset_path(PERSIST_ASSET_DIR, safe_ws, kind)
+    if os.path.exists(persist_scoped) and os.path.getsize(persist_scoped) > 0:
+        try:
+            os.makedirs(os.path.dirname(tmp_scoped), exist_ok=True)
+            _shutil.copy2(persist_scoped, tmp_scoped)
+            return tmp_scoped
+        except Exception:
+            return persist_scoped
+    return fallback
+
+
+@contextlib.contextmanager
+def _workspace_assets(ws: Optional[str]):
+    """Temporarily scope letterhead/stamp resolution to this workspace's own
+    uploaded assets for the duration of one PDF render, then restore the
+    previous (shared/default) values. Complete no-op for the default workspace
+    (our own company) — it always keeps using the existing shared assets."""
+    orig_lh = pdf_generator.LETTERHEAD_PATH
+    orig_stamp = pdf_generator._TMP_STAMP
+    pdf_generator.LETTERHEAD_PATH = _resolve_ws_asset(ws, "letterhead", orig_lh)
+    pdf_generator._TMP_STAMP = _resolve_ws_asset(ws, "stamp", orig_stamp)
+    try:
+        yield
+    finally:
+        pdf_generator.LETTERHEAD_PATH = orig_lh
+        pdf_generator._TMP_STAMP = orig_stamp
 
 
 @app.get("/")
@@ -269,7 +347,8 @@ def invoice_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "require_customer_signature": bool(inv.get("require_customer_signature", False)),
     }
     try:
-        path = generate_invoice_pdf(data, comp)
+        with _workspace_assets(ws):
+            path = generate_invoice_pdf(data, comp)
     except Exception as _exc:
         import traceback
         log.error("[invoice pdf] generation failed: %s", _exc, exc_info=True)
@@ -322,7 +401,8 @@ def quotation_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "letterhead": q.get("letterhead", 1),
     }
     try:
-        path = generate_quotation_pdf(data, comp)
+        with _workspace_assets(ws):
+            path = generate_quotation_pdf(data, comp)
     except Exception as _exc:
         import traceback
         log.error("[quotation pdf] generation failed: %s", _exc, exc_info=True)
@@ -377,7 +457,8 @@ def dn_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "items": items,
     }
     try:
-        path = generate_delivery_note_pdf(data, comp)
+        with _workspace_assets(ws):
+            path = generate_delivery_note_pdf(data, comp)
     except Exception as _exc:
         import traceback
         log.error("[dn pdf] generation failed: %s", _exc, exc_info=True)
@@ -426,7 +507,8 @@ def po_pdf(lookup: str, workspace_id: Optional[str] = Query(None)):
         "supplier": sup, "items": items,
     }
     try:
-        path = generate_po_pdf(data, comp)
+        with _workspace_assets(ws):
+            path = generate_po_pdf(data, comp)
     except Exception as _exc:
         import traceback
         log.error("[po pdf] generation failed: %s", _exc, exc_info=True)
@@ -514,9 +596,16 @@ def debug_invoice_items(invoice_number: str, workspace_id: Optional[str] = Query
 async def upload_asset(
     asset_type: str = Form(...),
     file: UploadFile = File(...),
+    workspace_id: Optional[str] = Form(None),
 ):
     """Upload letterhead or stamp.
     Saves to /tmp/assets/ (runtime) AND /data/assets/ (persistent across restarts).
+
+    When workspace_id is omitted or matches DEFAULT_WORKSPACE_ID (our own
+    company), this is unchanged from before — saves to the shared paths above.
+    When workspace_id is a different workspace (e.g. a customer deployment),
+    the asset is saved to an isolated per-workspace subfolder instead
+    (.../ws_{workspace_id}/...), so it can never affect any other workspace's PDFs.
     """
     if asset_type not in ("letterhead", "stamp"):
         raise HTTPException(400, "asset_type must be 'letterhead' or 'stamp'")
@@ -526,21 +615,30 @@ async def upload_asset(
     if not content:
         raise HTTPException(400, "Uploaded file is empty")
 
+    is_default = _is_default_ws(workspace_id)
+    safe_ws = _safe_ws_id(workspace_id)
+
     saved = []
-    for dest_dir in (_TMP_ASSET_DIR, PERSIST_ASSET_DIR):
+    for base_dir in (_TMP_ASSET_DIR, PERSIST_ASSET_DIR):
         try:
+            if is_default:
+                dest_dir = base_dir
+                dest = os.path.join(dest_dir, f"{asset_type}.{ext}")
+            else:
+                dest_dir = os.path.join(base_dir, f"ws_{safe_ws}")
+                dest = os.path.join(dest_dir, f"{asset_type}.{ext}")
             os.makedirs(dest_dir, exist_ok=True)
-            dest = os.path.join(dest_dir, f"{asset_type}.{ext}")
             with open(dest, "wb") as fh:
                 fh.write(content)
             saved.append(dest)
         except OSError as _e:
-            log.warning("[upload_asset] could not write to %s: %s", dest_dir, _e)
+            log.warning("[upload_asset] could not write to %s: %s", base_dir, _e)
 
-    log.info("[upload_asset] %s saved to: %s", asset_type, saved)
+    log.info("[upload_asset] %s (workspace=%s) saved to: %s", asset_type, safe_ws or "(default)", saved)
     return {
         "ok": True,
         "asset_type": asset_type,
+        "workspace_id": safe_ws or "(default)",
         "saved_to": saved,
         "size_bytes": len(content),
     }

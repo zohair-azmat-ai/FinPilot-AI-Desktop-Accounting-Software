@@ -366,6 +366,8 @@ def push_assets(body: PushAssetsRequest):
         raise HTTPException(400, "hf_url is required")
 
     results = {}
+    creds = sync_engine._read_creds()
+    workspace_id = (creds.get("workspace_id") if creds else "") or ""
 
     # Letterhead: user dir first (matches pdf_generator priority), then bundle assets
     lh_paths = [
@@ -382,6 +384,8 @@ def push_assets(body: PushAssetsRequest):
             body_parts = (
                 b"--" + boundary + b"\r\n"
                 b'Content-Disposition: form-data; name="asset_type"\r\n\r\nletterhead\r\n'
+                b"--" + boundary + b"\r\n"
+                b'Content-Disposition: form-data; name="workspace_id"\r\n\r\n' + workspace_id.encode() + b"\r\n"
                 b"--" + boundary + b"\r\n"
                 b'Content-Disposition: form-data; name="file"; filename="letterhead.jpg"\r\n'
                 b"Content-Type: image/jpeg\r\n\r\n" + data + b"\r\n"
@@ -414,6 +418,8 @@ def push_assets(body: PushAssetsRequest):
             body_parts = (
                 b"--" + boundary + b"\r\n"
                 b'Content-Disposition: form-data; name="asset_type"\r\n\r\nstamp\r\n'
+                b"--" + boundary + b"\r\n"
+                b'Content-Disposition: form-data; name="workspace_id"\r\n\r\n' + workspace_id.encode() + b"\r\n"
                 b"--" + boundary + b"\r\n"
                 b'Content-Disposition: form-data; name="file"; filename="stamp.png"\r\n'
                 b"Content-Type: image/png\r\n\r\n" + data + b"\r\n"
