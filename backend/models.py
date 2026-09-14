@@ -28,6 +28,7 @@ class Company(Base):
     show_lpo_in_statement = Column(Boolean, default=False)
     stamp_path = Column(String, default="")
     bank_details = Column(Text, default="")
+    invoice_template = Column(String, default="default")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

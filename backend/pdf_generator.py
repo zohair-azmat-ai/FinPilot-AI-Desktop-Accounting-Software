@@ -289,8 +289,425 @@ def _build_top(story, company, title, doc_number, doc_date, due_date=None):
         story.append(_header_table(company, title, doc_number, doc_date, due_date, letterhead=True))
 
 
+# ── Al Siwan Machinery and Electrical Equipment Trading FZE LLC template ──────
+def _generate_invoice_alsiwan(invoice_data: dict, company: dict) -> str:
+    """Company-specific invoice template for Al Siwan (selected via
+    invoice_template='alsiwan' in Company Settings).
+
+    Layout:
+      [Letterhead image — uploaded via Company Settings]
+      [Company contact info LEFT | Invoice metadata box RIGHT]
+      TAX INVOICE (centred title)
+      [9-column items table: S.NO / DESCRIPTION / QTY / UNIT PRICE /
+       DISCOUNT / TAXABLE AMT / TAX RATE / TAX AMT / TOTAL  (all in AED)]
+      [Totals: Total before VAT / VAT 5% / Discount / TOTAL]
+      [Amount in words LEFT | Bank details RIGHT]
+      [NOTE LEFT | Authorised Signature RIGHT]
+    All business logic (calculations, amount-in-words, VAT, pagination)
+    is shared with the default template; only the visual layout differs.
+    """
+    from reportlab.platypus import KeepTogether
+
+    _CW = A4[0] - 20 * mm   # 10 mm margins → 190 mm content width
+
+    filename = (f"Invoice_{invoice_data['invoice_number']}_"
+                f"{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
+    filepath = os.path.join(EXPORT_DIR, filename)
+
+    page_w, page_h = A4
+
+    # ── Letterhead (same mechanism as default template) ────────────────────
+    lh_file_ok = os.path.exists(_resolve_letterhead_path())
+    use_lh     = invoice_data.get("letterhead", True) and lh_file_ok
+    LH_MAX_H   = 70 * mm
+    LH_MIN_H   = 62 * mm
+    raw_lh_h   = _lh_page_height() if use_lh else 0.0
+    lh_draw_h  = max(LH_MIN_H, min(raw_lh_h, LH_MAX_H)) if raw_lh_h > 0 else 0.0
+    top_margin = (lh_draw_h + 2 * mm) if lh_draw_h else 15 * mm
+    _dbg(f"[AlSiwan] lh={lh_draw_h/mm:.1f}mm top={top_margin/mm:.1f}mm")
+
+    def _draw_asw_header(canv, _doc):
+        if not lh_draw_h:
+            return
+        canv.saveState()
+        canv.drawImage(_resolve_letterhead_path(), 0, page_h - lh_draw_h,
+                       width=page_w, height=lh_draw_h,
+                       preserveAspectRatio=False, mask="auto")
+        canv.restoreState()
+
+    doc = SimpleDocTemplate(
+        filepath, pagesize=A4,
+        leftMargin=10 * mm, rightMargin=10 * mm,
+        topMargin=top_margin, bottomMargin=10 * mm,
+    )
+    story = []
+
+    # ── Data ───────────────────────────────────────────────────────────────
+    _comp_stamp   = (company or {}).get("stamp_path", "") or ""
+    _stamp_raw    = invoice_data.get("include_stamp")
+    include_stamp = bool(_stamp_raw) if _stamp_raw is not None else False
+    stamp_chk     = _get_stamp_path(_comp_stamp) if include_stamp else ""
+
+    is_cash       = invoice_data.get("is_cash", False)
+    inv_no        = invoice_data.get("invoice_number", "")
+    inv_date      = invoice_data.get("date", "")
+    due_date_str  = invoice_data.get("due_date", "") or ""
+    lpo_no        = invoice_data.get("lpo_no", "") or ""
+    do_no         = invoice_data.get("do_no",  "") or ""
+    customer      = invoice_data.get("customer") or {}
+    subtotal      = invoice_data.get("subtotal",   0)
+    vat_amount    = invoice_data.get("vat_amount", 0)
+    discount      = invoice_data.get("discount",   0)
+    total         = invoice_data.get("total",      0)
+    notes_text    = (invoice_data.get("notes") or "").strip()
+    _bank_raw     = (company.get("bank_details") or "").strip()
+
+    actual_items = [
+        it for it in invoice_data.get("items", [])
+        if not it.get("deleted_at") and (it.get("description") or "").strip()
+    ]
+    _dbg(f"[AlSiwan] invoice={inv_no} items={len(actual_items)}")
+
+    # ── Palette — clean black + white, inspired by customer reference PDF ──
+    _BLACK  = colors.HexColor("#1A1A1A")
+    _BORDER = colors.HexColor("#333333")
+    _GRAY   = colors.HexColor("#F2F2F2")
+    _WHITE  = colors.white
+    _MUTED  = colors.HexColor("#666666")
+
+    # ── Styles ─────────────────────────────────────────────────────────────
+    _co_name = ParagraphStyle("asw_cn",  fontName="Helvetica-Bold", fontSize=9,   textColor=_BLACK)
+    _co_sub  = ParagraphStyle("asw_cs",  fontName="Helvetica",      fontSize=8,   textColor=_BLACK, leading=11)
+    _lbl_bx  = ParagraphStyle("asw_lb",  fontName="Helvetica-Bold", fontSize=8,   textColor=_BLACK)
+    _val_bx  = ParagraphStyle("asw_vb",  fontName="Helvetica",      fontSize=8,   textColor=_BLACK)
+    _ti_s    = ParagraphStyle("asw_ti",  fontName="Helvetica-Bold", fontSize=15,  textColor=_BLACK, alignment=TA_CENTER)
+    _ih      = ParagraphStyle("asw_ih",  fontName="Helvetica-Bold", fontSize=7,   textColor=_WHITE, alignment=TA_CENTER)
+    _ir      = ParagraphStyle("asw_ir",  fontName="Helvetica",      fontSize=7.5, textColor=_BLACK)
+    _irc     = ParagraphStyle("asw_irc", fontName="Helvetica",      fontSize=7.5, textColor=_BLACK, alignment=TA_RIGHT)
+    _icc     = ParagraphStyle("asw_icc", fontName="Helvetica",      fontSize=7.5, textColor=_BLACK, alignment=TA_CENTER)
+    _tl_s    = ParagraphStyle("asw_tl",  fontName="Helvetica",      fontSize=8.5, textColor=_BLACK)
+    _tv_s    = ParagraphStyle("asw_tv",  fontName="Helvetica",      fontSize=8.5, textColor=_BLACK, alignment=TA_RIGHT)
+    _tb_s    = ParagraphStyle("asw_tb",  fontName="Helvetica-Bold", fontSize=10,  textColor=_WHITE, alignment=TA_RIGHT)
+    _nt_s    = ParagraphStyle("asw_nt",  fontName="Helvetica-Bold", fontSize=8,   textColor=_BLACK)
+    _nv_s    = ParagraphStyle("asw_nv",  fontName="Helvetica",      fontSize=7.5, textColor=_BLACK)
+    _sig_s   = ParagraphStyle("asw_sig", fontName="Helvetica",      fontSize=8,   textColor=_BLACK, alignment=TA_CENTER)
+    _ft_s    = ParagraphStyle("asw_ft",  fontName="Helvetica",      fontSize=6.5, textColor=_MUTED, alignment=TA_CENTER)
+    _ws_s    = ParagraphStyle("asw_ws",  fontName="Helvetica-Bold", fontSize=7.5, textColor=_BLACK)
+    _wv_s    = ParagraphStyle("asw_wv",  fontName="Helvetica",      fontSize=7.5, textColor=_BLACK)
+    _bk_lbl  = ParagraphStyle("asw_bkl", fontName="Helvetica-Bold", fontSize=7.5, textColor=_MUTED)
+    _bk_val  = ParagraphStyle("asw_bkv", fontName="Helvetica",      fontSize=7.5, textColor=_BLACK)
+
+    # ── 1. Company info (left) + Invoice metadata box (right) ─────────────
+    comp_left_items = []
+    if not lh_draw_h:
+        # No letterhead — show company name in plain text
+        comp_left_items.append(Paragraph(f"<b>{_xe(company.get('name', ''))}</b>", _co_name))
+        comp_left_items.append(Spacer(1, 2))
+    if company.get("email"):
+        comp_left_items.append(Paragraph(_xe(company.get("email", "")), _co_sub))
+    if company.get("phone"):
+        comp_left_items.append(Paragraph(_xe(company.get("phone", "")), _co_sub))
+    if company.get("address"):
+        for _ln in company["address"].split("\n"):
+            _ln = _ln.strip()
+            if _ln:
+                comp_left_items.append(Paragraph(_xe(_ln), _co_sub))
+    if company.get("trn"):
+        comp_left_items.append(Paragraph(f"TRN: {_xe(company.get('trn', ''))}", _co_sub))
+    if not comp_left_items:
+        comp_left_items = [Spacer(1, 1)]
+
+    # Right invoice metadata box: BILLED TO at top, then invoice fields
+    if is_cash:
+        _billed_para = "CASH SALE"
+    else:
+        _cn_x  = _xe(customer.get("name") or "—")
+        _ctr_x = _xe(customer.get("trn", "") or "")
+        _billed_para = (_cn_x + (f"<br/>TRN: {_ctr_x}" if _ctr_x else ""))
+
+    inv_box_rows = [
+        [Paragraph("BILLED TO:", _lbl_bx),
+         Paragraph(_billed_para, _val_bx)],
+        [Paragraph("INVOICE NO:", _lbl_bx), Paragraph(_xe(inv_no),   _val_bx)],
+        [Paragraph("DATE:",       _lbl_bx), Paragraph(_xe(inv_date), _val_bx)],
+    ]
+    if due_date_str:
+        inv_box_rows.append([Paragraph("DUE DATE:", _lbl_bx), Paragraph(_xe(due_date_str), _val_bx)])
+    if lpo_no:
+        inv_box_rows.append([Paragraph("LPO NO:",   _lbl_bx), Paragraph(_xe(lpo_no), _val_bx)])
+    if do_no:
+        inv_box_rows.append([Paragraph("DO NO:",    _lbl_bx), Paragraph(_xe(do_no),  _val_bx)])
+
+    inv_box_inner = Table(inv_box_rows, colWidths=[23 * mm, 62 * mm])
+    inv_box_inner.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+        ("LINEBELOW",     (0, 0), (-1, -2), 0.3, _BORDER),
+    ]))
+
+    inv_details_box = Table([[inv_box_inner]], colWidths=[90 * mm])
+    inv_details_box.setStyle(TableStyle([
+        ("BOX",          (0, 0), (-1, -1), 0.8, _BORDER),
+        ("TOPPADDING",   (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+    ]))
+
+    info_row = Table([[comp_left_items, Spacer(5 * mm, 1), inv_details_box]],
+                     colWidths=[95 * mm, 5 * mm, 90 * mm])
+    info_row.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    # ── 2. Items table (9 columns, 190 mm) ─────────────────────────────────
+    # 8+55+15+22+18+22+12+18+20 = 190 mm
+    _col_w = [8*mm, 55*mm, 15*mm, 22*mm, 18*mm, 22*mm, 12*mm, 18*mm, 20*mm]
+    _hdrs  = ["S.NO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)",
+              "DISCOUNT\n(AED)", "TAXABLE AMT\n(AED)", "TAX\nRATE",
+              "TAX AMT\n(AED)", "TOTAL\n(AED)"]
+
+    def _asw_row(idx, item):
+        qty     = item.get("quantity",   1)
+        up      = item.get("unit_price", 0)
+        disc    = item.get("discount",   0) or 0
+        gross   = round(qty * up, 2)
+        taxable = round(gross - disc, 2)
+        vat_ok  = item.get("vat_applicable", True)
+        tax_a   = item.get("vat_amount", 0)
+        tot_a   = item.get("total", round(taxable + tax_a, 2))
+        return [
+            Paragraph(str(idx),                              _icc),
+            Paragraph(_xe(item.get("description", "")),       _ir),
+            Paragraph(_qty_label(qty),                        _icc),
+            Paragraph(f"{up:.2f}",                            _irc),
+            Paragraph(f"{disc:.2f}",                          _irc),
+            Paragraph(f"{taxable:.2f}",                       _irc),
+            Paragraph("5%" if vat_ok else "0%",              _icc),
+            Paragraph(f"{tax_a:.2f}",                         _irc),
+            Paragraph(f"{tot_a:.2f}",                         _irc),
+        ]
+
+    _base_rows = [[Paragraph(h, _ih) for h in _hdrs]]
+    for _i, _it in enumerate(actual_items, 1):
+        _base_rows.append(_asw_row(_i, _it))
+
+    _blank9 = [Paragraph("", _icc), Paragraph("", _ir), Paragraph("", _icc),
+               Paragraph("", _irc), Paragraph("", _irc), Paragraph("", _irc),
+               Paragraph("", _icc), Paragraph("", _irc), Paragraph("", _irc)]
+
+    def _asw_tbl(rows, pad_t=8, pad_b=8, n_filler=0, filler_pad=6):
+        t = Table(rows, colWidths=_col_w)
+        cmds = [
+            ("BACKGROUND",    (0, 0), (-1, 0),  _BLACK),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [_GRAY, _WHITE]),
+            ("GRID",          (0, 0), (-1, -1), 0.5, _BORDER),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",    (0, 0), (-1, 0),  5),
+            ("BOTTOMPADDING", (0, 0), (-1, 0),  5),
+            ("TOPPADDING",    (0, 1), (-1, -1), pad_t),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), pad_b),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+        ]
+        if n_filler > 0 and len(rows) > 1:
+            fs = max(1, len(rows) - n_filler)
+            cmds += [
+                ("TOPPADDING",    (0, fs), (-1, -1), filler_pad),
+                ("BOTTOMPADDING", (0, fs), (-1, -1), filler_pad),
+            ]
+        t.setStyle(TableStyle(cmds))
+        return t
+
+    # ── 3. Totals ───────────────────────────────────────────────────────────
+    tot_rows_asw = [
+        [Paragraph("Total before VAT:", _tl_s), Paragraph(f"AED {subtotal:.2f}",  _tv_s)],
+        [Paragraph("VAT 5%:",           _tl_s), Paragraph(f"AED {vat_amount:.2f}", _tv_s)],
+    ]
+    if discount > 0:
+        tot_rows_asw.append(
+            [Paragraph("Discount:", _tl_s), Paragraph(f"AED {discount:.2f}", _tv_s)])
+    tot_rows_asw.append(
+        [Paragraph("TOTAL:", _tb_s), Paragraph(f"AED {total:.2f}", _tb_s)])
+
+    tot_t_asw = Table(tot_rows_asw, colWidths=[48 * mm, 32 * mm])
+    tot_t_asw.setStyle(TableStyle([
+        ("ALIGN",         (0, 0), (-1, -1), "RIGHT"),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+        ("BOX",           (0, 0), (-1, -1), 0.5, _BORDER),
+        ("GRID",          (0, 0), (-1, -2), 0.3, _BORDER),
+        ("LINEABOVE",     (0, -1), (-1, -1), 1.0, _BLACK),
+        ("BACKGROUND",    (0, -1), (-1, -1), _BLACK),
+    ]))
+
+    tot_wrap_asw = Table([[Spacer(1, 1), tot_t_asw]],
+                         colWidths=[_CW - 80 * mm, 80 * mm])
+    tot_wrap_asw.setStyle(TableStyle([
+        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    # ── 4. Amount in words + bank details ──────────────────────────────────
+    words_items_asw = [Paragraph("Amount in Words:", _ws_s),
+                       Spacer(1, 1 * mm),
+                       Paragraph(_amount_in_words(total), _wv_s)]
+    bank_items_asw = []
+    if _bank_raw:
+        bank_items_asw = [Paragraph("Bank Details:", _bk_lbl), Spacer(1, 1 * mm)]
+        for _bd in _bank_raw.split("\n"):
+            _bd = _bd.strip()
+            if _bd:
+                bank_items_asw.append(Paragraph(_xe(_bd), _bk_val))
+
+    wb_t_asw = Table([[words_items_asw, bank_items_asw]], colWidths=[95 * mm, 95 * mm])
+    wb_t_asw.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LINEAFTER",     (0, 0), (0,  0),  0.3, _BORDER),
+        ("LEFTPADDING",   (1, 0), (1,  0),  6),
+    ]))
+
+    # ── 5. Note + Authorised Signature ────────────────────────────────────
+    note_left = [Paragraph("<b>NOTE:</b>", _nt_s)]
+    if notes_text:
+        note_left += [Spacer(1, 1 * mm), Paragraph(_xe(notes_text), _nv_s)]
+
+    auth_sig_asw = []
+    if include_stamp and stamp_chk:
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(stamp_chk) as _simg:
+                _sw, _sh = _simg.size
+            _SW = 38 * mm
+            _SH = min(_SW * _sh / _sw, 16 * mm)
+            auth_sig_asw.append(Image(stamp_chk, width=_SW, height=_SH))
+            auth_sig_asw.append(Spacer(1, 0.5 * mm))
+        except Exception:
+            auth_sig_asw.append(Spacer(1, 8 * mm))
+    else:
+        auth_sig_asw.append(Spacer(1, 8 * mm))
+
+    auth_sig_asw += [
+        Paragraph("________________________", _sig_s),
+        Spacer(1, 2 * mm),
+        Paragraph("Authorised Signature", _sig_s),
+    ]
+
+    note_sig_t = Table([[note_left, auth_sig_asw]], colWidths=[95 * mm, 95 * mm])
+    note_sig_t.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
+        ("ALIGN",         (1, 0), (1,  0),  "CENTER"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("BOX",           (0, 0), (-1, -1), 0.5, _BORDER),
+        ("LINEAFTER",     (0, 0), (0,  0),  0.5, _BORDER),
+    ]))
+
+    # ── 6. Footer block (measured first for adaptive layout) ───────────────
+    footer_block = [
+        Spacer(1, 2 * mm),
+        tot_wrap_asw,
+        Spacer(1, 2 * mm),
+        HRFlowable(width="100%", thickness=0.4, color=_BORDER),
+        Spacer(1, 1 * mm),
+        wb_t_asw,
+        Spacer(1, 2 * mm),
+        HRFlowable(width="100%", thickness=0.4, color=_BORDER),
+        Spacer(1, 1 * mm),
+        note_sig_t,
+        Spacer(1, 1 * mm),
+        HRFlowable(width="100%", thickness=0.3, color=_BORDER),
+        Spacer(1, 0.5 * mm),
+        Paragraph(
+            "This is a computer generated TAX INVOICE. Thank you for your business.",
+            _ft_s),
+    ]
+
+    # ── 7. Adaptive layout (same algorithm as default template) ────────────
+    _usable_h    = A4[1] - top_margin - 10 * mm
+    _RENDER_SAFE = 12 * mm
+
+    _info_h   = info_row.wrap(_CW, 9999 * mm)[1]
+    _title_h  = Paragraph("TAX INVOICE", _ti_s).wrap(_CW, 9999 * mm)[1]
+    _footer_h = sum(f.wrap(_CW, 9999 * mm)[1] for f in footer_block)
+    _pre_h    = _info_h + 4 * mm + _title_h + 3 * mm   # info + spacers + title
+
+    _many   = len(actual_items) >= 3
+    _ipt, _ipb = (4, 3) if _many else (8, 8)
+    _items_tbl = _asw_tbl(_base_rows, _ipt, _ipb)
+    _items_h   = _items_tbl.wrap(_CW, 9999 * mm)[1]
+
+    # Graduated filler rows
+    _n_act  = len(actual_items)
+    _maxfil = 3 if _n_act <= 1 else (2 if _n_act <= 2 else (1 if _n_act <= 3 else 0))
+    for _fn in range(1, _maxfil + 1):
+        _cand = _asw_tbl(_base_rows + [_blank9] * _fn, _ipt, _ipb,
+                         n_filler=_fn, filler_pad=6)
+        _ch   = _cand.wrap(_CW, 9999 * mm)[1]
+        if _pre_h + _ch + _footer_h <= _usable_h - _RENDER_SAFE:
+            _items_tbl, _items_h = _cand, _ch
+        else:
+            break
+
+    # Safety compression for many items
+    def _fresh_asw():
+        r = [[Paragraph(h, _ih) for h in _hdrs]]
+        for _fi, _fit in enumerate(actual_items, 1):
+            r.append(_asw_row(_fi, _fit))
+        return r
+
+    _budget = _usable_h - _pre_h - _footer_h - _RENDER_SAFE
+    if _items_h > _budget:
+        for _cpt, _cpb in [(3, 2), (2, 2), (1, 1)]:
+            _t = _asw_tbl(_fresh_asw(), _cpt, _cpb)
+            _h = _t.wrap(_CW, 9999 * mm)[1]
+            if _h <= _budget:
+                _items_tbl, _items_h = _t, _h
+                break
+        else:
+            _items_tbl = _asw_tbl(_fresh_asw(), 2, 2)
+
+    _dbg(f"[AlSiwan] pre={_pre_h/mm:.1f}mm items={_items_h/mm:.1f}mm "
+         f"footer={_footer_h/mm:.1f}mm usable={_usable_h/mm:.1f}mm")
+
+    # ── 8. Assemble story ──────────────────────────────────────────────────
+    story.append(info_row)
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph("TAX INVOICE", _ti_s))
+    story.append(Spacer(1, 3 * mm))
+    story.append(_items_tbl)
+    story.append(KeepTogether(footer_block))
+
+    doc.build(story, onFirstPage=_draw_asw_header, onLaterPages=lambda c, d: None)
+    _dbg(f"[AlSiwan] PDF built -> {filepath}")
+    return filepath
+
+
 # ── Invoice (UAE TAX INVOICE — industrial layout) ─────────────────────────
 def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
+    # ── Template dispatcher — routes to company-specific template if set ───
+    _tpl = (company or {}).get("invoice_template", "default")
+    if _tpl == "alsiwan":
+        return _generate_invoice_alsiwan(invoice_data, company)
+    # ── Default / Dar Al Salam layout continues below (unchanged) ──────────
     from reportlab.platypus import KeepTogether
 
     _CW = A4[0] - 20 * mm   # V14: 10 mm margins each side → ≈ 190 mm content width

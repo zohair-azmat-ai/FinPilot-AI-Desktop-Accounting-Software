@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Header from "@/components/Header";
 import { getCompany, saveCompany, uploadStamp, uploadLetterhead } from "@/lib/api";
 import toast from "react-hot-toast";
-import { Building2, Hash, Save, Stamp, Upload, FileText, Image as ImageIcon, Landmark } from "lucide-react";
+import { Building2, Hash, Save, Stamp, Upload, FileText, Image as ImageIcon, Landmark, LayoutTemplate } from "lucide-react";
 
 export default function CompanyPage() {
   const [form, setForm] = useState({
@@ -17,6 +17,7 @@ export default function CompanyPage() {
     po_prefix: "PO-", po_current_number: 0,
     show_lpo_in_statement: false,
     bank_details: "",
+    invoice_template: "default",
   });
   // Separate text state for DN number so leading zeros are preserved during input
   const [dnNumberText, setDnNumberText] = useState("");
@@ -180,6 +181,49 @@ export default function CompanyPage() {
           <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
             <Save size={15} />
             {saving ? "Saving..." : "Save Bank Details"}
+          </button>
+        </div>
+
+        {/* Invoice Template */}
+        <div className="card space-y-4 mt-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-brand-indigo/10 flex items-center justify-center text-brand-indigo">
+              <LayoutTemplate size={20} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-text-primary">Invoice PDF Template</h3>
+              <p className="text-xs text-text-secondary">Choose the invoice layout for this installation</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {([
+              { value: "default", label: "Default (Dar Al Salam)", desc: "Standard FinPilot invoice with navy blue branding, Bill-To left / Invoice Details right." },
+              { value: "alsiwan", label: "Al Siwan Machinery & Electrical", desc: "Clean black-and-white layout — Company info left, invoice metadata box right. Inspired by Al Siwan reference design." },
+            ] as { value: string; label: string; desc: string }[]).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setForm({ ...form, invoice_template: opt.value })}
+                className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                  form.invoice_template === opt.value
+                    ? "border-brand-indigo bg-brand-indigo/5"
+                    : "border-bg-border bg-bg-secondary hover:border-brand-indigo/40"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${
+                    form.invoice_template === opt.value
+                      ? "border-brand-indigo bg-brand-indigo"
+                      : "border-text-muted"
+                  }`} />
+                  <span className="text-sm font-medium text-text-primary">{opt.label}</span>
+                </div>
+                <p className="text-xs text-text-muted mt-1 ml-5">{opt.desc}</p>
+              </button>
+            ))}
+          </div>
+          <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
+            <Save size={15} />
+            {saving ? "Saving..." : "Save Template"}
           </button>
         </div>
 

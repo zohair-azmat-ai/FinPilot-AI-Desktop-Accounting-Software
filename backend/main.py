@@ -91,7 +91,9 @@ def _run_migrations():
         ("invoice_items",   "discount", "REAL DEFAULT 0.0"),
         ("quotation_items", "discount", "REAL DEFAULT 0.0"),
         # Company bank details shown on invoice PDFs — was hardcoded, now configurable
-        ("companies",       "bank_details", "TEXT DEFAULT ''"),
+        ("companies",       "bank_details",        "TEXT DEFAULT ''"),
+        # Per-company invoice PDF template selector (default = Dar Al Salam layout)
+        ("companies",       "invoice_template",    "TEXT DEFAULT 'default'"),
         # Cloud sync columns — added to all tables
         *[col for tbl in [
             "companies", "bank_accounts", "customers", "suppliers", "items",

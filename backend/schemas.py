@@ -38,6 +38,7 @@ class CompanyBase(BaseModel):
     po_current_number: Optional[int] = 0
     show_lpo_in_statement: Optional[bool] = False
     bank_details: Optional[str] = ""
+    invoice_template: Optional[str] = "default"
 
 class CompanyCreate(CompanyBase):
     pass

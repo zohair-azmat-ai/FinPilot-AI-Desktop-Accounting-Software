@@ -551,6 +551,8 @@ def download_invoice_pdf(invoice_id: str, db: Session = Depends(get_db)):
                 "address": company.address, "phone": company.phone,
                 "email": company.email,
                 "stamp_path": company.stamp_path or "",
+                "bank_details": company.bank_details or "",
+                "invoice_template": company.invoice_template or "default",
             }
         customer = inv.customer
         cust_dict = {}

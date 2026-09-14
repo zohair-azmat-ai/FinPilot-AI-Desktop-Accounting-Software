@@ -33,6 +33,7 @@ def _company_dict(company) -> dict:
         "po_current_number": company.po_current_number or 0,
         "show_lpo_in_statement": bool(company.show_lpo_in_statement) if company.show_lpo_in_statement is not None else False,
         "bank_details": company.bank_details or "",
+        "invoice_template": company.invoice_template or "default",
         "created_at": company.created_at.isoformat() if company.created_at else None,
     }
 
