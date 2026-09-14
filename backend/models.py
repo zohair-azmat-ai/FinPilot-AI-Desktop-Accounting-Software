@@ -27,6 +27,7 @@ class Company(Base):
     po_current_number = Column(Integer, default=0)
     show_lpo_in_statement = Column(Boolean, default=False)
     stamp_path = Column(String, default="")
+    bank_details = Column(Text, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

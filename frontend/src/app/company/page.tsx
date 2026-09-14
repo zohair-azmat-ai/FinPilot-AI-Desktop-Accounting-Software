@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Header from "@/components/Header";
 import { getCompany, saveCompany, uploadStamp, uploadLetterhead } from "@/lib/api";
 import toast from "react-hot-toast";
-import { Building2, Hash, Save, Stamp, Upload, FileText, Image as ImageIcon } from "lucide-react";
+import { Building2, Hash, Save, Stamp, Upload, FileText, Image as ImageIcon, Landmark } from "lucide-react";
 
 export default function CompanyPage() {
   const [form, setForm] = useState({
@@ -16,6 +16,7 @@ export default function CompanyPage() {
     quotation_prefix: "QUO-", quotation_current_number: 0,
     po_prefix: "PO-", po_current_number: 0,
     show_lpo_in_statement: false,
+    bank_details: "",
   });
   // Separate text state for DN number so leading zeros are preserved during input
   const [dnNumberText, setDnNumberText] = useState("");
@@ -152,6 +153,33 @@ export default function CompanyPage() {
           <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
             <Save size={15} />
             {saving ? "Saving..." : "Save Settings"}
+          </button>
+        </div>
+
+        {/* Bank Details */}
+        <div className="card space-y-4 mt-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-brand-indigo/10 flex items-center justify-center text-brand-indigo">
+              <Landmark size={20} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-text-primary">Bank Details</h3>
+              <p className="text-xs text-text-secondary">Printed on Invoice PDFs, next to Amount in Words</p>
+            </div>
+          </div>
+          <div>
+            <label className="label">Bank Details (one line each)</label>
+            <textarea
+              className="input h-28 resize-none font-mono text-sm"
+              value={form.bank_details}
+              onChange={(e) => setForm({ ...form, bank_details: e.target.value })}
+              placeholder={"Bank: Your Bank Name\nA/C Title: Your Company Name\nAccount No: 000000000\nIBAN: AE000000000000000000000\nCurrency: AED  |  Swift: XXXXXXXX"}
+            />
+            <p className="text-xs text-text-muted mt-1">Leave blank to hide the Bank Details section on invoices.</p>
+          </div>
+          <button onClick={handleSave} disabled={saving} className="btn-primary w-full justify-center">
+            <Save size={15} />
+            {saving ? "Saving..." : "Save Bank Details"}
           </button>
         </div>
 

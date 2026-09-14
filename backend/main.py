@@ -90,6 +90,8 @@ def _run_migrations():
         # Per-line-item discount — item-specific discount for invoices/quotations
         ("invoice_items",   "discount", "REAL DEFAULT 0.0"),
         ("quotation_items", "discount", "REAL DEFAULT 0.0"),
+        # Company bank details shown on invoice PDFs — was hardcoded, now configurable
+        ("companies",       "bank_details", "TEXT DEFAULT ''"),
         # Cloud sync columns — added to all tables
         *[col for tbl in [
             "companies", "bank_accounts", "customers", "suppliers", "items",

@@ -37,6 +37,7 @@ class CompanyBase(BaseModel):
     po_prefix: Optional[str] = "PO-"
     po_current_number: Optional[int] = 0
     show_lpo_in_statement: Optional[bool] = False
+    bank_details: Optional[str] = ""
 
 class CompanyCreate(CompanyBase):
     pass

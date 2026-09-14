@@ -576,14 +576,14 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
                         Paragraph(f"<b>Note:</b> {_xe(invoice_data['notes'])}",
                                   ParagraphStyle("_nt", fontName="Helvetica", fontSize=7, textColor=MUTED))]
 
-    bank_items = [
-        Paragraph("Bank Details:", bk_lbl), Spacer(1, 1 * mm),
-        Paragraph("Bank: ADCB",                                        bk_val),
-        Paragraph("A/C Title: DAR AL SALAM ENG TURNING WKS W SH LLC", bk_val),
-        Paragraph("Account No: 949382292001",                          bk_val),
-        Paragraph("IBAN: AE080030000949382292001",                     bk_val),
-        Paragraph("Currency: AED  |  Swift: ADCBAEAA",                bk_val),
-    ]
+    _bank_details_raw = (company.get("bank_details") or "").strip()
+    bank_items = []
+    if _bank_details_raw:
+        bank_items = [Paragraph("Bank Details:", bk_lbl), Spacer(1, 1 * mm)]
+        for _bd_line in _bank_details_raw.split("\n"):
+            _bd_line = _bd_line.strip()
+            if _bd_line:
+                bank_items.append(Paragraph(_xe(_bd_line), bk_val))
 
     wb_t = Table([[words_items, bank_items]], colWidths=[95 * mm, 95 * mm])
     wb_t.setStyle(TableStyle([
