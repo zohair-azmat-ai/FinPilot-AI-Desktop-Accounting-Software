@@ -66,8 +66,18 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 # Letterhead: user-writable location first, fallback to bundle assets
 _USER_LH    = os.path.join(os.path.expanduser("~"), "FinPilot", "assets", "letterhead.jpg")
 _BUNDLE_LH  = os.path.join(_HERE, "assets", "letterhead.jpg")
-LETTERHEAD_PATH = _USER_LH if (os.path.exists(_USER_LH) and os.path.getsize(_USER_LH) > 0) else _BUNDLE_LH
-_dbg(f"letterhead resolved: {LETTERHEAD_PATH} exists={os.path.exists(LETTERHEAD_PATH)}")
+
+
+def _resolve_letterhead_path() -> str:
+    """Resolve the current letterhead path fresh on every call (same pattern
+    as _get_stamp_path() below), so a letterhead uploaded via Company Settings
+    is used immediately on the next PDF without requiring an app restart."""
+    if os.path.exists(_USER_LH) and os.path.getsize(_USER_LH) > 0:
+        return _USER_LH
+    return _BUNDLE_LH
+
+
+_dbg(f"letterhead resolved: {_resolve_letterhead_path()} exists={os.path.exists(_resolve_letterhead_path())}")
 
 # Stamp: user-writable location first, fallback to bundle assets
 _USER_STAMP  = os.path.join(os.path.expanduser("~"), "FinPilot", "assets", "stamp.png")
@@ -112,21 +122,21 @@ _HDG_SP_PREFER = 8 * mm         # preferred total gap budget (heading→boxes + 
 
 def _letterhead_flowable():
     """Return a content-width letterhead Image if the file exists, else None."""
-    if not os.path.exists(LETTERHEAD_PATH):
+    if not os.path.exists(_resolve_letterhead_path()):
         return None
     from PIL import Image as PILImage
-    with PILImage.open(LETTERHEAD_PATH) as img:
+    with PILImage.open(_resolve_letterhead_path()) as img:
         orig_w, orig_h = img.size
     height = _CONTENT_W * orig_h / orig_w
-    return Image(LETTERHEAD_PATH, width=_CONTENT_W, height=height)
+    return Image(_resolve_letterhead_path(), width=_CONTENT_W, height=height)
 
 
 def _lh_page_height() -> float:
     """Height (in points) for the letterhead drawn at full A4 page width."""
-    if not os.path.exists(LETTERHEAD_PATH):
+    if not os.path.exists(_resolve_letterhead_path()):
         return 0.0
     from PIL import Image as PILImage
-    with PILImage.open(LETTERHEAD_PATH) as img:
+    with PILImage.open(_resolve_letterhead_path()) as img:
         orig_w, orig_h = img.size
     return A4[0] * orig_h / orig_w
 
@@ -291,8 +301,8 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
     page_w, page_h = A4
 
     # ── Letterhead ───────────────────────────────────────────────────────────
-    lh_file_ok = os.path.exists(LETTERHEAD_PATH)
-    _dbg(f"LETTERHEAD_PATH={LETTERHEAD_PATH} exists={lh_file_ok}")
+    lh_file_ok = os.path.exists(_resolve_letterhead_path())
+    _dbg(f"letterhead_path={_resolve_letterhead_path()} exists={lh_file_ok}")
     _dbg(f"stamp_path={_get_stamp_path() or 'NOT FOUND'}")
     use_letterhead = invoice_data.get("letterhead", True) and lh_file_ok
     _dbg(f"use_letterhead={use_letterhead} (flag={invoice_data.get('letterhead', True)} file={lh_file_ok})")
@@ -306,7 +316,7 @@ def generate_invoice_pdf(invoice_data: dict, company: dict) -> str:
         if not lh_draw_h:
             return
         canv.saveState()
-        canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
+        canv.drawImage(_resolve_letterhead_path(), 0, page_h - lh_draw_h,
                        width=page_w, height=lh_draw_h,
                        preserveAspectRatio=False, mask='auto')
         canv.restoreState()
@@ -795,7 +805,7 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
     filepath = os.path.join(EXPORT_DIR, filename)
 
     page_w, page_h = A4
-    use_lh    = os.path.exists(LETTERHEAD_PATH)
+    use_lh    = os.path.exists(_resolve_letterhead_path())
     LH_MAX_H  = 70 * mm
     LH_MIN_H  = 62 * mm
     raw_lh_h  = _lh_page_height() if use_lh else 0.0
@@ -810,7 +820,7 @@ def generate_statement_pdf(customer: dict, entries: list, date_from, date_to,
     def _draw_stmt_page(canv, _doc):
         canv.saveState()
         if lh_draw_h:
-            canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
+            canv.drawImage(_resolve_letterhead_path(), 0, page_h - lh_draw_h,
                            width=page_w, height=lh_draw_h,
                            preserveAspectRatio=False, mask='auto')
         canv.restoreState()
@@ -1030,8 +1040,8 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
     filename  = f"Quotation_{quotation_data['quotation_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath  = os.path.join(EXPORT_DIR, filename)
 
-    lh_file_ok_q = os.path.exists(LETTERHEAD_PATH)
-    _dbg(f"[quotation] LETTERHEAD_PATH={LETTERHEAD_PATH} exists={lh_file_ok_q}")
+    lh_file_ok_q = os.path.exists(_resolve_letterhead_path())
+    _dbg(f"[quotation] letterhead_path={_resolve_letterhead_path()} exists={lh_file_ok_q}")
     use_lh        = quotation_data.get("letterhead", True) and lh_file_ok_q
     _dbg(f"[quotation] use_lh={use_lh} flag={quotation_data.get('letterhead', True)}")
     page_w, page_h = A4
@@ -1046,7 +1056,7 @@ def generate_quotation_pdf(quotation_data: dict, company: dict) -> str:
         if not lh_draw_h:
             return
         canv.saveState()
-        canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
+        canv.drawImage(_resolve_letterhead_path(), 0, page_h - lh_draw_h,
                        width=page_w, height=lh_draw_h,
                        preserveAspectRatio=False, mask='auto')
         canv.restoreState()
@@ -1422,7 +1432,7 @@ def generate_payment_voucher_pdf(payment_data: dict, company: dict) -> str:
     filename = f"Payment_{payment_data['payment_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath = os.path.join(EXPORT_DIR, filename)
 
-    top_margin = 5 * mm if os.path.exists(LETTERHEAD_PATH) else 15 * mm
+    top_margin = 5 * mm if os.path.exists(_resolve_letterhead_path()) else 15 * mm
     doc = SimpleDocTemplate(
         filepath, pagesize=A4,
         leftMargin=15 * mm, rightMargin=15 * mm,
@@ -1499,7 +1509,7 @@ def generate_receipt_voucher_pdf(payment_data: dict, company: dict) -> str:
     filepath  = os.path.join(EXPORT_DIR, filename)
 
     page_w, page_h = A4
-    use_lh = os.path.exists(LETTERHEAD_PATH)
+    use_lh = os.path.exists(_resolve_letterhead_path())
 
     LH_MAX_H  = 70 * mm
     LH_MIN_H  = 62 * mm
@@ -1511,7 +1521,7 @@ def generate_receipt_voucher_pdf(payment_data: dict, company: dict) -> str:
         if not lh_draw_h:
             return
         canv.saveState()
-        canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
+        canv.drawImage(_resolve_letterhead_path(), 0, page_h - lh_draw_h,
                        width=page_w, height=lh_draw_h,
                        preserveAspectRatio=False, mask='auto')
         canv.restoreState()
@@ -1695,7 +1705,7 @@ def generate_bank_statement_pdf(stmt: dict, company: dict) -> str:
     filename = f"BankStatement_{_safe_fn(acct['name'])}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath = os.path.join(EXPORT_DIR, filename)
 
-    top_margin = 5 * mm if os.path.exists(LETTERHEAD_PATH) else 15 * mm
+    top_margin = 5 * mm if os.path.exists(_resolve_letterhead_path()) else 15 * mm
     doc = SimpleDocTemplate(
         filepath, pagesize=A4,
         leftMargin=15 * mm, rightMargin=15 * mm,
@@ -1812,7 +1822,7 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     filename = f"DeliveryNote_{dn_data['dn_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath = os.path.join(EXPORT_DIR, filename)
 
-    use_lh     = dn_data.get("letterhead", True) and os.path.exists(LETTERHEAD_PATH)
+    use_lh     = dn_data.get("letterhead", True) and os.path.exists(_resolve_letterhead_path())
     show_stamp = bool(dn_data.get("show_stamp", False))
     page_w, page_h = A4
 
@@ -1828,7 +1838,7 @@ def generate_delivery_note_pdf(dn_data: dict, company: dict) -> str:
     def _draw_dn_page(canv, _doc):
         canv.saveState()
         if lh_draw_h:
-            canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
+            canv.drawImage(_resolve_letterhead_path(), 0, page_h - lh_draw_h,
                            width=page_w, height=lh_draw_h,
                            preserveAspectRatio=False, mask='auto')
         canv.setFont("Helvetica", 7)
@@ -2046,7 +2056,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
     filename = f"PO_{po_data['po_number']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
     filepath = os.path.join(EXPORT_DIR, filename)
 
-    use_lh    = po_data.get("letterhead", True) and os.path.exists(LETTERHEAD_PATH)
+    use_lh    = po_data.get("letterhead", True) and os.path.exists(_resolve_letterhead_path())
     page_w, page_h = A4
 
     LH_MAX_H  = 70 * mm
@@ -2062,7 +2072,7 @@ def generate_po_pdf(po_data: dict, company: dict) -> str:
     def _draw_po_page(canv, _doc):
         canv.saveState()
         if lh_draw_h:
-            canv.drawImage(LETTERHEAD_PATH, 0, page_h - lh_draw_h,
+            canv.drawImage(_resolve_letterhead_path(), 0, page_h - lh_draw_h,
                            width=page_w, height=lh_draw_h,
                            preserveAspectRatio=False, mask='auto')
         canv.setFont("Helvetica", 7)
@@ -2336,7 +2346,7 @@ def generate_supplier_bill_pdf(bill_data: dict, company: dict) -> str:
         canvas_obj.saveState()
         if lh:
             canvas_obj.drawImage(
-                LETTERHEAD_PATH, 0, A4[1] - _lh_h, width=A4[0], height=_lh_h,
+                _resolve_letterhead_path(), 0, A4[1] - _lh_h, width=A4[0], height=_lh_h,
                 preserveAspectRatio=True, mask="auto",
             )
         canvas_obj.restoreState()
@@ -2479,7 +2489,7 @@ def generate_supplier_payment_pdf(pay_data: dict, company: dict) -> str:
         canvas_obj.saveState()
         if lh:
             canvas_obj.drawImage(
-                LETTERHEAD_PATH, 0, A4[1] - _lh_h, width=A4[0], height=_lh_h,
+                _resolve_letterhead_path(), 0, A4[1] - _lh_h, width=A4[0], height=_lh_h,
                 preserveAspectRatio=True, mask="auto",
             )
         canvas_obj.restoreState()

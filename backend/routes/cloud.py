@@ -259,7 +259,7 @@ def debug_pdf_runtime():
     backend_dir  = _BACKEND_DIR   # _internal/ or backend/
     user_assets  = _USER_ASSETS   # ~/FinPilot/assets/
 
-    lh_path      = pg.LETTERHEAD_PATH
+    lh_path      = pg._resolve_letterhead_path()
     stamp_bundle = os.path.join(backend_dir, "assets", "stamp.png")
     stamp_user   = os.path.join(user_assets, "stamp.png")
     stamp_found  = pg._get_stamp_path()
@@ -331,7 +331,7 @@ def debug_pdf_flags(doc_type: str, doc_no: str):
     resolved_letterhead = raw["letterhead"] if raw["letterhead"] is not None else True
     resolved_stamp = raw["include_stamp"] if raw["include_stamp"] is not None else False
 
-    lh_path = pg.LETTERHEAD_PATH
+    lh_path = pg._resolve_letterhead_path()
     stamp_path = pg._get_stamp_path()
 
     return {
