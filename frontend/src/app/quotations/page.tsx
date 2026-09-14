@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import { getQuotations, getQuotation, getCustomers, getItems, createQuotation, updateQuotation, deleteQuotation, convertQuotation, downloadQuotationPDF, openPdfSafe, quotationPdfFilename, API_URL, apiErr } from "@/lib/api";
 import toast from "react-hot-toast";
-import { Plus, FileText, Trash2, FileDown, ArrowRight, X, MessageCircle, Edit2 } from "lucide-react";
+import { Plus, FileText, Trash2, FileDown, Eye, ArrowRight, X, MessageCircle, Edit2 } from "lucide-react";
 
 interface Customer { id: number; name: string; payment_terms: string; }
 interface Item { id: number; name: string; price: number; vat_applicable: boolean; }
@@ -225,6 +225,7 @@ export default function QuotationsPage() {
                     <td className="font-medium">AED {q.total.toFixed(2)}</td>
                     <td><span className={`status-badge border ${sc}`}>{q.status}</span></td>
                     <td><div className="flex gap-2">
+                      <button onClick={() => window.open(`${API_URL}/api/quotations/${q.id}/pdf`, "_blank")} className="text-text-muted hover:text-brand-indigo" title="View / Open PDF"><Eye size={14} /></button>
                       <button onClick={() => openPdfSafe(downloadQuotationPDF(q.id, q.quotation_number), `${API_URL}/api/quotations/${q.id}/pdf`, quotationPdfFilename(q.quotation_number))} className="text-text-muted hover:text-brand-indigo" title="Download PDF"><FileDown size={14} /></button>
                       {!q.converted_to_invoice && (
                         <>
