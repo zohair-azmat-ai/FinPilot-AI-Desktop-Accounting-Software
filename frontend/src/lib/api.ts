@@ -8,8 +8,14 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001
  * - On failure, waits 2s then retries once.
  * - If second attempt fails, falls back to fallbackUrl (local backend).
  * Works for both cloud (HF Space) and local URLs.
+ *
+ * `filename`, when given, is used for the cloud/blob path below — a blob: URL
+ * carries no Content-Disposition of its own, so without an explicit filename
+ * the browser's Save As falls back to a generated (UUID-like) name even
+ * though the server sent the correct one. Local/direct navigation doesn't
+ * need this — the browser already honors the server's Content-Disposition.
  */
-export async function openPdfSafe(primaryUrl: string, fallbackUrl?: string): Promise<void> {
+export async function openPdfSafe(primaryUrl: string, fallbackUrl?: string, filename?: string): Promise<void> {
   const isCloud = /^https?:\/\/(?!127\.|localhost)/.test(primaryUrl);
   if (!isCloud) { window.open(primaryUrl, "_blank"); return; }
 
@@ -24,7 +30,17 @@ export async function openPdfSafe(primaryUrl: string, fallbackUrl?: string): Pro
         if (ct.includes("pdf") || ct.includes("octet-stream")) {
           const blob   = await resp.blob();
           const objUrl = URL.createObjectURL(blob);
-          window.open(objUrl, "_blank");
+          if (filename) {
+            const a = document.createElement("a");
+            a.href = objUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(objUrl), 30_000);
+          } else {
+            window.open(objUrl, "_blank");
+          }
           return;
         }
       }
@@ -49,6 +65,23 @@ export function setCloudPdfUrl(url: string) {
   } else {
     localStorage.removeItem("fp_cloud_pdf_url");
   }
+}
+
+// Download filenames — mirror the backend's own naming exactly (see
+// backend/routes/invoices.py::_pdf_filename, routes/quotations.py::_pdf_filename)
+// so the cloud/blob download path (which has no Content-Disposition of its
+// own) still produces the same name a direct/local download would.
+export function invoicePdfFilename(ref?: string): string {
+  const r = (ref || "").trim();
+  return r.toUpperCase().startsWith("INV-") ? `${r}.pdf` : `INV-${r}.pdf`;
+}
+export function quotationPdfFilename(ref?: string): string {
+  const r = (ref || "").trim();
+  return r.toUpperCase().startsWith("QUO-") ? `${r}.pdf` : `QUO-${r}.pdf`;
+}
+export function deliveryNotePdfFilename(ref?: string): string {
+  // Matches the existing, unchanged backend convention in routes/delivery_notes.py
+  return `DeliveryNote_${(ref || "").trim()}.pdf`;
 }
 
 export const api = axios.create({
