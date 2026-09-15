@@ -1,22 +1,47 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec for FinPilot AI backend
-import os, sys
+import os, sys, glob
 
 block_cipher = None
 backend_dir  = os.path.dirname(os.path.abspath(SPEC))
 routes_dir   = os.path.join(backend_dir, 'routes')
+
+# Development-only scripts that must never ship to a customer build.
+# Runtime application modules (customer_profiles, license_manager,
+# sync_engine, supabase_pdf, etc.) are NOT excluded — only exact/prefix
+# matches below are dropped.
+_EXCLUDE_PY_EXACT = {"check_inv.py"}
+_EXCLUDE_PY_PREFIXES = ("test_",)
+
+
+def _backend_py_datas():
+    """Every backend/*.py file except dev-only test/check scripts, as
+    explicit (source_path, dest_dir) tuples — safer than a bare '*.py'
+    glob, which would silently include whatever stray scripts happen to
+    exist in the source tree at build time."""
+    entries = []
+    for path in glob.glob(os.path.join(backend_dir, "*.py")):
+        name = os.path.basename(path)
+        if name in _EXCLUDE_PY_EXACT or name.startswith(_EXCLUDE_PY_PREFIXES):
+            continue
+        entries.append((path, "."))
+    return entries
+
 
 a = Analysis(
     ['run.py'],
     pathex=[backend_dir],
     binaries=[],
     datas=[
-        # Backend source modules (main, models, schemas, database, pdf_generator…)
-        (os.path.join(backend_dir, '*.py'), '.'),
+        # Backend source modules (main, models, schemas, database, pdf_generator,
+        # customer_profiles, license_manager, sync_engine, supabase_pdf…) —
+        # excludes test_*.py / check_inv.py, see _backend_py_datas() above.
+        *_backend_py_datas(),
         # Route modules
         (os.path.join(routes_dir, '*.py'), 'routes'),
-        # Letterhead image
+        # Letterhead + Al Siwan watermark/footer branding images
         (os.path.join(backend_dir, 'assets', '*.jpg'), 'assets'),
+        (os.path.join(backend_dir, 'assets', '*.png'), 'assets'),
     ],
     hiddenimports=[
         # Uvicorn internals
@@ -55,9 +80,17 @@ a = Analysis(
         'requests.exceptions', 'requests.models', 'requests.sessions',
         'urllib3', 'urllib3.util', 'urllib3.util.retry', 'urllib3.connectionpool',
         'charset_normalizer', 'idna', 'certifi',
+        # cryptography — Ed25519 license verification (license_manager.py).
+        # The hazmat backend loads a compiled Rust extension dynamically;
+        # PyInstaller's static analyzer needs an explicit hint to bundle it.
+        'cryptography', 'cryptography.hazmat', 'cryptography.hazmat.bindings',
+        'cryptography.hazmat.bindings._rust', 'cryptography.hazmat.primitives',
+        'cryptography.hazmat.primitives.asymmetric',
+        'cryptography.hazmat.primitives.asymmetric.ed25519',
+        'cryptography.exceptions',
         # Backend application modules
         'main', 'models', 'schemas', 'database', 'pdf_generator', 'ai_parser',
-        'license_manager', 'sync_engine',
+        'license_manager', 'sync_engine', 'customer_profiles', 'supabase_pdf',
         # Route modules
         'routes.company', 'routes.customers', 'routes.suppliers', 'routes.items',
         'routes.quotations', 'routes.invoices', 'routes.payments', 'routes.ledger',

@@ -1,5 +1,5 @@
 """
-Tests for the Al Siwan customer-build packaging configuration (STEP 4A).
+Tests for the Al Siwan customer-build packaging configuration (STEP 4A/4B).
 
 These check the STATIC packaging setup (which files exist where, what's
 excluded, what the staged build config resolves to) rather than booting the
@@ -14,6 +14,7 @@ import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.dirname(_HERE)
+_RESOURCES_BACKEND = os.path.join(_REPO_ROOT, "desktop", "src-tauri", "resources", "backend")
 
 sys.path.insert(0, _HERE)
 import customer_profiles  # noqa: E402
@@ -175,6 +176,116 @@ class TestCloudCredentialsNotPackaged(unittest.TestCase):
             self.assertNotIn("supabase", blob)
             self.assertNotIn("http://", blob)
             self.assertNotIn("https://", blob)
+
+
+@unittest.skipUnless(os.path.isdir(_RESOURCES_BACKEND), "resources/backend/ not staged on this machine")
+class TestActualPackagedResourcesState(unittest.TestCase):
+    """Inspects the REAL desktop/src-tauri/resources/backend/ staging folder
+    on this machine (STEP 4B: refreshed to match the corrected build.ps1
+    exclusion logic) — not just the mechanism in the abstract."""
+
+    def test_current_license_manager_is_packaged(self):
+        path = os.path.join(_RESOURCES_BACKEND, "license_manager.py")
+        self.assertTrue(os.path.exists(path))
+        content = _read(path)
+        self.assertIn("_PUBLIC_KEY_B64", content)
+        self.assertNotIn("FinPilotAI-UAE-2026-SecretKey-Zentro", content)
+
+    def test_old_license_generator_not_packaged(self):
+        path = os.path.join(_RESOURCES_BACKEND, "license_generator.py")
+        self.assertFalse(os.path.exists(path), "stale license_generator.py must not be packaged")
+
+    def test_alsiwan_watermark_png_packaged(self):
+        path = os.path.join(_RESOURCES_BACKEND, "assets", "alsiwan_watermark.png")
+        self.assertTrue(os.path.exists(path))
+
+    def test_alsiwan_footer_icon_png_packaged(self):
+        path = os.path.join(_RESOURCES_BACKEND, "assets", "alsiwan_footer_icon.png")
+        self.assertTrue(os.path.exists(path))
+
+    def test_no_finpilot_db_packaged(self):
+        offenders = []
+        for root, _dirs, files in os.walk(_RESOURCES_BACKEND):
+            for fname in files:
+                if fname.endswith(".db") or fname.endswith(".db-journal"):
+                    offenders.append(os.path.join(root, fname))
+        self.assertEqual(offenders, [])
+
+    def test_no_test_or_check_scripts_packaged(self):
+        offenders = []
+        for root, _dirs, files in os.walk(_RESOURCES_BACKEND):
+            for fname in files:
+                if fname.startswith("test_") or fname == "check_inv.py":
+                    offenders.append(os.path.join(root, fname))
+        self.assertEqual(offenders, [])
+
+    def test_no_build_log_packaged(self):
+        path = os.path.join(_RESOURCES_BACKEND, "build_log.txt")
+        self.assertFalse(os.path.exists(path))
+
+    def test_customer_profiles_module_is_packaged(self):
+        """This IS a runtime-required module — must not be caught by the
+        test_*/check_* exclusion patterns."""
+        path = os.path.join(_RESOURCES_BACKEND, "customer_profiles.py")
+        self.assertTrue(os.path.exists(path))
+
+    def test_routes_still_present(self):
+        routes_dir = os.path.join(_RESOURCES_BACKEND, "routes")
+        self.assertTrue(os.path.isdir(routes_dir))
+        self.assertIn("license.py", os.listdir(routes_dir))
+        self.assertIn("company.py", os.listdir(routes_dir))
+
+
+class TestBuildScriptMechanisms(unittest.TestCase):
+    """Static checks on build.ps1 and backend.spec — the actual packaging
+    scripts — rather than just their observed output on this one machine."""
+
+    def _build_ps1(self) -> str:
+        return _read(os.path.join(_REPO_ROOT, "build.ps1"))
+
+    def _backend_spec(self) -> str:
+        return _read(os.path.join(_HERE, "backend.spec"))
+
+    def test_build_ps1_excludes_test_and_check_scripts(self):
+        src = self._build_ps1()
+        self.assertIn("test_*.py", src)
+        self.assertIn("check_inv.py", src)
+
+    def test_build_ps1_excludes_db_files(self):
+        src = self._build_ps1()
+        self.assertIn("*.db", src)
+
+    def test_build_ps1_supports_customer_profile_parameter(self):
+        src = self._build_ps1()
+        self.assertIn("$CustomerProfile", src)
+        self.assertIn("customer-builds", src)
+
+    def test_build_ps1_removes_staged_profile_on_success_and_failure(self):
+        src = self._build_ps1()
+        self.assertIn("Remove-StagedCustomerProfile", src)
+        self.assertIn("trap", src)
+
+    def test_build_ps1_default_run_does_not_force_a_profile(self):
+        src = self._build_ps1()
+        self.assertIn('[string]$CustomerProfile = ""', src)
+
+    def test_backend_spec_includes_png_assets(self):
+        src = self._backend_spec()
+        self.assertIn("*.png", src)
+
+    def test_backend_spec_excludes_test_and_check_scripts(self):
+        src = self._backend_spec()
+        self.assertIn("_EXCLUDE_PY_EXACT", src)
+        self.assertIn("check_inv.py", src)
+        self.assertIn("test_", src)
+
+    def test_backend_spec_includes_cryptography_hiddenimports(self):
+        src = self._backend_spec()
+        self.assertIn("cryptography.hazmat.primitives.asymmetric.ed25519", src)
+
+    def test_backend_spec_includes_customer_profiles_hiddenimport(self):
+        src = self._backend_spec()
+        self.assertIn("'customer_profiles'", src)
 
 
 if __name__ == "__main__":

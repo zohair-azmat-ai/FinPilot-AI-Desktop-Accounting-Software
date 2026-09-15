@@ -1,7 +1,19 @@
 # ============================================================
 #  FinPilot AI — Full Desktop Build Script
 #  Run from project root: .\build.ps1
+#
+#  Customer-specific build (e.g. Al Siwan): .\build.ps1 -CustomerProfile alsiwan
+#  Stages desktop\customer-builds\<profile>\customer_profile.txt into the
+#  live resources folder for the duration of this build only, then removes
+#  it again in a `finally` block — even on failure — so a routine default
+#  build afterward is never accidentally left with a stale customer profile.
+#  Omit -CustomerProfile (the default) for the standard Dar Al Salam build;
+#  behavior is then identical to before this parameter existed.
 # ============================================================
+param(
+    [string]$CustomerProfile = ""
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -11,11 +23,47 @@ $BackendDir   = Join-Path $ProjectRoot "backend"
 $DesktopDir   = Join-Path $ProjectRoot "desktop"
 $ResourcesDir = Join-Path $DesktopDir "src-tauri\resources"
 $IconsDir     = Join-Path $DesktopDir "src-tauri\icons"
+$StagedProfileFile = Join-Path $ResourcesDir "customer_profile.txt"
+$ProfileWasStagedByThisRun = $false
 
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Write-OK($msg)   { Write-Host "  [OK] $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "  [!!] $msg" -ForegroundColor Yellow }
 function Write-Fail($msg) { Write-Host "`n[FAIL] $msg" -ForegroundColor Red }
+
+function Remove-StagedCustomerProfile {
+    if ($ProfileWasStagedByThisRun -and (Test-Path $StagedProfileFile)) {
+        Remove-Item $StagedProfileFile -Force -ErrorAction SilentlyContinue
+        Write-OK "Removed staged customer_profile.txt — resources folder restored to default (Dar Al Salam) state"
+    }
+}
+
+# Script-level trap: if ANY step below throws (this script runs with
+# $ErrorActionPreference = "Stop"), make sure a staged customer profile is
+# still removed so a failed customer build can never leak into a
+# subsequent default build.
+trap {
+    Remove-StagedCustomerProfile
+    Write-Fail "Build failed: $_"
+    break
+}
+
+# ── Stage customer profile (opt-in only) ──────────────────────────────────
+if ($CustomerProfile) {
+    $SourceProfileFile = Join-Path $ProjectRoot "desktop\customer-builds\$CustomerProfile\customer_profile.txt"
+    if (-not (Test-Path $SourceProfileFile)) {
+        Write-Fail "No customer profile found at $SourceProfileFile"
+        exit 1
+    }
+    Write-Step "Staging customer profile: $CustomerProfile"
+    New-Item -ItemType Directory -Force -Path $ResourcesDir | Out-Null
+    Copy-Item $SourceProfileFile $StagedProfileFile -Force
+    $ProfileWasStagedByThisRun = $true
+    Write-OK "Staged $StagedProfileFile for this build only"
+} elseif (Test-Path $StagedProfileFile) {
+    Write-Warn "customer_profile.txt already exists in resources/ but -CustomerProfile was not specified."
+    Write-Warn "Leaving it in place — pass -CustomerProfile to intentionally manage it, or delete it manually if this is unexpected."
+}
 
 # ── 0. Pre-flight: Rust ────────────────────────────────────────────────────────
 Write-Step "Checking Rust / Cargo"
@@ -201,11 +249,20 @@ if ($PyInstallerOk) {
     New-Item -ItemType Directory -Force -Path $DestBackend | Out-Null
 
     $ExcludeDirs = @("__pycache__", ".venv", "venv", "dist", "build", ".git")
+    # Dev-only test/check scripts — never ship these to a customer build.
+    # Runtime application modules (customer_profiles.py, license_manager.py,
+    # sync_engine.py, supabase_pdf.py, etc.) are NOT matched by these patterns.
+    $ExcludeFilePatterns = @("test_*.py", "check_inv.py", "*.db", "*.db-journal", "build_log.txt", "*.log")
     Get-ChildItem $BackendDir -Recurse | Where-Object {
         $item = $_
         $skip = $false
         foreach ($ex in $ExcludeDirs) {
             if ($item.FullName -like "*\$ex\*" -or $item.Name -eq $ex) { $skip = $true; break }
+        }
+        if (-not $skip) {
+            foreach ($pat in $ExcludeFilePatterns) {
+                if ($item.Name -like $pat) { $skip = $true; break }
+            }
         }
         -not $skip -and -not $item.PSIsContainer
     } | ForEach-Object {
@@ -215,6 +272,7 @@ if ($PyInstallerOk) {
         if (-not (Test-Path $destParent)) { New-Item -ItemType Directory -Force -Path $destParent | Out-Null }
         Copy-Item $_.FullName $dest
     }
+    Write-OK "Excluded dev-only scripts matching: $($ExcludeFilePatterns -join ', ')"
     Write-OK "Copied backend source → $DestBackend"
 }
 
@@ -277,3 +335,9 @@ if (Test-Path $BundleDir) {
 
 Write-Host "`n  Run the installer on any Windows PC to install FinPilot AI." -ForegroundColor Cyan
 Write-Host "  The installed app launches without a browser or command window.`n" -ForegroundColor Cyan
+
+# ── Unstage customer profile (success path) ───────────────────────────────
+# The trap above handles the failure path; this handles normal completion,
+# so a customer-specific build never leaves customer_profile.txt behind for
+# the next routine (default/Dar Al Salam) build to accidentally pick up.
+Remove-StagedCustomerProfile
