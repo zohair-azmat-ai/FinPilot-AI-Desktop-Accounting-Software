@@ -58,6 +58,11 @@ Thumbs.db
 
 # ── Tauri bundled backend (large binaries — not for version control) ──────────
 desktop/src-tauri/resources/
+
+# ── Vendor license signing key — NEVER commit. This is the private key that
+# signs every customer license; it must never leave the vendor's machine. ────
+tools/license_signer/keys/
+*.pem
 src-tauri/resources/
 
 # ── HF Space binary assets (uploaded via huggingface_hub, not git) ───────────

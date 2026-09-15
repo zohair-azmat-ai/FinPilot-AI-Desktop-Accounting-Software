@@ -5,8 +5,12 @@ import license_manager
 router = APIRouter(prefix="/api/license", tags=["license"])
 
 
-class ActivateRequest(BaseModel):
-    key: str
+class RequestActivationBody(BaseModel):
+    customer_id: str
+
+
+class ImportResponseBody(BaseModel):
+    response: str
 
 
 @router.get("/status")
@@ -16,9 +20,21 @@ def status():
 
 @router.get("/hwid")
 def hwid():
-    return {"hw_id": license_manager.get_hw_id()}
+    try:
+        return {"hw_id": license_manager.get_hw_id()}
+    except license_manager.HardwareIdError as e:
+        return {"hw_id": "", "error": str(e)}
 
 
-@router.post("/activate")
-def activate(body: ActivateRequest):
-    return license_manager.activate(body.key)
+@router.post("/request")
+def request_activation(body: RequestActivationBody):
+    """Generate (and locally persist) an offline activation request for this
+    machine. Contains no secret — safe to copy/paste/email to the vendor."""
+    return license_manager.generate_activation_request(body.customer_id)
+
+
+@router.post("/import-response")
+def import_response(body: ImportResponseBody):
+    """Verify and activate a vendor-signed license response. Fully offline —
+    no network call is made."""
+    return license_manager.import_license_response(body.response)

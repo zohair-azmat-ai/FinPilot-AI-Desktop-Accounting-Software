@@ -6,7 +6,7 @@ import { getLicenseStatus } from "@/lib/api";
 import { AlertTriangle } from "lucide-react";
 
 interface LicenseStatus {
-  status: "licensed" | "trial" | "expired" | "invalid" | "developer_unlimited";
+  status: "licensed" | "trial" | "expired" | "invalid" | "developer_unlimited" | "hw_id_error";
   days_left: number | null;
 }
 
@@ -27,7 +27,7 @@ export default function LicenseGate({ children }: { children: React.ReactNode })
 
       if (s.status === "developer_unlimited") {
         // Developer machine — bypass everything silently
-      } else if (s.status === "expired" || s.status === "invalid") {
+      } else if (s.status === "expired" || s.status === "invalid" || s.status === "hw_id_error") {
         router.replace("/activate");
       } else if (s.status === "trial" && s.days_left !== null && s.days_left <= TRIAL_WARNING_DAYS) {
         setBanner(true);
