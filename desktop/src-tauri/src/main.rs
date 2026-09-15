@@ -73,40 +73,60 @@ fn main() {
             let embedded_python = base.join("python").join("python.exe");
             let backend_src_dir = base.join("backend");
 
+            // ── Customer build profile ──────────────────────────────────────
+            // Read-only, optional resource file (desktop/src-tauri/resources/
+            // customer_profile.txt) baked into this specific installer at
+            // packaging time. Absent by default (e.g. the Dar Al Salam build),
+            // so this is a pure additive no-op unless a packager deliberately
+            // stages the file for a customer-specific build. Deliberately NOT
+            // read from an OS environment variable — that would depend on the
+            // customer's own shell/session state, which we cannot rely on.
+            let customer_profile: Option<String> = {
+                let profile_file = base.join("customer_profile.txt");
+                match fs::read_to_string(&profile_file) {
+                    Ok(contents) => {
+                        let trimmed = contents.trim().to_string();
+                        if trimmed.is_empty() { None } else { Some(trimmed) }
+                    }
+                    Err(_) => None,
+                }
+            };
+            log(&format!("customer_profile = {:?}", customer_profile));
+
             let child: Option<Child> = if pyinstaller_exe.exists() {
                 log("launching strategy1: PyInstaller backend.exe");
-                Some(
-                    Command::new(&pyinstaller_exe)
-                        .current_dir(base.join("backend"))
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn()
-                        .expect("Failed to start compiled backend"),
-                )
+                let mut cmd = Command::new(&pyinstaller_exe);
+                cmd.current_dir(base.join("backend"))
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
+                if let Some(profile) = &customer_profile {
+                    cmd.env("FINPILOT_CUSTOMER_PROFILE", profile);
+                }
+                Some(cmd.spawn().expect("Failed to start compiled backend"))
             } else if embedded_python.exists() {
                 log("launching strategy2: embedded Python");
-                Some(
-                    Command::new(&embedded_python)
-                        .args(&[
-                            "-m", "uvicorn", "main:app",
-                            "--host", "127.0.0.1",
-                            "--port", "8001",
-                            "--log-level", "warning",
-                        ])
-                        .current_dir(&backend_src_dir)
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn()
-                        .expect("Failed to start embedded-Python backend"),
-                )
+                let mut cmd = Command::new(&embedded_python);
+                cmd.args(&[
+                    "-m", "uvicorn", "main:app",
+                    "--host", "127.0.0.1",
+                    "--port", "8001",
+                    "--log-level", "warning",
+                ])
+                    .current_dir(&backend_src_dir)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
+                if let Some(profile) = &customer_profile {
+                    cmd.env("FINPILOT_CUSTOMER_PROFILE", profile);
+                }
+                Some(cmd.spawn().expect("Failed to start embedded-Python backend"))
             } else {
                 log("strategy3: system Python fallback (dev mode)");
-                let _ = Command::new("python")
-                    .args(&[
-                        "-m", "uvicorn", "main:app",
-                        "--host", "127.0.0.1", "--port", "8001",
-                        "--log-level", "warning",
-                    ])
+                let mut cmd = Command::new("python");
+                cmd.args(&[
+                    "-m", "uvicorn", "main:app",
+                    "--host", "127.0.0.1", "--port", "8001",
+                    "--log-level", "warning",
+                ])
                     .current_dir(
                         std::env::current_exe()
                             .ok()
@@ -114,8 +134,11 @@ fn main() {
                             .unwrap_or_default(),
                     )
                     .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn();
+                    .stderr(Stdio::null());
+                if let Some(profile) = &customer_profile {
+                    cmd.env("FINPILOT_CUSTOMER_PROFILE", profile);
+                }
+                let _ = cmd.spawn();
                 None
             };
 
