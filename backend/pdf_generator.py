@@ -67,6 +67,13 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _USER_LH    = os.path.join(os.path.expanduser("~"), "FinPilot", "assets", "letterhead.jpg")
 _BUNDLE_LH  = os.path.join(_HERE, "assets", "letterhead.jpg")
 
+# Al Siwan template-only branding assets — cropped directly from the
+# customer-supplied reference PDF (references/al-siwan electrical.pdf), not
+# invented. Used only when invoice_template == "alsiwan"; never affects the
+# default/Dar Al Salam template.
+_ASW_WATERMARK_PATH = os.path.join(_HERE, "assets", "alsiwan_watermark.png")
+_ASW_FOOTER_ICON_PATH = os.path.join(_HERE, "assets", "alsiwan_footer_icon.png")
+
 
 def _resolve_letterhead_path() -> str:
     """Resolve the current letterhead path fresh on every call (same pattern
@@ -326,14 +333,32 @@ def _generate_invoice_alsiwan(invoice_data: dict, company: dict) -> str:
     top_margin = (lh_draw_h + 2 * mm) if lh_draw_h else 15 * mm
     _dbg(f"[AlSiwan] lh={lh_draw_h/mm:.1f}mm top={top_margin/mm:.1f}mm")
 
+    _asw_watermark_ok = os.path.exists(_ASW_WATERMARK_PATH)
+
     def _draw_asw_header(canv, _doc):
-        if not lh_draw_h:
-            return
-        canv.saveState()
-        canv.drawImage(_resolve_letterhead_path(), 0, page_h - lh_draw_h,
-                       width=page_w, height=lh_draw_h,
-                       preserveAspectRatio=False, mask="auto")
-        canv.restoreState()
+        if lh_draw_h:
+            canv.saveState()
+            canv.drawImage(_resolve_letterhead_path(), 0, page_h - lh_draw_h,
+                           width=page_w, height=lh_draw_h,
+                           preserveAspectRatio=False, mask="auto")
+            canv.restoreState()
+        # Faded gear-logo watermark, centred in the body area below the
+        # header — drawn on the page background (before the story flows on
+        # top), so it can never obscure text or interfere with table
+        # borders, and never affects pagination/layout.
+        if _asw_watermark_ok:
+            canv.saveState()
+            from PIL import Image as PILImage
+            with PILImage.open(_ASW_WATERMARK_PATH) as _wm:
+                _wm_w, _wm_h = _wm.size
+            _WM_SIZE = 78 * mm
+            _wm_draw_h = _WM_SIZE * _wm_h / _wm_w
+            _wm_x = (page_w - _WM_SIZE) / 2
+            _wm_y = page_h - top_margin - 130 * mm
+            canv.drawImage(_ASW_WATERMARK_PATH, _wm_x, _wm_y,
+                           width=_WM_SIZE, height=_wm_draw_h,
+                           preserveAspectRatio=True, mask="auto")
+            canv.restoreState()
 
     doc = SimpleDocTemplate(
         filepath, pagesize=A4,
@@ -381,26 +406,28 @@ def _generate_invoice_alsiwan(invoice_data: dict, company: dict) -> str:
     _lbl_bx  = ParagraphStyle("asw_lb",  fontName="Helvetica-Bold", fontSize=8,   textColor=_BLACK)
     _val_bx  = ParagraphStyle("asw_vb",  fontName="Helvetica",      fontSize=8,   textColor=_BLACK)
     _ti_s    = ParagraphStyle("asw_ti",  fontName="Helvetica-Bold", fontSize=15,  textColor=_BLACK, alignment=TA_CENTER)
-    _ih      = ParagraphStyle("asw_ih",  fontName="Helvetica-Bold", fontSize=7,   textColor=_WHITE, alignment=TA_CENTER)
+    _ih      = ParagraphStyle("asw_ih",  fontName="Helvetica-Bold", fontSize=7,   textColor=_BLACK, alignment=TA_CENTER)
     _ir      = ParagraphStyle("asw_ir",  fontName="Helvetica",      fontSize=7.5, textColor=_BLACK)
     _irc     = ParagraphStyle("asw_irc", fontName="Helvetica",      fontSize=7.5, textColor=_BLACK, alignment=TA_RIGHT)
     _icc     = ParagraphStyle("asw_icc", fontName="Helvetica",      fontSize=7.5, textColor=_BLACK, alignment=TA_CENTER)
     _tl_s    = ParagraphStyle("asw_tl",  fontName="Helvetica",      fontSize=8.5, textColor=_BLACK)
     _tv_s    = ParagraphStyle("asw_tv",  fontName="Helvetica",      fontSize=8.5, textColor=_BLACK, alignment=TA_RIGHT)
-    _tb_s    = ParagraphStyle("asw_tb",  fontName="Helvetica-Bold", fontSize=10,  textColor=_WHITE, alignment=TA_RIGHT)
+    _tb_s    = ParagraphStyle("asw_tb",  fontName="Helvetica-Bold", fontSize=11,  textColor=_BLACK, alignment=TA_RIGHT)
     _nt_s    = ParagraphStyle("asw_nt",  fontName="Helvetica-Bold", fontSize=8,   textColor=_BLACK)
     _nv_s    = ParagraphStyle("asw_nv",  fontName="Helvetica",      fontSize=7.5, textColor=_BLACK)
     _sig_s   = ParagraphStyle("asw_sig", fontName="Helvetica",      fontSize=8,   textColor=_BLACK, alignment=TA_CENTER)
-    _ft_s    = ParagraphStyle("asw_ft",  fontName="Helvetica",      fontSize=6.5, textColor=_MUTED, alignment=TA_CENTER)
+    _ft_s    = ParagraphStyle("asw_ft",  fontName="Helvetica-Bold", fontSize=6.5, textColor=_MUTED, alignment=TA_LEFT)
     _ws_s    = ParagraphStyle("asw_ws",  fontName="Helvetica-Bold", fontSize=7.5, textColor=_BLACK)
     _wv_s    = ParagraphStyle("asw_wv",  fontName="Helvetica",      fontSize=7.5, textColor=_BLACK)
     _bk_lbl  = ParagraphStyle("asw_bkl", fontName="Helvetica-Bold", fontSize=7.5, textColor=_MUTED)
     _bk_val  = ParagraphStyle("asw_bkv", fontName="Helvetica",      fontSize=7.5, textColor=_BLACK)
 
     # ── 1. Company info (left) + Invoice metadata box (right) ─────────────
+    # Reference always repeats the company name as a small text line in the
+    # contact block, in addition to the large header — shown regardless of
+    # whether a letterhead image is also configured.
     comp_left_items = []
-    if not lh_draw_h:
-        # No letterhead — show company name in plain text
+    if company.get("name"):
         comp_left_items.append(Paragraph(f"<b>{_xe(company.get('name', ''))}</b>", _co_name))
         comp_left_items.append(Spacer(1, 2))
     if company.get("email"):
@@ -412,8 +439,8 @@ def _generate_invoice_alsiwan(invoice_data: dict, company: dict) -> str:
             _ln = _ln.strip()
             if _ln:
                 comp_left_items.append(Paragraph(_xe(_ln), _co_sub))
-    if company.get("trn"):
-        comp_left_items.append(Paragraph(f"TRN: {_xe(company.get('trn', ''))}", _co_sub))
+    # Company TRN is shown as "TR NO:" in the metadata box (matching the
+    # reference), not repeated here.
     if not comp_left_items:
         comp_left_items = [Spacer(1, 1)]
 
@@ -433,6 +460,8 @@ def _generate_invoice_alsiwan(invoice_data: dict, company: dict) -> str:
     ]
     if due_date_str:
         inv_box_rows.append([Paragraph("DUE DATE:", _lbl_bx), Paragraph(_xe(due_date_str), _val_bx)])
+    if company.get("trn"):
+        inv_box_rows.append([Paragraph("TR NO:", _lbl_bx), Paragraph(_xe(company.get("trn", "")), _val_bx)])
     if lpo_no:
         inv_box_rows.append([Paragraph("LPO NO:",   _lbl_bx), Paragraph(_xe(lpo_no), _val_bx)])
     if do_no:
@@ -448,14 +477,16 @@ def _generate_invoice_alsiwan(invoice_data: dict, company: dict) -> str:
         ("LINEBELOW",     (0, 0), (-1, -2), 0.3, _BORDER),
     ]))
 
+    # Rounded-corner box, matching the reference's invoice metadata box.
     inv_details_box = Table([[inv_box_inner]], colWidths=[90 * mm])
     inv_details_box.setStyle(TableStyle([
-        ("BOX",          (0, 0), (-1, -1), 0.8, _BORDER),
-        ("TOPPADDING",   (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+        ("BOX",            (0, 0), (-1, -1), 1.0, _BLACK),
+        ("ROUNDEDCORNERS", [5, 5, 5, 5]),
+        ("TOPPADDING",     (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING",  (0, 0), (-1, -1), 2),
+        ("LEFTPADDING",    (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING",   (0, 0), (-1, -1), 2),
+        ("VALIGN",         (0, 0), (-1, -1), "TOP"),
     ]))
 
     info_row = Table([[comp_left_items, Spacer(5 * mm, 1), inv_details_box]],
@@ -469,8 +500,9 @@ def _generate_invoice_alsiwan(invoice_data: dict, company: dict) -> str:
     ]))
 
     # ── 2. Items table (9 columns, 190 mm) ─────────────────────────────────
-    # 8+55+15+22+18+22+12+18+20 = 190 mm
-    _col_w = [8*mm, 55*mm, 15*mm, 22*mm, 18*mm, 22*mm, 12*mm, 18*mm, 20*mm]
+    # 11+52+15+22+18+22+12+18+20 = 190 mm — S.NO widened slightly so its
+    # bold header doesn't wrap mid-word ("S.N" / "O") at this font size.
+    _col_w = [11*mm, 52*mm, 15*mm, 22*mm, 18*mm, 22*mm, 12*mm, 18*mm, 20*mm]
     _hdrs  = ["S.NO", "DESCRIPTION", "QTY", "UNIT PRICE\n(AED)",
               "DISCOUNT\n(AED)", "TAXABLE AMT\n(AED)", "TAX\nRATE",
               "TAX AMT\n(AED)", "TOTAL\n(AED)"]
@@ -507,9 +539,13 @@ def _generate_invoice_alsiwan(invoice_data: dict, company: dict) -> str:
     def _asw_tbl(rows, pad_t=8, pad_b=8, n_filler=0, filler_pad=6):
         t = Table(rows, colWidths=_col_w)
         cmds = [
-            ("BACKGROUND",    (0, 0), (-1, 0),  _BLACK),
+            # White header background + bold black text (matches reference —
+            # no inverted/filled header), with a strong black rule under it.
+            ("BACKGROUND",    (0, 0), (-1, 0),  _WHITE),
+            ("LINEBELOW",     (0, 0), (-1, 0),  1.1, _BLACK),
             ("ROWBACKGROUNDS",(0, 1), (-1, -1), [_GRAY, _WHITE]),
-            ("GRID",          (0, 0), (-1, -1), 0.5, _BORDER),
+            ("GRID",          (0, 0), (-1, -1), 0.6, _BLACK),
+            ("BOX",           (0, 0), (-1, -1), 1.1, _BLACK),
             ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
             ("TOPPADDING",    (0, 0), (-1, 0),  5),
             ("BOTTOMPADDING", (0, 0), (-1, 0),  5),
@@ -528,28 +564,30 @@ def _generate_invoice_alsiwan(invoice_data: dict, company: dict) -> str:
         return t
 
     # ── 3. Totals ───────────────────────────────────────────────────────────
+    # Discount row is always shown (even AED 0.00), matching the reference's
+    # always-present Discount line in the totals block.
     tot_rows_asw = [
         [Paragraph("Total before VAT:", _tl_s), Paragraph(f"AED {subtotal:.2f}",  _tv_s)],
         [Paragraph("VAT 5%:",           _tl_s), Paragraph(f"AED {vat_amount:.2f}", _tv_s)],
+        [Paragraph("Discount:",         _tl_s), Paragraph(f"AED {discount:.2f}", _tv_s)],
+        [Paragraph("TOTAL:", _tb_s), Paragraph(f"AED {total:.2f}", _tb_s)],
     ]
-    if discount > 0:
-        tot_rows_asw.append(
-            [Paragraph("Discount:", _tl_s), Paragraph(f"AED {discount:.2f}", _tv_s)])
-    tot_rows_asw.append(
-        [Paragraph("TOTAL:", _tb_s), Paragraph(f"AED {total:.2f}", _tb_s)])
 
     tot_t_asw = Table(tot_rows_asw, colWidths=[48 * mm, 32 * mm])
     tot_t_asw.setStyle(TableStyle([
         ("ALIGN",         (0, 0), (-1, -1), "RIGHT"),
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING",    (0, 0), (-1, -2), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -2), 3),
+        ("TOPPADDING",    (0, -1), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, -1), (-1, -1), 4),
         ("LEFTPADDING",   (0, 0), (-1, -1), 6),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-        ("BOX",           (0, 0), (-1, -1), 0.5, _BORDER),
-        ("GRID",          (0, 0), (-1, -2), 0.3, _BORDER),
-        ("LINEABOVE",     (0, -1), (-1, -1), 1.0, _BLACK),
-        ("BACKGROUND",    (0, -1), (-1, -1), _BLACK),
+        ("BOX",           (0, 0), (-1, -1), 1.0, _BLACK),
+        ("GRID",          (0, 0), (-1, -2), 0.4, _BORDER),
+        # Total row: bold + larger (via _tb_s), black-on-white, strong rule
+        # above it — no filled background, matching the reference exactly.
+        ("LINEABOVE",     (0, -1), (-1, -1), 1.2, _BLACK),
     ]))
 
     tot_wrap_asw = Table([[Spacer(1, 1), tot_t_asw]],
@@ -621,6 +659,32 @@ def _generate_invoice_alsiwan(invoice_data: dict, company: dict) -> str:
         ("LINEAFTER",     (0, 0), (0,  0),  0.5, _BORDER),
     ]))
 
+    # Footer mark: small logo icon + company name, bottom-left — matches the
+    # reference's footer branding (replaces the generic centered sentence
+    # used by the default template; Al Siwan-only, does not affect the
+    # default/Dar Al Salam template at all).
+    if os.path.exists(_ASW_FOOTER_ICON_PATH):
+        from PIL import Image as PILImage
+        with PILImage.open(_ASW_FOOTER_ICON_PATH) as _fi:
+            _fi_w, _fi_h = _fi.size
+        _FI_H = 5 * mm
+        _FI_W = _FI_H * _fi_w / _fi_h
+        _footer_row = Table(
+            [[Image(_ASW_FOOTER_ICON_PATH, width=_FI_W, height=_FI_H),
+              Paragraph(_xe(company.get("name", "")), _ft_s)]],
+            colWidths=[_FI_W + 2 * mm, _CW - _FI_W - 2 * mm],
+        )
+        _footer_row.setStyle(TableStyle([
+            ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN",        (0, 0), (0, 0), "LEFT"),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING",   (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
+        ]))
+    else:
+        _footer_row = Paragraph(_xe(company.get("name", "")), _ft_s)
+
     # ── 6. Footer block (measured first for adaptive layout) ───────────────
     footer_block = [
         Spacer(1, 2 * mm),
@@ -635,10 +699,8 @@ def _generate_invoice_alsiwan(invoice_data: dict, company: dict) -> str:
         note_sig_t,
         Spacer(1, 1 * mm),
         HRFlowable(width="100%", thickness=0.3, color=_BORDER),
-        Spacer(1, 0.5 * mm),
-        Paragraph(
-            "This is a computer generated TAX INVOICE. Thank you for your business.",
-            _ft_s),
+        Spacer(1, 1 * mm),
+        _footer_row,
     ]
 
     # ── 7. Adaptive layout (same algorithm as default template) ────────────
