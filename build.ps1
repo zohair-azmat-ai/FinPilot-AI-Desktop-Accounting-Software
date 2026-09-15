@@ -34,7 +34,7 @@ function Write-Fail($msg) { Write-Host "`n[FAIL] $msg" -ForegroundColor Red }
 function Remove-StagedCustomerProfile {
     if ($ProfileWasStagedByThisRun -and (Test-Path $StagedProfileFile)) {
         Remove-Item $StagedProfileFile -Force -ErrorAction SilentlyContinue
-        Write-OK "Removed staged customer_profile.txt — resources folder restored to default (Dar Al Salam) state"
+        Write-OK "Removed staged customer_profile.txt - resources folder restored to default (Dar Al Salam) state"
     }
 }
 
@@ -62,7 +62,7 @@ if ($CustomerProfile) {
     Write-OK "Staged $StagedProfileFile for this build only"
 } elseif (Test-Path $StagedProfileFile) {
     Write-Warn "customer_profile.txt already exists in resources/ but -CustomerProfile was not specified."
-    Write-Warn "Leaving it in place — pass -CustomerProfile to intentionally manage it, or delete it manually if this is unexpected."
+    Write-Warn "Leaving it in place - pass -CustomerProfile to intentionally manage it, or delete it manually if this is unexpected."
 }
 
 # ── 0. Pre-flight: Rust ────────────────────────────────────────────────────────
@@ -192,6 +192,23 @@ if (-not $PyInstallerOk) {
     $EmbedUrl  = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-embed-amd64.zip"
     $EmbedZip  = Join-Path $env:TEMP "python312-embed.zip"
 
+    # ROOT CAUSE of a previously-shipped installer missing 'cryptography':
+    # this folder was never wiped between builds. On any run after the
+    # first, get-pip.py re-installs pip on TOP OF an already-installed pip.
+    # On Windows, pip cannot atomically replace its own currently-loaded
+    # files, so it falls back to renaming them (e.g. "pip" -> "~ip"); if
+    # that rename doesn't fully complete, the leftover "~ip" directory
+    # corrupts pip's own install-state bookkeeping for that environment,
+    # and pip silently fails to install specific packages afterward
+    # (observed: 'WARNING: Ignoring invalid distribution ~ip', with
+    # cryptography missing while pure-Python packages still succeeded).
+    # Always start from a clean slate so get-pip.py only ever bootstraps
+    # into a directory that has never had pip in it before.
+    if (Test-Path $EmbeddedPythonDir) {
+        Write-Host "  Removing existing embedded Python for a clean install..." -ForegroundColor DarkGray
+        Remove-Item $EmbeddedPythonDir -Recurse -Force
+    }
+
     Write-Host "  Downloading $EmbedUrl ..." -ForegroundColor DarkGray
     try {
         Invoke-WebRequest -Uri $EmbedUrl -OutFile $EmbedZip -UseBasicParsing
@@ -209,27 +226,53 @@ if (-not $PyInstallerOk) {
             [System.IO.File]::WriteAllText($pth.FullName, $content, $utf8NoBom)
         }
 
-        # Install pip into embedded Python
+        # Install pip into embedded Python — always a genuinely fresh
+        # bootstrap now that the directory above is guaranteed clean.
+        # --disable-pip-version-check / --no-input avoid any self-upgrade
+        # prompt/attempt triggering the same rename quirk again later.
         $getPip = Join-Path $env:TEMP "get-pip.py"
         Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $getPip -UseBasicParsing
         $embPython = Join-Path $EmbeddedPythonDir "python.exe"
-        & $embPython $getPip --quiet
+        & $embPython $getPip --quiet --no-input
 
         # Install backend dependencies into embedded Python
         $reqFile = Join-Path $BackendDir "requirements.txt"
         if (Test-Path $reqFile) {
             Write-Host "  Installing backend requirements into embedded Python..." -ForegroundColor DarkGray
-            & $embPython -m pip install --quiet -r $reqFile --target (Join-Path $EmbeddedPythonDir "Lib\site-packages")
+            & $embPython -m pip install --quiet --disable-pip-version-check --no-input -r $reqFile --target (Join-Path $EmbeddedPythonDir "Lib\site-packages")
+            if ($LASTEXITCODE -ne 0) { throw "pip install -r requirements.txt failed (exit code $LASTEXITCODE)" }
         } else {
             # Install known deps manually
-            & $embPython -m pip install --quiet fastapi uvicorn sqlalchemy pydantic reportlab python-multipart
+            & $embPython -m pip install --quiet --disable-pip-version-check --no-input fastapi uvicorn sqlalchemy pydantic reportlab python-multipart cryptography
+            if ($LASTEXITCODE -ne 0) { throw "pip install (fallback package list) failed (exit code $LASTEXITCODE)" }
         }
 
         $UseEmbeddedPython = $true
         Write-OK "Embedded Python ready with dependencies"
     } catch {
-        Write-Warn "Could not download embedded Python: $_"
+        Write-Warn "Could not set up embedded Python: $_"
         Write-Warn "The app will fall back to system Python at runtime."
+    }
+
+    # ── Hard dependency verification ──────────────────────────────────────
+    # Deliberately OUTSIDE the try/catch above: a missing 'cryptography' is
+    # a packaging DEFECT, not a transient network hiccup, and must fail the
+    # build loudly rather than being silently downgraded to "fall back to
+    # system Python" — the customer's machine will not have one at all.
+    if ($UseEmbeddedPython) {
+        Write-Step "Verifying embedded Python dependencies"
+
+        $cryptoCheck = & $embPython -c "import cryptography; print(cryptography.__version__)" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Embedded Python cannot import 'cryptography' (required by license_manager.py): $cryptoCheck"
+        }
+        Write-OK "cryptography $cryptoCheck importable in embedded Python"
+
+        $ed25519Check = & $embPython -c "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey; print('Ed25519 OK')" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Embedded Python cannot import Ed25519PublicKey: $ed25519Check"
+        }
+        Write-OK "Ed25519PublicKey importable in embedded Python"
     }
 }
 
@@ -276,6 +319,35 @@ if ($PyInstallerOk) {
     Write-OK "Copied backend source → $DestBackend"
 }
 
+# ── Verify the ACTUAL shipped backend + embedded Python together ─────────────
+# Confirms not just "cryptography is installed somewhere" but that the exact
+# license_manager.py being packaged can actually import it and Ed25519PublicKey,
+# using the exact python.exe that will ship. Fails the build (not a warning) on
+# any failure — this is the same class of packaging defect as the missing
+# cryptography package, and must never reach a customer silently.
+if ($UseEmbeddedPython) {
+    Write-Step "Verifying packaged backend imports (license_manager, cryptography, Ed25519PublicKey)"
+    $verifyScript = Join-Path $env:TEMP "verify_backend_imports.py"
+    @"
+import sys
+sys.path.insert(0, r'$DestBackend')
+import license_manager
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+assert hasattr(license_manager, '_PUBLIC_KEY_B64'), 'license_manager._PUBLIC_KEY_B64 missing'
+assert 'REPLACE_WITH' not in license_manager._PUBLIC_KEY_B64, 'public key still a placeholder'
+assert len(license_manager._PUBLIC_KEY_B64) > 20, 'public key looks too short'
+print('OK: license_manager + cryptography + Ed25519PublicKey all import correctly')
+print('OK: public key present:', license_manager._PUBLIC_KEY_B64[:12] + '...')
+"@ | Set-Content -Path $verifyScript -Encoding utf8
+
+    $verifyOutput = & $embPython $verifyScript 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Packaged backend failed import verification: $verifyOutput"
+    }
+    $verifyOutput | ForEach-Object { Write-OK $_ }
+    Remove-Item $verifyScript -Force -ErrorAction SilentlyContinue
+}
+
 # ── 5. Build Next.js static export ───────────────────────────────────────────
 Write-Step "Building Next.js frontend (static export)"
 Push-Location $FrontendDir
@@ -314,8 +386,16 @@ Write-OK "Tauri CLI ready"
 Write-Step "Building Tauri desktop app (this may take 5-15 minutes first time)"
 Push-Location $DesktopDir
 try {
+    # Cargo/npm write routine build progress to stderr, which
+    # $ErrorActionPreference = "Stop" would otherwise treat as a fatal
+    # NativeCommandError even on success (same reason the PyInstaller
+    # pip-install step above does this). Check $LASTEXITCODE instead.
+    $savedEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     npx tauri build
-    if ($LASTEXITCODE -ne 0) { throw "Tauri build failed" }
+    $tauriExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $savedEAP
+    if ($tauriExitCode -ne 0) { throw "Tauri build failed (exit code $tauriExitCode)" }
 } finally {
     Pop-Location
 }

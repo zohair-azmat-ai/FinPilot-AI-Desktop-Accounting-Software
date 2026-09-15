@@ -15,6 +15,7 @@ import unittest
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.dirname(_HERE)
 _RESOURCES_BACKEND = os.path.join(_REPO_ROOT, "desktop", "src-tauri", "resources", "backend")
+_EMBEDDED_PYTHON = os.path.join(_REPO_ROOT, "desktop", "src-tauri", "resources", "python", "python.exe")
 
 sys.path.insert(0, _HERE)
 import customer_profiles  # noqa: E402
@@ -246,6 +247,26 @@ class TestBuildScriptMechanisms(unittest.TestCase):
     def _backend_spec(self) -> str:
         return _read(os.path.join(_HERE, "backend.spec"))
 
+    def test_build_ps1_parses_as_valid_powershell(self):
+        """Regression guard: a script can contain all the right substrings
+        (checked by every other test in this class) and still be broken —
+        e.g. a non-ASCII character inside a double-quoted string can corrupt
+        string termination for Windows PowerShell 5.1 depending on the
+        file's encoding, causing a 'Missing closing brace' parse error far
+        from the actual mistake. This actually invokes PowerShell's own
+        parser rather than trusting text search."""
+        path = os.path.join(_REPO_ROOT, "build.ps1")
+        script = (
+            "$errors = $null; $tokens = $null; "
+            f"[void][System.Management.Automation.Language.Parser]::ParseFile('{path}', [ref]$tokens, [ref]$errors); "
+            "if ($errors) { $errors | ForEach-Object { Write-Output $_.Message }; exit 1 } else { exit 0 }"
+        )
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", script],
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, f"build.ps1 failed to parse:\n{result.stdout}\n{result.stderr}")
+
     def test_build_ps1_excludes_test_and_check_scripts(self):
         src = self._build_ps1()
         self.assertIn("test_*.py", src)
@@ -286,6 +307,92 @@ class TestBuildScriptMechanisms(unittest.TestCase):
     def test_backend_spec_includes_customer_profiles_hiddenimport(self):
         src = self._backend_spec()
         self.assertIn("'customer_profiles'", src)
+
+
+class TestBuildPs1DependencyFix(unittest.TestCase):
+    """Static checks that build.ps1 contains the STEP 4C-1 fix for the
+    missing-cryptography defect: a clean wipe before every embedded-Python
+    setup, and hard (build-failing) verification of the dependency."""
+
+    def _build_ps1(self) -> str:
+        return _read(os.path.join(_REPO_ROOT, "build.ps1"))
+
+    def test_wipes_embedded_python_dir_before_setup(self):
+        src = self._build_ps1()
+        self.assertIn("Remove-Item $EmbeddedPythonDir -Recurse -Force", src)
+
+    def test_verifies_cryptography_importable(self):
+        src = self._build_ps1()
+        self.assertIn("import cryptography; print(cryptography.__version__)", src)
+
+    def test_verifies_ed25519_importable(self):
+        src = self._build_ps1()
+        self.assertIn("Ed25519PublicKey; print('Ed25519 OK')", src)
+
+    def test_verification_failure_throws_not_warns(self):
+        """The old behavior silently downgraded a missing dependency to a
+        warning ('fall back to system Python'); the fix must throw instead,
+        which the script-level trap turns into an actual build failure."""
+        src = self._build_ps1()
+        self.assertIn('throw "Embedded Python cannot import', src)
+
+    def test_verifies_packaged_backend_can_import_license_manager(self):
+        src = self._build_ps1()
+        self.assertIn("import license_manager", src)
+        self.assertIn("_PUBLIC_KEY_B64", src)
+
+    def test_pip_install_checks_exit_code(self):
+        src = self._build_ps1()
+        self.assertIn('throw "pip install -r requirements.txt failed', src)
+
+
+@unittest.skipUnless(os.path.exists(_EMBEDDED_PYTHON), "embedded python.exe not staged on this machine")
+class TestActualEmbeddedPythonHasCryptography(unittest.TestCase):
+    """Inspects the REAL embedded Python runtime on this machine, if a build
+    has already staged one — the definitive check requested in STEP 4C-1:
+    does the exact python.exe that would ship actually have cryptography?"""
+
+    def test_cryptography_importable_in_embedded_python(self):
+        result = subprocess.run(
+            [_EMBEDDED_PYTHON, "-c", "import cryptography; print(cryptography.__version__)"],
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0,
+                          f"embedded python cannot import cryptography:\n{result.stdout}\n{result.stderr}")
+
+    def test_ed25519_importable_in_embedded_python(self):
+        result = subprocess.run(
+            [_EMBEDDED_PYTHON, "-c",
+             "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey; print('OK')"],
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0,
+                          f"embedded python cannot import Ed25519PublicKey:\n{result.stdout}\n{result.stderr}")
+
+    def test_no_leftover_tilde_ip_corruption(self):
+        """Regression guard for the exact root cause found in STEP 4C-1: a
+        stale '~ip' directory left by an interrupted pip self-upgrade,
+        corrupting that environment's package install state."""
+        site_packages = os.path.join(os.path.dirname(_EMBEDDED_PYTHON), "Lib", "site-packages")
+        if not os.path.isdir(site_packages):
+            self.skipTest("no site-packages directory found")
+        offenders = [n for n in os.listdir(site_packages) if n.startswith("~ip")]
+        self.assertEqual(offenders, [], f"corrupted pip residue found: {offenders}")
+
+    def test_license_manager_importable_with_packaged_backend(self):
+        if not os.path.isdir(_RESOURCES_BACKEND):
+            self.skipTest("resources/backend not staged")
+        script = (
+            f"import sys; sys.path.insert(0, r'{_RESOURCES_BACKEND}'); "
+            "import license_manager; "
+            "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey; "
+            "assert hasattr(license_manager, '_PUBLIC_KEY_B64'); "
+            "assert 'REPLACE_WITH' not in license_manager._PUBLIC_KEY_B64; "
+            "print('OK')"
+        )
+        result = subprocess.run([_EMBEDDED_PYTHON, "-c", script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0,
+                          f"packaged backend failed import check:\n{result.stdout}\n{result.stderr}")
 
 
 if __name__ == "__main__":
