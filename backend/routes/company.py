@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from database import get_db
 import models, schemas
+import customer_profiles
 import os, shutil
 
 router = APIRouter(prefix="/api/company", tags=["company"])
@@ -42,7 +43,17 @@ def _company_dict(company) -> dict:
 def get_company(db: Session = Depends(get_db)):
     company = db.query(models.Company).first()
     if not company:
-        company = models.Company(name="My Company")
+        profile = customer_profiles.get_active_profile()
+        if profile:
+            company = models.Company(
+                name=profile["name"],
+                email=profile.get("email", ""),
+                phone=profile.get("phone", ""),
+                address=profile.get("address", ""),
+                invoice_template=profile.get("invoice_template", "default"),
+            )
+        else:
+            company = models.Company(name="My Company")
         db.add(company)
         db.commit()
         db.refresh(company)

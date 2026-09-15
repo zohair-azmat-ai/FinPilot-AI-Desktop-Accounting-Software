@@ -277,6 +277,7 @@ export const restoreBackup = (file: File) => {
 // License
 export const getLicenseStatus = () => api.get("/api/license/status");
 export const getLicenseHwid = () => api.get("/api/license/hwid");
+export const getDefaultCustomerId = () => api.get("/api/license/default-customer-id");
 export const requestActivation = (customerId: string) =>
   api.post("/api/license/request", { customer_id: customerId });
 export const importLicenseResponse = (response: string) =>

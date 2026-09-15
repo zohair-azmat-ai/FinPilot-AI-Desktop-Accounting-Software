@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getLicenseStatus, requestActivation, importLicenseResponse } from "@/lib/api";
+import { getLicenseStatus, requestActivation, importLicenseResponse, getDefaultCustomerId } from "@/lib/api";
 import { KeyRound, ShieldCheck, AlertTriangle, Copy, CheckCircle, Code2 } from "lucide-react";
 
 interface LicenseStatus {
@@ -38,7 +38,14 @@ export default function ActivatePage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // Pre-fill the Customer/Deployment ID for customer-specific builds
+    // (e.g. Al Siwan) — remains freely editable, never locked.
+    getDefaultCustomerId()
+      .then((r) => { if (r.data.customer_id) setCustomerId(r.data.customer_id); })
+      .catch(() => {});
+  }, []);
 
   const handleGenerateRequest = async () => {
     if (!customerId.trim()) return;
